@@ -62,13 +62,14 @@ was stopped. Do not count this as a native pass.
 
 ## Remaining limits
 
-Real WhatsApp pairing, Baileys event replay and alias mapping, connected history,
+The new live adapter implements pairing, direct-message history/events and
+verified alias mapping. See Live_Integration.md for current evidence. Owner pairing,
 real receipts, media encoding/understanding and phone typing interception remain
-unfinished. Source-linked memory editing/deletion and retention workers are
+unverified or unfinished. Source-linked memory editing/deletion and retention workers are
 not complete. Default browser success does not prove background execution,
 native keyboard behavior, model quality or WhatsApp delivery.
 
-The loopback HTTP backend is not phone-ready over Wi-Fi or safe for internet
-exposure. HTTPS identity and production pairing still need implementation.
+The preview backend remains loopback-only. The live command permits authenticated
+private-network access for Wi-Fi but is not safe for internet exposure. HTTPS identity and production pairing still need implementation.
 `demo: true` remains true even when optional OpenRouter text drafts are selected
 because the conversations and transport are synthetic.

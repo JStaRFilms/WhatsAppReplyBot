@@ -9,7 +9,7 @@ import gif from '../assets/demo-clock.gif';
 
 const fixtures = { image, sticker, gif };
 export function MessageBubble({ message, quoted, onSelect }: { message: Message; quoted?: Message; onSelect: (message: Message) => void }) {
-  const { palette } = useApp(); const owner = message.direction === 'outbound';
+  const { palette, snapshot } = useApp(); const owner = message.direction === 'outbound';
   const media = message.media;
   const available = media?.access === 'available' && !media.viewOnce && (media.expiresAt === null || media.expiresAt > Date.now());
   return <View style={{ alignItems: owner ? 'flex-end' : 'flex-start', paddingBottom: 8 }}>
@@ -26,11 +26,11 @@ export function MessageBubble({ message, quoted, onSelect }: { message: Message;
       </Text>}
       {media && (available && media.fixture ? <View style={{ gap: 4, marginBottom: 6 }}>
         <Image source={fixtures[media.fixture]} contentFit="contain" autoplay style={{ width: 220, height: media.kind === 'sticker' ? 140 : 130 }}/>
-        <Text style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 11 }}>{media.kind.toUpperCase()} · demo media</Text>
+        <Text style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 11 }}>{media.kind.toUpperCase()}</Text>
       </View> : <Text style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 13, marginBottom: 6 }}>{media.viewOnce ? 'View-once media is not retained' : 'Media unavailable'}</Text>)}
       {!!message.text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 15, lineHeight: 22 }}>{message.text}</Text>}
       <Text style={{ fontFamily: fonts.regular, fontSize: 11, textAlign: 'right', color: palette.muted, marginTop: 4 }}>
-        {owner ? message.authorship === 'assistant_written' ? 'AI · simulated ' : message.authorship === 'owner_edited_assistant' ? 'Edited by you · simulated ' : 'You · ' : ''}
+        {owner ? message.authorship === 'assistant_written' ? snapshot?.demo ? 'AI · simulated ' : 'AI · ' : message.authorship === 'owner_edited_assistant' ? snapshot?.demo ? 'Edited by you · simulated ' : 'Edited by you · ' : 'You · ' : ''}
         {new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'}).format(message.occurredAt)}
       </Text>
     </Pressable>

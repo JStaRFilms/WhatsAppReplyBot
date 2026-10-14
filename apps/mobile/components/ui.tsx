@@ -15,7 +15,7 @@ export function ServiceStrip() {
   const { status, palette, snapshot } = useApp();
   return <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
     <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>
-      {status === 'online' ? snapshot?.model === 'openai/gpt-6-luna' ? 'Demo chats · OpenRouter '+(snapshot.modelConsent ? 'enabled' : 'paused')+' · WhatsApp not linked' : 'Demo · WhatsApp not linked' : status === 'connecting' ? 'Connecting to Windows service…' : 'Windows service offline'}
+      {status === 'online' && snapshot && !snapshot.demo ? 'WhatsApp '+snapshot.connection+' · AI '+(snapshot.modelConsent ? 'enabled' : 'paused') : status === 'online' ? snapshot?.model === 'openai/gpt-6-luna' ? 'Preview · AI '+(snapshot.modelConsent ? 'enabled' : 'paused') : 'Preview · WhatsApp not linked' : status === 'connecting' ? 'Connecting…' : 'Service offline'}
     </Text>
   </View>;
 }
@@ -39,8 +39,8 @@ export function Button({ label, onPress, secondary = false, disabled = false, st
 export function EmptyConnection() {
   const { connect, baseUrl, palette, status } = useApp();
   return <View style={{ paddingVertical: 28, gap: 16 }}>
-    <Text style={{ color: palette.text, fontFamily: fonts.semibold, fontSize: 20 }}>Connect to your Windows service</Text>
-    <Text selectable style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 14, lineHeight: 22 }}>Run pnpm backend on your computer. This build uses demo conversations and sends no real messages.</Text>
-    <Button label={status === 'connecting' ? 'Connecting…' : 'Connect local demo'} disabled={status === 'connecting'} onPress={() => { void connect(baseUrl); }}/>
+    <Text style={{ color: palette.text, fontFamily: fonts.semibold, fontSize: 20 }}>Connect to your PC</Text>
+    <Text selectable style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 14, lineHeight: 22 }}>Enter your PC address and service token in Settings.</Text>
+    <Button label={status === 'connecting' ? 'Connecting…' : 'Connect'} disabled={status === 'connecting'} onPress={() => { void connect(baseUrl); }}/>
   </View>;
 }

@@ -43,17 +43,18 @@ export default function ConversationScreen() {
     if (pendingIntent.current?.key !== key) pendingIntent.current = { key, requestId: randomUUID() };
     const result = await perform('/v1/conversations/'+encodeURIComponent(id)+'/manual-send', SendResult,
       { action, quotedMessageId, requestId: pendingIntent.current.requestId });
-    if (result) { setText(''); setQuote(null); pendingIntent.current = null; setPauseState('acknowledged'); }
+    if (result && result.outbox.state !== 'accepted') reportError(result.outbox.state === 'unknown' || result.outbox.state === 'partial' ? 'Send outcome is uncertain. Do not resend this message.' : 'The message was not accepted. Check WhatsApp connection.');
+    if (result?.outbox.state === 'accepted') { setText(''); setQuote(null); pendingIntent.current = null; setPauseState('acknowledged'); }
     sendLock.current = false; setSending(false);
   };
   if (!c) return <Page><Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Conversation unavailable. Connect to the service first.</Text></Page>;
   const drafts = snapshot?.drafts.filter(d => d.conversationId === id && ['pending','needs_owner','stale'].includes(d.state)) ?? [];
-  const mode = c.mode === 'never_reply' || c.excluded ? 'AI off' : c.control === 'manual' ? 'AI paused · you are handling this' : c.mode === 'auto_reply' ? 'Auto reply · requires a current limit' : 'Drafts only';
+  const mode = c.kind !== 'direct' ? 'AI off · identity not verified' : c.mode === 'never_reply' || c.excluded ? 'AI off' : c.control === 'manual' ? 'AI paused · you are handling this' : c.mode === 'auto_reply' ? 'Auto reply · requires a current limit' : 'Drafts only';
   return <Page scroll={false}>
     <Stack.Screen options={{ title: c.name, headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)} style={{ padding: 10 }}><SlidersHorizontal color={palette.text} size={21}/></Pressable> }}/>
     <View style={{ paddingHorizontal: 20, paddingBottom: 10, flexDirection: 'row', justifyContent: 'space-between' }}>
       <Text style={{ color: palette.accent, fontFamily: fonts.regular, fontSize: 12 }}>{mode}</Text>
-      {c.mode !== 'never_reply' && !c.excluded && c.control !== 'manual' && <Pressable accessibilityRole="button" onPress={() => { void perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }}>
+      {c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && c.control !== 'manual' && <Pressable accessibilityRole="button" onPress={() => { void perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }}>
         <Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 12 }}>Draft reply</Text>
       </Pressable>}
     </View>
@@ -74,7 +75,7 @@ export default function ConversationScreen() {
             onChangeText={value => { setText(value); if (value) void beginTyping(); }}
             style={{ flex: 1, color: palette.text, fontFamily: fonts.regular, fontSize: 16, maxHeight: 110, padding: 0 }}/>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Send demo message" disabled={!text.trim() || sending || status !== 'online'} onPress={() => { void send({ kind: 'text', text: text.trim(), reason: 'Owner manual message.' }, quote?.id ?? null); }}
+        <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!text.trim() || sending || status !== 'online'} onPress={() => { void send({ kind: 'text', text: text.trim(), reason: 'Owner manual message.' }, quote?.id ?? null); }}
           style={{ height: 49, width: 49, borderRadius: 25, backgroundColor: palette.accent, alignItems: 'center', justifyContent: 'center', opacity: !text.trim() || sending || status !== 'online' ? 0.4 : 1 }}><Send color={palette.accentText} size={22}/></Pressable>
       </View>
       {pauseState !== 'idle' && <Text style={{ color: pauseState === 'failed' ? palette.danger : palette.muted, fontFamily: fonts.regular, fontSize: 11, textAlign: 'center', paddingBottom: 7 }}>

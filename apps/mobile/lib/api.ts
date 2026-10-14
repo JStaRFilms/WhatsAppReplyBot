@@ -3,10 +3,13 @@ import { randomUUID } from 'expo-crypto';
 import { Conversation, Draft, Outbox, Message } from '@replybot/core/contracts';
 export const PauseResult = z.object({ acknowledged: z.literal(true), conversation: Conversation });
 export const DecisionResult = z.object({ draft: Draft.nullable().optional(), outbox: Outbox.nullable().optional(), simulated: z.boolean().optional() });
-export const SendResult = z.object({ simulated: z.literal(true), outbox: Outbox });
+export const SendResult = z.object({ simulated: z.boolean(), outbox: Outbox });
 export const Messages = z.array(Message);
 const Failure = z.object({ error: z.string() });
 const labels: Record<string, string> = {
+  whatsapp_not_connected: 'Connect WhatsApp in Settings before sending.',
+  start_live_backend: 'Start pnpm backend:live on your computer first.',
+  unverified_chat_identity: 'This contact identity is not verified yet. No send was attempted.',
   owner_auth_required: 'Reconnect this client to the Windows service.',
   ai_access_denied: 'AI is off or paused for this contact.',
   stale_draft: 'This draft is outdated. Request a fresh one.',
@@ -46,6 +49,6 @@ export class ApiClient {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.EXPO_OS === 'web' ? {} : { Origin: 'http://localhost' }) }, body: JSON.stringify({ confirmLocalDemo: true }),
     });
     if (!response.ok) throw new Error('Local connection failed. Start pnpm backend on this computer, or enter its service token.');
-    return z.object({ token: z.string().min(16), demo: z.literal(true) }).parse(await response.json()).token;
+    return z.object({ token: z.string().min(16), demo: z.boolean() }).parse(await response.json()).token;
   }
 }

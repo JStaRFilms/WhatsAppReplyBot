@@ -1,5 +1,6 @@
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
+import Constants from 'expo-constants';
 import { z } from 'zod';
 import { ClientSnapshot } from '@replybot/core/api';
 import { ApiClient } from './api';
@@ -18,7 +19,10 @@ const Context = createContext<Controller | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const system = useColorScheme();
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>('system');
-  const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:3210');
+  const [baseUrl, setBaseUrl] = useState(() => {
+    const host = process.env.EXPO_OS === 'web' ? globalThis.location?.hostname : Constants.expoConfig?.hostUri?.split(':')[0];
+    return 'http://'+(host || '127.0.0.1')+':3210';
+  });
   const [token, setToken] = useState('');
   const [snapshot, setSnapshot] = useState<ClientSnapshot | null>(null);
   const [status, setStatus] = useState<Controller['status']>('offline');

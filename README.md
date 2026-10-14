@@ -1,61 +1,71 @@
 # WhatsAppReplyBot
 
-A WhatsApp-like Expo client with a Windows-hosted assistant service.
-The current app runs with synthetic chats. It does not pair with WhatsApp or
-send real messages.
+WhatsApp-like Expo client, Windows Node backend, SQLite and OpenRouter GPT-6 Luna.
 
-## Run the demo
+## Live connection
 
-Use Node 24 and pnpm 10. From this repository:
+Use Node 24 and pnpm 10. Keep the PC awake and on the same trusted Wi-Fi as your
+phone. The backend key belongs in the ignored `.env`, not the mobile app.
 
 ```sh
 pnpm install
-pnpm backend
+pnpm backend:live
 ```
 
-In a second terminal:
+In another terminal:
 
 ```sh
 pnpm mobile:web
 ```
 
-Open http://localhost:8081 and select **Connect local demo**. The backend listens
-on http://127.0.0.1:3210. Chats, Review, Assistant and Settings work in light
-and dark mode. Approval and manual sending use a simulated transport.
+1. Open http://localhost:8081/settings on the PC and select **Connect**.
+2. Select **Connect WhatsApp**. On your phone, open WhatsApp → Linked devices →
+   Link a device and scan the QR on the PC.
+3. Select **Enable AI** to permit paid OpenRouter drafting with selected chat
+   context. Default eligible chats draft only. Automatic sends need an explicit
+   contact mode and an active confirmed delegation limit.
 
-Typing requests a server-acknowledged AI pause. Manual control stays active
-until you explicitly resume it. Contact permissions and delegation require
-confirmation. Never-reply contacts cannot be passed to the assistant.
+Pairing uses unofficial Baileys and carries the previously accepted account risk.
+History availability depends on WhatsApp. It is not a full-history guarantee.
 
-The assistant supports commands such as "review the past five hours",
-"draft for Kemi", "never reply to Tolu" and "resume David". It does not yet have
-a general-purpose natural-language tool planner.
+## Android over Wi-Fi
 
-## Optional OpenRouter text drafts
+Run `pnpm mobile` for Expo Go SDK 57, or connect Expo Go to the existing Metro
+server. Settings defaults to the development host's address.
 
-No key is needed for the default demo. To try paid GPT-6 Luna requests later:
+Use the **WiFi** service address printed by the backend, not a virtual adapter.
+For this PC the address is `http://192.168.100.65:3210`; it can change with DHCP.
+Enter the service token from `.runtime/owner-token.txt` in phone Settings and
+select **Connect**. Keep the token private. It is not your OpenRouter key.
 
-1. Copy `.env.example` to `.env` and enter your OpenRouter key privately.
-   Never place it in the mobile app or an `EXPO_PUBLIC` variable.
-2. Stop the default backend and run `pnpm backend:openrouter`.
-3. Reconnect the client. In Settings, select **Allow OpenRouter text drafts**.
-4. Request a new draft in a synthetic text-only chat, such as Maya.
+The phone browser can also use http://192.168.100.65:8081/settings. Native Expo Go
+behavior still needs owner-device testing. Windows Firewall may require allowing
+Node on the private network. No firewall settings were changed automatically.
+Do not expose these HTTP development servers to the internet.
 
-The key alone does not enable calls. The explicit startup command and owner
-consent are both required. Turning consent off invalidates pending drafts and
-revokes delegation. Drafts created earlier by the demo model remain demo output.
-Context containing media rejects remote generation until media encoding exists.
-No live OpenRouter request has been verified.
+## Sending and control
 
-## Phone testing
+**Send reply** approves and sends a draft. Manual composition requests a server
+pause; manual sends keep the assistant paused until confirmed resumption. Sending
+from the original WhatsApp app also pauses that conversation once the outgoing
+event reaches this backend. Typing in the original app is not reliably observable.
 
-Run `pnpm mobile` for Expo Go SDK 57. Native device behavior is unverified.
-The service binds only to computer loopback, so a phone cannot reach it over
-ordinary Wi-Fi. USB development can use `adb reverse tcp:3210 tcp:3210`.
-Enter the service token from `.runtime/owner-token.txt` in Settings if needed.
-This token is not the model key. Do not expose the HTTP service to the internet.
+Accepted transport handoff is not a delivery or read receipt. Unknown outcomes
+are not retried. Never-reply contacts cannot be passed to AI. Historical sync
+never triggers replies. The assistant supports review, drafting, contact-mode
+changes and resumption commands; it is not a general-purpose tool planner yet.
 
-## Checks
+Live media understanding is pending. Images, stickers, GIFs and unsupported
+attachments are identified, but remote generation rejects context containing
+media until encoding is implemented. View-once content is not cached.
+
+## Offline preview
+
+Stop the live backend, then use `pnpm backend` and `pnpm mobile:web`.
+Preview data and live WhatsApp use separate SQLite files. The default preview
+needs no API key and sends no real messages.
+
+## Verification
 
 ```sh
 pnpm typecheck
@@ -63,12 +73,10 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-26 focused safety tests and the workspace typecheck pass. The web export passes.
-Browser interaction checks covered connection, dark mode, draft approval,
-acknowledged pause, manual send, confirmed resumption and assistant review.
-Android testing was blocked by an emulator System UI failure.
+28 focused safety tests, strict typechecks and web export pass. Browser checks
+verified live Settings, authenticated connection and pairing QR rendering with
+no page errors. The live backend is ready on the LAN. Actual owner pairing,
+paid-model output and real-device sends still require verification.
 
-See [implementation evidence](docs/features/Offline_Implementation.md) and the
-[accepted design](docs/design/Accepted_Direction.md). Live WhatsApp integration,
-media understanding, history sync and real-device delivery verification remain
-unfinished.
+See `docs/features/Live_Integration.md` for implementation and review evidence.
+Runtime data, WhatsApp credentials, tokens and `.env` remain ignored.

@@ -22,6 +22,8 @@ wrong checkout, and no root-bound board was regenerated.
 
 Use `README.md` for run instructions and
 `docs/features/Offline_Implementation.md` for verified behavior and remaining
-limits. The next substantial slice is controlled live-adapter work, followed by
-owner-approved pairing and real-device checks. Do not call the current demo v1
-complete.
+limits. The live adapter is now implemented with confirmed review fixes. The user chose
+Android Wi-Fi and supplied a key through the vault. Authenticated Settings and QR
+rendering pass in Edge. The backend is ready for owner pairing. Live connection,
+paid draft quality, media encoding and native delivery remain unverified. Do not
+call v1 complete.

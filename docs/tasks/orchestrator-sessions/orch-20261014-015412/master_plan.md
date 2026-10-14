@@ -65,7 +65,8 @@ account access, provider requests, real sends and deployment remain gated.
 | B01 | Implement durable core and authenticated demo service | coder | vibe-build | accepted foundation | completed, 26 focused safety checks pass |
 | B02 | Implement V2 mobile-size client and themes | coder | vibe-build | D02, B01 | completed, web interaction checks and export pass |
 | B03 | Wire opt-in OpenRouter text drafting and consent | coder | vibe-build | B01 | completed with mock verification, paid calls untested |
-| B04 | Verify native device and live adapter | coder/reviewer | controlled verification | owner keys and device | blocked, native ANR and live integration unfinished |
+| B04 | Verify native device and live connection | coder/reviewer | controlled verification | owner pairing and device | pending owner scan and physical-phone checks |
+| B05 | Implement WhatsApp adapter, AI and Wi-Fi access | coder | vibe-build | owner authorization and private key | completed, 28 safety checks and browser pairing UI pass |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

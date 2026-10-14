@@ -25,7 +25,7 @@ export function DraftCard({ draft }: { draft: Draft }) {
     padding: 14, gap: 10, backgroundColor: pending ? palette.accentSoft : palette.surface }}>
     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
       <Text style={{ fontFamily: fonts.semibold, color: palette.accent, fontSize: 12 }}>
-        {draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Demo approved' : 'Dismissed'}
+        {draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : 'Dismissed'}
       </Text>
       {pending && <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>Not sent</Text>}
     </View>
@@ -34,7 +34,7 @@ export function DraftCard({ draft }: { draft: Draft }) {
         {'text' in draft.action ? draft.action.text : 'reaction' in draft.action ? 'React '+draft.action.reaction.emoji : draft.action.reason}
       </Text>}
     {pending && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      <Button label={editing ? 'Save draft' : 'Approve demo'} disabled={busy || status !== 'online' || (editing && !text.trim())} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
+      <Button label={editing ? 'Save draft' : 'Send reply'} disabled={busy || status !== 'online' || (editing && !text.trim())} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
       {!editing && 'text' in draft.action && <Button label="Edit" secondary disabled={busy} onPress={() => { setText('text' in draft.action ? draft.action.text : ''); setEditingRevision(draft.revision); setEditing(true); }}/>}
       <Button label="Dismiss" secondary disabled={busy || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>
     </View>}

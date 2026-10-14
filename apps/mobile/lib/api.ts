@@ -5,8 +5,11 @@ export const PauseResult = z.object({ acknowledged: z.literal(true), conversatio
 export const DecisionResult = z.object({ draft: Draft.nullable().optional(), outbox: Outbox.nullable().optional(), simulated: z.boolean().optional() });
 export const SendResult = z.object({ simulated: z.boolean(), outbox: Outbox });
 export const Messages = z.array(Message);
+export const History=z.object({messages:Messages,watermark:z.number().int().nonnegative()});
+export type History=z.infer<typeof History>;
 const Failure = z.object({ error: z.string() });
 const labels: Record<string, string> = {
+  composer_has_text: 'Send or clear your draft first.',
   whatsapp_not_connected: 'Connect WhatsApp in Settings before sending.',
   start_live_backend: 'Start pnpm backend:live on your computer first.',
   unverified_chat_identity: 'This contact identity is not verified yet. No send was attempted.',

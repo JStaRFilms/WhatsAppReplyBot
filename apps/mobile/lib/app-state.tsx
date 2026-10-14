@@ -1,18 +1,22 @@
-import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 import Constants from 'expo-constants';
 import { z } from 'zod';
+import { Conversation } from '@replybot/core/contracts';
 import { ClientSnapshot } from '@replybot/core/api';
 import { ApiClient } from './api';
-import { readSetting, saveSetting } from './storage';
+import { HistoryCache } from './history-cache';
+import { readSetting, saveSetting, getClientId } from './storage';
 import { palettes, type Palette, type ThemeChoice } from './theme';
 
 interface Controller {
   snapshot: ClientSnapshot | null; status: 'offline' | 'connecting' | 'online'; error: string | null;
-  palette: Palette; dark: boolean; themeChoice: ThemeChoice; baseUrl: string; client: ApiClient;
+  palette: Palette; dark: boolean; themeChoice: ThemeChoice; baseUrl: string; client: ApiClient; history: HistoryCache;
   refresh: () => Promise<void>; clearError: () => void; reportError: (message: string) => void;
   connect: (url: string, token?: string) => Promise<void>;
   setTheme: (choice: ThemeChoice) => void;
+  composer: (id: string,hasText: boolean) => Promise<void>;
+  viewed: (id:string,watermark:number,version:number) => Promise<void>;
   perform: <T>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>) => Promise<T | undefined>;
 }
 const Context = createContext<Controller | null>(null);
@@ -28,6 +32,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Controller['status']>('offline');
   const [error, setError] = useState<string | null>(null);
   const client = useMemo(() => new ApiClient(baseUrl, token), [baseUrl, token]);
+  const composerQueue = useMemo(()=>new Map<string,Promise<void>>(),[client]);
+  const history = useMemo(() => new HistoryCache(client),[client]);
+  const activeClient=useRef(client);activeClient.current=client;
+  const sessionEpoch=useRef(0);
   const dark = themeChoice === 'dark' || (themeChoice === 'system' && system === 'dark');
   useEffect(() => {
     let active = true;
@@ -43,8 +51,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const refresh = useCallback(async () => {
     if (!token) return;
-    try { setSnapshot(await client.request('/v1/snapshot', ClientSnapshot)); setStatus('online'); }
-    catch (e) { setStatus('offline'); setError(e instanceof Error ? e.message : 'Service unavailable.'); }
+    const epoch=sessionEpoch.current;
+    try { const data=await client.request('/v1/snapshot',ClientSnapshot);if(activeClient.current===client&&sessionEpoch.current===epoch){setSnapshot(data);setStatus('online');} }
+    catch (e) { if(activeClient.current===client&&sessionEpoch.current===epoch){setStatus('offline');setError(e instanceof Error ? e.message : 'Service unavailable.');} }
   }, [client, token]);
   useEffect(() => {
     if (!token) return;
@@ -53,6 +62,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer);
   }, [refresh, token]);
   const connect = async (url: string, enteredToken?: string) => {
+    const epoch=++sessionEpoch.current;
     setStatus('connecting'); setError(null);
     try {
       const parsedUrl = new URL(url);
@@ -61,16 +71,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const candidate = new ApiClient(url, secret);
       const data = await candidate.request('/v1/snapshot', ClientSnapshot);
       await saveSetting('replybot-session', JSON.stringify({ url, token: secret }));
+      if(sessionEpoch.current!==epoch)return;
       setBaseUrl(url); setToken(secret); setSnapshot(data); setStatus('online');
-    } catch (e) { setStatus('offline'); setError(e instanceof Error ? e.message : 'Connection failed.'); }
+    } catch (e) { if(sessionEpoch.current===epoch){setStatus('offline');setError(e instanceof Error ? e.message : 'Connection failed.');} }
   };
+  const composer = useCallback((id:string,hasText:boolean):Promise<void> => {
+    const epoch=sessionEpoch.current;
+    const previous=composerQueue.get(id) ?? Promise.resolve();
+    const task=previous.catch(()=>{}).then(async()=>{
+      if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
+      const result=await client.request('/v1/conversations/'+encodeURIComponent(id)+'/composer',z.object({acknowledged:z.boolean(),conversation:Conversation}),{hasText,clientId:await getClientId()});
+      if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
+      setSnapshot(current=>current ? {...current,conversations:current.conversations.map(c=>c.id===id?result.conversation:c)}:current);
+    }).finally(()=>{if(composerQueue.get(id)===task)composerQueue.delete(id);});
+    composerQueue.set(id,task);return task;
+  },[client,composerQueue]);
+  const viewed=useCallback(async(id:string,watermark:number,version:number)=>{
+    const epoch=sessionEpoch.current;
+    await client.request('/v1/conversations/'+encodeURIComponent(id)+'/viewed',z.object({viewed:z.boolean()}),{watermark});
+    if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
+    setSnapshot(current=>current&&(current.historyVersions[id] ?? 0)===version ? {...current,unreadCounts:{...current.unreadCounts,[id]:0}} : current);
+  },[client]);
   const perform = async <T,>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>): Promise<T | undefined> => {
     setError(null);
     try { const result = await client.request(path, schema, payload); await refresh(); return result; }
     catch (e) { setError(e instanceof Error ? e.message : 'Action failed.'); return undefined; }
   };
   return <Context value={{ snapshot, status, error, palette: dark ? palettes.dark : palettes.light, dark,
-    themeChoice, baseUrl, client, refresh, connect, perform, clearError: () => setError(null), reportError: setError,
+    themeChoice, baseUrl, client, history, refresh, connect, perform, composer, viewed, clearError: () => setError(null), reportError: setError,
     setTheme: choice => { setThemeChoice(choice); void saveSetting('replybot-theme', choice).catch(() => setError('Theme preference could not be saved.')); } }}>
     {children}
   </Context>;

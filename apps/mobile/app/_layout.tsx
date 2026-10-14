@@ -6,6 +6,7 @@ import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
 import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { AppProvider, useApp } from '../lib/app-state';
+import { LocalDraftProvider } from '../lib/local-drafts';
 import { fonts } from '../lib/theme';
 function Navigation() {
   const { palette, dark } = useApp();
@@ -18,5 +19,5 @@ function Navigation() {
 export default function Root() {
   const [loaded, error] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
   if (!loaded && !error) return null;
-  return <AppProvider><Navigation/></AppProvider>;
+  return <AppProvider><LocalDraftProvider><Navigation/></LocalDraftProvider></AppProvider>;
 }

@@ -45,14 +45,21 @@ Do not expose these HTTP development servers to the internet.
 
 ## Sending and control
 
-**Send reply** approves and sends a draft. Manual composition requests a server
-pause; manual sends keep the assistant paused until confirmed resumption. Sending
-from the original WhatsApp app also pauses that conversation once the outgoing
-event reaches this backend. Typing in the original app is not reliably observable.
+**Send reply** approves and sends a draft. Your sent messages start a five-minute
+cooldown, reset by each new send. At expiry, unanswered backlog gets a draft only;
+later incoming messages follow the previous mode and original remaining limit.
+Resume now skips the timer. The menu extends it or pauses indefinitely.
+
+A nonempty composer holds AI. Clearing it releases only the typing hold after ten
+seconds. Your unsent text stays on this device and appears as Your draft. Only
+composer occupancy goes to the backend. Typing in original WhatsApp remains
+unobservable; an owner send starts the cooldown when its event reaches us.
 
 A Needs you card clears after your accepted reply or explicit resumption. Typing
 alone does not clear it. Handled dismisses a card without resuming automation.
-Filter dots show new activity since your last visit.
+Filter dots show new activity since your last visit. Avatar counters show unread
+messages in Reply without sending WhatsApp read receipts. Recently opened chats
+use cached history; initial draft cards wait for their history to avoid jumps.
 
 Accepted transport handoff is not a delivery or read receipt. Unknown outcomes
 are not retried. Never-reply contacts cannot be passed to AI. Historical sync
@@ -77,7 +84,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-33 focused safety tests, strict typechecks and web export pass. Browser checks
+39 focused safety tests, strict typechecks and web export pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. The live backend is ready on the LAN. Owner pairing and a paid synthetic model response are verified. Real-device
 sends and reply quality on actual conversations still need owner verification.

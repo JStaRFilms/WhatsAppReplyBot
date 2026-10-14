@@ -6,11 +6,14 @@ import type { Conversation } from '@replybot/core/contracts';
 import { Page, EmptyConnection } from '../../components/ui';
 import { ChatRow } from '../../components/chat-row';
 import { useApp } from '../../lib/app-state';
+import { useLocalDraftIds } from '../../lib/local-drafts';
 import { fonts } from '../../lib/theme';
 type Filter = 'all' | 'drafts' | 'needs';
 const keyExtractor = (c: Conversation) => c.id;
 export default function Chats() {
-  const { snapshot, palette } = useApp(); const router = useRouter();
+  const { snapshot, palette, history } = useApp(); const router = useRouter();
+  const localDraftIds=useLocalDraftIds();
+  const localIds=useMemo(()=>new Set(localDraftIds),[localDraftIds]);
   const [search, setSearch] = useState(''); const query = useDeferredValue(search.toLowerCase());
   const [filter, setFilter] = useState<Filter>('all');
   const seen = useRef<Record<Filter,Set<string>>>({ all: new Set(), drafts: new Set(), needs: new Set() });
@@ -41,10 +44,10 @@ export default function Chats() {
     return () => { focused.current = false; };
   },[data,filter]));
   const chats = useMemo(() => data.sorted.filter(c => c.name.toLowerCase().includes(query))
-    .filter(c => filter === 'all' || (filter === 'needs' ? data.needs.has(c.id) : data.pending.has(c.id))),[data,query,filter]);
-  const open = useCallback((id: string) => router.push({pathname:'/conversation/[id]',params:{id}}),[router]);
+    .filter(c => filter === 'all' || (filter === 'needs' ? data.needs.has(c.id) : data.pending.has(c.id)||localIds.has(c.id))),[data,query,filter,localIds]);
+  const open = useCallback((id: string) => { void history.load(id).catch(() => {}); router.push({pathname:'/conversation/[id]',params:{id}}); },[router,history]);
   const renderItem = useCallback<ListRenderItem<Conversation>>(({ item }) => <ChatRow conversation={item} last={data.last.get(item.id)}
-    pending={data.pending.has(item.id)} palette={palette} onOpen={open}/>,[data,palette,open]);
+    pending={data.pending.has(item.id)} localDraft={localIds.has(item.id)} unread={snapshot?.unreadCounts[item.id] ?? 0} palette={palette} onOpen={open}/>,[data,palette,open,localIds,snapshot?.unreadCounts]);
   if (!snapshot) return <Page><EmptyConnection/></Page>;
   return <Page scroll={false}>
     <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14, gap: 14 }}>
@@ -55,7 +58,7 @@ export default function Chats() {
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {(['all','drafts','needs'] as const).map(value => {
           const fresh = value !== filter && data.activity[value].some(key => !seen.current[value].has(key));
-          const label = value === 'all' ? 'All' : value === 'drafts' ? 'Drafts '+data.pendingCount : 'Needs me';
+          const label = value === 'all' ? 'All' : value === 'drafts' ? 'Drafts '+(data.pendingCount+localDraftIds.length) : 'Needs me';
           return <Pressable key={value} accessibilityRole="button" accessibilityLabel={label} onPress={() => setFilter(value)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 20, backgroundColor: filter === value ? palette.outgoing : palette.background, borderWidth: 1, borderColor: filter === value ? palette.outgoing : palette.border }}>
             <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: filter === value ? palette.accent : palette.muted }}>{label}</Text>

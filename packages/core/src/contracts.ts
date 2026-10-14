@@ -16,7 +16,7 @@ export const Conversation = z.object({
 export type Conversation = z.infer<typeof Conversation>;
 export type Mode = z.infer<typeof Mode>;
 export const Media = z.object({
-  kind: z.enum(['image', 'sticker', 'animated_sticker', 'gif']),
+  kind: z.enum(['image', 'sticker', 'animated_sticker', 'gif', 'audio', 'video', 'document']),
   access: z.enum(['available', 'missing', 'expired', 'unsupported']),
   fixture: z.enum(['image', 'sticker', 'gif']).nullable(),
   description: z.string().max(512), viewOnce: z.boolean(),
@@ -81,7 +81,7 @@ export const Proposal = z.object({
 });
 export type Proposal = z.infer<typeof Proposal>;
 export const Snapshot = z.object({
-  demo: z.literal(true), connection: z.literal('disconnected'), model: z.enum(['local-demo', 'openai/gpt-6-luna']),
+  demo: z.boolean(), connection: z.enum(['disconnected', 'connecting', 'qr', 'connected', 'error']), model: z.enum(['local-demo', 'openai/gpt-6-luna']),
   accountId: z.string(), conversations: z.array(Conversation), drafts: z.array(Draft), grants: z.array(Grant),
   outbox: z.array(Outbox),
 });

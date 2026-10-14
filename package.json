@@ -11,6 +11,7 @@
     "typecheck": "pnpm -r typecheck",
     "backend": "pnpm --filter @replybot/backend dev",
     "backend:openrouter": "pnpm --filter @replybot/backend openrouter",
+    "backend:live": "pnpm --filter @replybot/backend live",
     "mobile": "pnpm --filter @replybot/mobile start",
     "mobile:web": "pnpm --filter @replybot/mobile web"
   },

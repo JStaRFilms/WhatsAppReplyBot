@@ -29,14 +29,14 @@ export async function assistantTurn(flow: Workflow, text: string, requestId: str
     if (saved.hash !== payloadHash) throw new DomainError('request_id_conflict');
     return AssistantResponse.parse(saved.result);
   }
-  let result: AssistantResponse = { text: 'This build supports "review the past five hours", "draft for David", "never reply to Tolu", or "resume David". WhatsApp is not connected; messages are simulated.',
+  let result: AssistantResponse = { text: 'This build supports "review the past five hours", "draft for David", "never reply to Tolu", or "resume David". Contact changes require confirmation; drafts are not sent automatically.',
     proposal: null, draftId: null, candidates: [] };
   const match = /^(draft(?: a reply)? for|never reply to|auto reply to|draft only for|resume)\s+(.+)$/i.exec(text.trim());
   if (/^review\b|^what needs me\b/i.test(text.trim())) {
     const items = attention(flow, now-5*60*60*1000, now);
     const drafts = flow.store.drafts(flow.accountId).filter(d => d.state === 'pending').length;
     result.text = items.length+' conversations have unanswered messages. '+drafts+' drafts are ready. '
-      +items.filter(i => i.needsOwner).length+' need you. Nothing was sent. The demo history is incomplete.';
+      +items.filter(i => i.needsOwner).length+' need you. Nothing was sent. History may be incomplete.';
   } else if (match?.[1] && match[2]) {
     const candidates = resolve(flow, match[2]);
     const contact = candidates.length === 1 ? candidates[0] : undefined;

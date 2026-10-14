@@ -6,13 +6,20 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "openrouter": "node --env-file-if-exists=../../.env --import tsx src/index.ts --enable-openrouter",
+    "live": "node --env-file-if-exists=../../.env --import tsx src/index.ts --live --enable-openrouter --lan",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@replybot/core": "workspace:*",
-    "fastify": "5.12.7",
     "@fastify/cors": "^11.0.0",
+    "@replybot/core": "workspace:*",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "fastify": "5.12.7",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4",
     "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
   }
 }

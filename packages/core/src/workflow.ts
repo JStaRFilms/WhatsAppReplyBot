@@ -83,7 +83,7 @@ export class Workflow {
     return this.request(requestId, { operation: 'pause', conversationId }, Conversation,
       () => this.takeOver(this.conversation(conversationId)));
   }
-  observe(input: Message): boolean {
+  observe(input: Message, verifiedOwner = false): boolean {
     const message = Message.parse(input);
     if (message.accountId !== this.accountId) throw new DomainError('account_mismatch', 403);
     return this.store.transaction(() => {
@@ -92,11 +92,11 @@ export class Workflow {
       const echo = this.store.outboxes(this.accountId, c.id).some(o => o.components.some(p => p.transportId === message.transportId));
       if (message.direction === 'outbound' && echo) return false;
       if (message.direction === 'outbound') {
-        message.authorship = 'unknown';
+        message.authorship = verifiedOwner ? 'owner_written' : 'unknown';
         if (message.source === 'live') c = this.takeOver(c);
       } else c = this.invalidate(c, false);
       this.store.saveMessage(message);
-      if (message.direction === 'inbound') this.store.saveConversation({ ...c,
+      if (message.direction === 'inbound' || verifiedOwner) this.store.saveConversation({ ...c,
         lastHumanActivityAt: Math.max(c.lastHumanActivityAt, message.occurredAt) });
       return true;
     });

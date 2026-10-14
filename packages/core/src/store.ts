@@ -22,6 +22,8 @@ export class SqliteStore {
         result TEXT NOT NULL, PRIMARY KEY(account_id,request_id));
       CREATE TABLE IF NOT EXISTS account_settings (
         account_id TEXT PRIMARY KEY, model_consent INTEGER NOT NULL DEFAULT 0 CHECK(model_consent IN (0,1)));
+      CREATE TABLE IF NOT EXISTS wa_aliases (account_id TEXT NOT NULL, alias TEXT NOT NULL, canonical TEXT NOT NULL, PRIMARY KEY(account_id,alias));
+      CREATE TABLE IF NOT EXISTS wa_messages (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, transport_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(account_id,conversation_id,transport_id));
       CREATE TABLE IF NOT EXISTS assistant_turns (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));`);
     for (const table of ['messages', 'drafts', 'delegations', 'outbox', 'owner_actions'] as const) {
@@ -39,6 +41,22 @@ export class SqliteStore {
         WHERE json_extract(payload,'$.state')='active';`);
   }
   close(): void { this.db.close(); }
+  waCanonical(accountId: string, jid: string): string {
+    const row = this.db.prepare('SELECT canonical FROM wa_aliases WHERE account_id=? AND alias=?').get(accountId, jid);
+    return row ? z.object({ canonical: z.string() }).parse(row).canonical : jid;
+  }
+  saveWaAlias(accountId: string, alias: string, canonical: string): void {
+    const existing = this.waCanonical(accountId, alias);
+    if (existing !== alias && existing !== canonical) throw new DomainError('wa_alias_conflict', 403);
+    this.db.prepare('INSERT INTO wa_aliases(account_id,alias,canonical) VALUES(?,?,?) ON CONFLICT(account_id,alias) DO NOTHING').run(accountId, alias, canonical);
+  }
+  saveWaMessage(accountId: string, conversationId: string, transportId: string, payload: string): void {
+    this.db.prepare('INSERT INTO wa_messages VALUES(?,?,?,?) ON CONFLICT(account_id,conversation_id,transport_id) DO UPDATE SET payload=excluded.payload').run(accountId, conversationId, transportId, payload);
+  }
+  waMessage(accountId: string, conversationId: string, transportId: string): string | undefined {
+    const row = this.db.prepare('SELECT payload FROM wa_messages WHERE account_id=? AND conversation_id=? AND transport_id=?').get(accountId, conversationId, transportId);
+    return row ? Payload.parse(row).payload : undefined;
+  }
   modelConsent(accountId: string): boolean {
     const row = this.db.prepare('SELECT model_consent FROM account_settings WHERE account_id=?').get(accountId);
     return row ? z.object({ model_consent: z.number() }).parse(row).model_consent === 1 : false;

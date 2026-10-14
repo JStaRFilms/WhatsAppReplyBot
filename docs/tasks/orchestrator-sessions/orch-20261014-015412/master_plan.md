@@ -51,15 +51,16 @@ cleanup loop.
 
 | Task | Subtask | Role | Workflow | Dependency | Status |
 | --- | --- | --- | --- | --- | --- |
-| 01 | Author the scoped foundation and FR issue pack | architect | vibe-genesis | approved brief | pending |
-| 02 | Review foundation against approved scope | reviewer | Genesis acceptance | 01 | planned |
+| 01 | Author the scoped foundation and FR issue pack | architect | vibe-genesis | approved brief | completed |
+| 02 | Review foundation against approved scope | reviewer | Genesis acceptance | 01 | pending |
 | 03 | Validate durable permission and cancellation behavior offline | coder | Genesis technical feasibility | accepted foundation | planned |
 | 04 | Validate WhatsApp normalization and prepare a read-only probe | coder | Genesis technical feasibility | accepted spike contracts | planned |
 | 05 | Review prototype, record evidence and hand off | reviewer/orchestrator | Genesis acceptance | 03, 04 | planned |
 | Gate | Request owner approval for UI/UX Design | orchestrator | Design gate | verified Genesis work | blocked until handoff |
 
-Only task 01 is initialized now. Later packets will be authored with concrete
-scope and acceptance before registration or launch. Tasks run sequentially when
+Task 01 delivered the foundation. Task 02 is a read-only acceptance review.
+Later feasibility packets will be authored with concrete scope and acceptance
+before registration or launch. Tasks run sequentially when
 they write to this checkout. Read-only review may run while the parent inspects,
 but only one writer owns a file at a time.
 
@@ -68,8 +69,8 @@ but only one writer owns a file at a time.
 - [x] Capture approved product scope and operating choices.
 - [x] Confirm checkout and inspect repository instructions.
 - [x] Identify unrelated modified files and exclude them from commits.
-- [ ] Author requirements, architecture, schemas and APIs.
-- [ ] Verify MUS requirements and issues align one-to-one.
+- [x] Author requirements, architecture, schemas and APIs.
+- [x] Verify 12 MUS requirements and matching issues align one-to-one.
 - [ ] Complete a focused foundation review.
 - [ ] Commit reviewed foundation as a scoped batch.
 - [ ] Prove local permission, cancellation and replay invariants offline.

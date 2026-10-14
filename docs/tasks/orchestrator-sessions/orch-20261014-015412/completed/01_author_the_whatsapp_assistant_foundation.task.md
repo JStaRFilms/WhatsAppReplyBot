@@ -11,8 +11,8 @@ planning only. Do not design UI or implement product code.
 
 1. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Approved_Brief.md`
 2. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/tasks/orchestrator-sessions/orch-20261014-015412/master_plan.md`
-3. Global engineering instructions already injected by the harness.
-4. Use scoped conventional commits; only the parent performs Git writes.
+3. the injected engineering instructions and scoped conventional-commit discipline
+4. Global engineering instructions already injected by the harness.
 
 Verify your inherited working directory is C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot. Do not change checkout
 or use the old JStarReplyBot as your working directory.

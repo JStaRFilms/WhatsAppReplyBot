@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { Draft, type Action } from '@replybot/core/contracts';
 import { useApp } from '../lib/app-state';
@@ -6,7 +6,7 @@ import { DecisionResult } from '../lib/api';
 import { fonts } from '../lib/theme';
 import { Button } from './ui';
 
-export function DraftCard({ draft }: { draft: Draft }) {
+export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
   const { palette, perform, status } = useApp();
   const [editing, setEditing] = useState(false);
   const [editingRevision, setEditingRevision] = useState(draft.revision);
@@ -33,10 +33,11 @@ export function DraftCard({ draft }: { draft: Draft }) {
       : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>
         {'text' in draft.action ? draft.action.text : 'reaction' in draft.action ? 'React '+draft.action.reaction.emoji : draft.action.reason}
       </Text>}
+    {draft.state === 'needs_owner' && <Button label="Handled" secondary disabled={busy || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>}
     {pending && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       <Button label={editing ? 'Save draft' : 'Send reply'} disabled={busy || status !== 'online' || (editing && !text.trim())} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
       {!editing && 'text' in draft.action && <Button label="Edit" secondary disabled={busy} onPress={() => { setText('text' in draft.action ? draft.action.text : ''); setEditingRevision(draft.revision); setEditing(true); }}/>}
       <Button label="Dismiss" secondary disabled={busy || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>
     </View>}
   </View>;
-}
+});

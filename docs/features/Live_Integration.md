@@ -56,6 +56,27 @@ History and previews use message timestamps, not history-sync insertion order.
 Chats open at the newest message. Scrolling upward keeps the reader in place.
 Manual, draft and auto limits use colored badges, leaving previews unobstructed.
 
+## Handover lifecycle and activity
+
+Handover cards resolve after an acknowledged manual text reply, a verified live
+owner text from WhatsApp, or explicit resumption/configuration. Typing, incoming
+messages and unknown send outcomes do not resolve them or resume automation.
+Recovery clears previously answered cards without changing manual control.
+Drafts retain optional handoverAt for edits that become handovers later.
+Needs me lists only active handovers; Handled dismisses one without resuming AI.
+Future model handover reasons address the owner directly as you.
+
+Filter dots indicate unseen incoming messages, pending draft revisions and new
+handovers. Viewing a filter clears its dot without dismissing its work. Seen
+activity is account-scoped in the current UI session and only acknowledged while
+the Chats screen is focused. Incoming events can light All while another filter
+is selected.
+
+Typing no longer rebuilds message rows/date formatters on every keystroke.
+Memoized rows/bubbles/cards, shared formatters, indexed lookups and deferred
+search cut synthetic 3,200-chat mean input paint from 69ms to 28ms. This does not
+claim the same timing on the owner's physical Android device.
+
 ## Limits
 
 Live media encoding and understanding remain pending. Media is identified but

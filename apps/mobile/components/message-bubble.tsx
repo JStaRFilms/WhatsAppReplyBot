@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import type { Message } from '@replybot/core/contracts';
@@ -8,7 +9,8 @@ import sticker from '../assets/demo-sticker.webp';
 import gif from '../assets/demo-clock.gif';
 
 const fixtures = { image, sticker, gif };
-export function MessageBubble({ message, quoted, onSelect }: { message: Message; quoted?: Message; onSelect: (message: Message) => void }) {
+const time = new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'});
+export const MessageBubble = memo(function MessageBubble({ message, quoted, onSelect }: { message: Message; quoted?: Message; onSelect: (message: Message) => void }) {
   const { palette, snapshot } = useApp(); const owner = message.direction === 'outbound';
   const media = message.media;
   const available = media?.access === 'available' && !media.viewOnce && (media.expiresAt === null || media.expiresAt > Date.now());
@@ -31,11 +33,11 @@ export function MessageBubble({ message, quoted, onSelect }: { message: Message;
       {!!message.text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 15, lineHeight: 22 }}>{message.text}</Text>}
       <Text style={{ fontFamily: fonts.regular, fontSize: 11, textAlign: 'right', color: palette.muted, marginTop: 4 }}>
         {owner ? message.authorship === 'assistant_written' ? snapshot?.demo ? 'AI · simulated ' : 'AI · ' : message.authorship === 'owner_edited_assistant' ? snapshot?.demo ? 'Edited by you · simulated ' : 'Edited by you · ' : 'You · ' : ''}
-        {new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'}).format(message.occurredAt)}
+        {time.format(message.occurredAt)}
       </Text>
     </Pressable>
     {message.reaction && <View style={{ borderRadius: 16, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, paddingHorizontal: 8, paddingVertical: 3 }}>
       <Text style={{ fontSize: 14 }}>{message.reaction}</Text>
     </View>}
   </View>;
-}
+});

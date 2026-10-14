@@ -50,6 +50,10 @@ pause; manual sends keep the assistant paused until confirmed resumption. Sendin
 from the original WhatsApp app also pauses that conversation once the outgoing
 event reaches this backend. Typing in the original app is not reliably observable.
 
+A Needs you card clears after your accepted reply or explicit resumption. Typing
+alone does not clear it. Handled dismisses a card without resuming automation.
+Filter dots show new activity since your last visit.
+
 Accepted transport handoff is not a delivery or read receipt. Unknown outcomes
 are not retried. Never-reply contacts cannot be passed to AI. Historical sync
 never triggers replies. The assistant supports review, drafting, contact-mode
@@ -73,7 +77,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-30 focused safety tests, strict typechecks and web export pass. Browser checks
+33 focused safety tests, strict typechecks and web export pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. The live backend is ready on the LAN. Owner pairing and a paid synthetic model response are verified. Real-device
 sends and reply quality on actual conversations still need owner verification.

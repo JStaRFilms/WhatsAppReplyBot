@@ -8,8 +8,11 @@ JStarReplyBot at `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autorep
 is reference only and must not be edited or used as the new working directory.
 
 Commit changes in reasonable, scoped batches. Do not stage unrelated CreativeOS
-changes. Stop before UI/UX Design and ask the user before starting that phase.
-Do not create mockups, screens, visual directions, or an Expo UI before approval.
+changes. The owner's latest message authorizes Paper UI/UX design and offline
+implementation without further questions while they are unavailable. This
+supersedes the earlier instruction to stop before design. The owner cannot
+provide API keys or run device tests tonight. Keep all live connections, private
+data, real sends, paid model requests and deployment disabled.
 
 This product is independent of the existing CreativeOS Python application.
 Use `docs/whatsapp-assistant/` for its foundation rather than overwriting the

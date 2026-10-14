@@ -38,7 +38,7 @@ export class WhatsAppAdapter {
     const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
     this.status = { ...this.status, state: 'connecting', qr: null, error: null };
     const socket = makeWASocket({ auth: state, logger: pino({ level: 'silent' }),
-      browser: ['ReplyBot','Chrome','1.0'], markOnlineOnConnect: false, syncFullHistory: false,
+      browser: ['Otherme','Chrome','1.0'], markOnlineOnConnect: false, syncFullHistory: false,
       generateHighQualityLinkPreview: false, emitOwnEvents: true, maxMsgRetryCount: 0,
       enableRecentMessageCache: false, enableAutoSessionRecreation: false,
       shouldIgnoreJid: jid => !directJid(jid),

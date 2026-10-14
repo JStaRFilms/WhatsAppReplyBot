@@ -26,7 +26,7 @@ const app = createApp({ store, token, allowedOrigins: lan ? addresses.map(i => '
   ...(live ? { whatsapp: { authDir: join(runtime,'whatsapp-auth') } } : {}),
   ...(remote ? { remoteModel: { generate: (context,visuals) => new OpenRouterClient({
     apiKey, allowRemote: true, ownerConsent: store.modelConsent(accountId),
-    appName:process.env.OPENROUTER_APP_NAME || 'JStar Reply Bot',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
+    appName:process.env.OPENROUTER_APP_NAME || 'Otherme',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
   }).generate(context,visuals) } } : {}),
 });
 await app.listen({ host: lan ? '0.0.0.0' : '127.0.0.1', port: 3210 });

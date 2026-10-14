@@ -42,7 +42,7 @@ test('OpenRouter includes attribution, participant labels and scoped visual cont
   const action={kind:'text',text:'red',reason:'Synthetic image'};
   let calls=0;
   const fetcher:typeof fetch=async(_url,init)=>{
-    calls++;const headers=new Headers(init?.headers);assert.equal(headers.get('X-OpenRouter-Title'),'JStar Reply Bot');
+    calls++;const headers=new Headers(init?.headers);assert.equal(headers.get('X-OpenRouter-Title'),'Otherme');
     assert.equal(headers.get('HTTP-Referer'),'http://localhost:8081');assert.equal(headers.get('X-OpenRouter-App-Visibility'),'hidden');
     const body=JSON.parse(String(init?.body));const content=body.messages[1].content;
     assert.ok(Array.isArray(content));assert.equal(JSON.parse(content[0].text).messages[0].speaker,'contact');

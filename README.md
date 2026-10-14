@@ -1,4 +1,4 @@
-# WhatsAppReplyBot
+# Otherme
 
 WhatsApp-like Expo client, Windows Node backend, SQLite and OpenRouter GPT-6 Luna.
 
@@ -28,18 +28,23 @@ pnpm mobile:web
 Pairing uses unofficial Baileys and carries the previously accepted account risk.
 History availability depends on WhatsApp. It is not a full-history guarantee.
 
+If ports 3210 and 8081 are already in use, the services may already be running.
+Open http://localhost:8081 instead of starting a second copy. Port 8081 is the app;
+3210 is its backend. http://localhost:3210/v1/health checks backend availability.
+
 ## Android over Wi-Fi
 
 Run `pnpm mobile` for Expo Go SDK 57, or connect Expo Go to the existing Metro
 server. Settings defaults to the development host's address.
 
 Use the **WiFi** service address printed by the backend, not a virtual adapter.
-For this PC the address is `http://192.168.100.65:3210`; it can change with DHCP.
+The address is `http://<PC-Wi-Fi-IP>:3210` and can change with DHCP. Check the
+Wi-Fi IPv4 address with `ipconfig` if an old saved address stops working.
 Enter the service token from `.runtime/owner-token.txt` in phone Settings and
 select **Connect**. Keep the token private. It is not your OpenRouter key.
 
-The phone browser can also use http://192.168.100.65:8081/settings. Native Expo Go
-behavior still needs owner-device testing. Windows Firewall may require allowing
+The phone browser can also use `http://<PC-Wi-Fi-IP>:8081/settings`. For Expo Go,
+open `exp://<PC-Wi-Fi-IP>:8081`. Native behavior still needs owner-device testing. Windows Firewall may require allowing
 Node on the private network. No firewall settings were changed automatically.
 Do not expose these HTTP development servers to the internet.
 
@@ -77,7 +82,7 @@ Contact settings accept a custom reply count, 24/48-hour runs, an exact end date
 or no expiry. Unlimited actions and extended runs require a risk acknowledgment
 and exact confirmation. Reactions still consume units. You can pause at any time.
 
-OpenRouter attribution defaults to JStar Reply Bot with a local app URL and a
+OpenRouter attribution defaults to Otherme with a local app URL and a
 hidden-visibility request. Set OPENROUTER_APP_NAME and OPENROUTER_APP_URL in the
 backend environment to change attribution. This does not publish the app.
 

@@ -35,7 +35,7 @@ export class OpenRouterClient {
       method:'POST',signal:AbortSignal.timeout(30000),
       headers:{ Authorization:'Bearer '+this.options.apiKey,'Content-Type':'application/json',
         'HTTP-Referer':this.options.appUrl || 'http://localhost:8081',
-        'X-OpenRouter-Title':this.options.appName || 'JStar Reply Bot','X-OpenRouter-App-Visibility':'hidden' },
+        'X-OpenRouter-Title':this.options.appName || 'Otherme','X-OpenRouter-App-Visibility':'hidden' },
       body:JSON.stringify({ model:'openai/gpt-6-luna',max_tokens:1000,
         messages:[{role:'system',content:context.instructions},{role:'user',content}],
         response_format:{type:'json_schema',json_schema:{name:'reply_action',strict:true,schema:z.toJSONSchema(Reply)}},

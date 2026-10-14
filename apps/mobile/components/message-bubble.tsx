@@ -3,10 +3,11 @@ import { Animated, PanResponder, Platform, Pressable, Text, View } from 'react-n
 import type { Message } from '@replybot/core/contracts';
 import { useApp } from '../lib/app-state';
 import { fonts } from '../lib/theme';
+import { AudioPlayback } from './audio-playback';
 import { MediaAttachment } from './media-attachment';
 const webSwipeStyle: { touchAction?: 'pan-y' } = Platform.OS === 'web' ? { touchAction: 'pan-y' } : {};
 const time = new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'});
-export const MessageBubble = memo(function MessageBubble({ message, quoted, onSelect, onQuote }: { message: Message; quoted?: Message; onSelect: (message: Message) => void; onQuote: (message: Message) => void }) {
+export const MessageBubble = memo(function MessageBubble({ message, quoted, onSelect, onQuote, active=true }: { message: Message; active?:boolean; quoted?: Message; onSelect: (message: Message) => void; onQuote: (message: Message) => void }) {
   const { palette, snapshot } = useApp(); const owner = message.direction === 'outbound';
   const media = message.media;
   const translation = useRef(new Animated.Value(0)).current;
@@ -38,7 +39,7 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
       {message.statusReply && <Text style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 12, marginBottom: 8 }}>
         {message.statusContext ? 'Reply to your status: '+message.statusContext : 'Reply to your status · original unavailable'}
       </Text>}
-      {media && <MediaAttachment message={message}/>}
+      {media?.kind==='audio' ? <AudioPlayback message={message} active={active}/> : media && <MediaAttachment message={message}/>}
       {!!message.text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 15, lineHeight: 22 }}>{message.text}</Text>}
       <Text style={{ fontFamily: fonts.regular, fontSize: 11, textAlign: 'right', color: palette.muted, marginTop: 4 }}>
         {owner ? message.authorship === 'assistant_written' ? snapshot?.demo ? 'AI · simulated ' : 'AI · ' : message.authorship === 'owner_edited_assistant' ? snapshot?.demo ? 'Edited by you · simulated ' : 'Edited by you · ' : 'You · ' : ''}

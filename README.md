@@ -77,6 +77,13 @@ The paperclip opens Gallery or Camera. Selected photos stay local until Send,
 with an image preview and optional caption. Owner image sends use the same guarded
 outbox and cooldown as text. Unknown outcomes are never automatically retried.
 
+Voice notes have recording, local play/pause/delete preview and explicit Send.
+Incoming eligible audio is transcribed with Gemini 3.8 Flash; GPT-6 Luna still
+writes text replies. Use Expo Go for phone microphone recording, or choose an
+audio file on HTTP web. Audio is capped at 10MB and five minutes. FFmpeg is required.
+Older notes already stored as unsupported remain unavailable. See
+`docs/features/Voice_Notes.md` for privacy rules and device checks.
+
 AI waits for five seconds of quiet after the latest incoming message. New messages
 reset that window. Draft generation is shared for one conversation turn; outdated
 cards stay beside their source message and can be dismissed. AI can quote relevant
@@ -109,10 +116,11 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-68 focused safety tests, strict typechecks and web export pass. Browser checks
+85 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
-image-recognition request are verified. Browser checks cover live-preview
+image-recognition request and a synthetic speech-transcription request are verified.
+Browser checks cover live-preview
 rendering and custom/unlimited/date-based grant confirmation. Real-device
 gestures, image downloads and reply quality still need owner verification.
 

@@ -10,6 +10,7 @@ import { WhatsAppAdapter } from './whatsapp.ts';
 import { DEMO_ACCOUNT, seedDemo } from './seed.ts';
 import { MediaService,readableMedia } from './media.ts';
 import { ReplyWindow } from './reply-window.ts';
+import { AudioService, readableAudio, registerAudioUploads } from './audio.ts';
 import { registerImageUploads } from './image-uploads.ts';
 
 const Request = z.object({ requestId: z.string().min(1).max(96) });
@@ -53,7 +54,19 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     return !!saved && saved.conversationId===message.conversationId && readableMedia(saved,now())
       && (!!options.store.sentImageUpload(accountId,message.conversationId,message.transportId) || whatsapp?.mediaCurrent(message)===true);
   },now);
-  const generateDraft=draftGenerator(flow,options.remoteModel,media);
+  const audio=new AudioService(async message=>{
+    const upload=options.store.sentAudioUpload(accountId,message.conversationId,message.transportId);
+    if(upload)return Buffer.from(upload.bytes);
+    if(!whatsapp)throw new DomainError('media_unavailable',404);
+    return whatsapp.downloadMedia(message);
+  },message=>{
+    const saved=options.store.message(accountId,message.id);
+    const raw=options.store.waMessage(accountId,message.conversationId,message.transportId);
+    if(raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success)return false;
+    return message.accountId===accountId && !!saved && saved.conversationId===message.conversationId && readableAudio(saved,now())
+      && (!!options.store.sentAudioUpload(accountId,message.conversationId,message.transportId) || whatsapp?.mediaCurrent(message)===true);
+  },now);
+  const generateDraft=draftGenerator(flow,options.remoteModel,media,audio,now);
   app.register(cors, { origin: (origin, callback) => callback(null, !origin || allowedOrigin(origin)) });
   app.addHook('onRequest', async (request, reply) => {
     const ip = request.ip.replace(/^::ffff:/,'');
@@ -73,6 +86,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     return reply.code(500).send({ error: 'service_error' });
   });
   registerImageUploads(app,flow);
+  registerAudioUploads(app,flow);
   const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
     modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
     lastMessages: options.store.lastMessages(accountId),
@@ -113,6 +127,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     const {id,messageId}=Id.extend({messageId:z.string().min(1).max(256)}).parse(request.params);flow.conversation(id);
     const message=options.store.message(accountId,messageId);
     if(!message || message.conversationId!==id)throw new DomainError('media_unavailable',404);
+    if(message.media?.kind==='audio')return reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').type('audio/mpeg').send(await audio.preview(message));
     const preview=await media.preview(message);
     return reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').type(preview.mime).send(preview.bytes);
   });
@@ -214,6 +229,6 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     }
   },1000);
   timer.unref();
-  app.addHook('onClose', async () => { clearInterval(timer);await replyWindow.close(); await Promise.allSettled(catchUps.values()); await whatsapp?.stop(); options.store.close(); });
+  app.addHook('onClose', async () => { clearInterval(timer);await replyWindow.close(); await Promise.allSettled(catchUps.values()); await whatsapp?.stop(); audio.close(); options.store.close(); });
   return app;
 }

@@ -34,9 +34,9 @@ export default function Settings() {
       {snapshot?.model === 'openai/gpt-6-luna' ? 'GPT-6 Luna' : 'Local preview'}
     </Text>
     {snapshot?.model === 'openai/gpt-6-luna' && <>
-      <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13, lineHeight: 20 }}>Selected chat text and supported images go to OpenRouter. GIFs use sampled frames. API charges apply.</Text>
+      <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13, lineHeight: 20 }}>Selected chat text, supported images and eligible incoming voice notes go to OpenRouter. Gemini transcribes audio; GPT-6 Luna drafts text. GIFs use sampled frames. API charges apply.</Text>
       <Button label={modelBusy ? 'Applying…' : snapshot.modelConsent ? 'Pause AI' : 'Enable AI'} secondary={snapshot.modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
     </>}
-    <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Images, stickers and GIFs are supported. View-once and expired media stay private.</Text>
+    <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Images, stickers, GIFs and voice notes are supported. View-once, deleted and expired media stay private.</Text>
   </Page>;
 }

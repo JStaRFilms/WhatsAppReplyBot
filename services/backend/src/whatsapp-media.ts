@@ -2,7 +2,7 @@ import { createDecipheriv, createHash, createHmac, timingSafeEqual } from 'node:
 import { getMediaKeys, type proto } from '@whiskeysockets/baileys';
 import { DomainError } from '@replybot/core';
 
-type Attachment = proto.Message.IImageMessage | proto.Message.IStickerMessage | proto.Message.IVideoMessage;
+type Attachment = proto.Message.IImageMessage | proto.Message.IStickerMessage | proto.Message.IVideoMessage | proto.Message.IAudioMessage;
 const maxBytes=10*1024*1024;
 export function mediaUrl(attachment:Attachment):URL {
   const check=(url:URL)=>{
@@ -26,7 +26,7 @@ export async function mediaDeadline<T>(work:Promise<T>,signal:AbortSignal):Promi
   try{return await Promise.race([work,cancelled]);}
   finally{signal.removeEventListener('abort',listener);}
 }
-export async function downloadAttachment(attachment:Attachment,kind:'image'|'sticker'|'video',signal:AbortSignal,
+export async function downloadAttachment(attachment:Attachment,kind:'image'|'sticker'|'video'|'audio',signal:AbortSignal,
   fetcher:typeof fetch=fetch):Promise<Buffer> {
   const url=mediaUrl(attachment);
   if(signal.aborted)throw new DomainError('media_download_timeout',504);

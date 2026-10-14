@@ -67,6 +67,7 @@ account access, provider requests, real sends and deployment remain gated.
 | B03 | Wire opt-in OpenRouter text drafting and consent | coder | vibe-build | B01 | completed with mock verification, paid calls untested |
 | B04 | Verify native device and live connection | coder/reviewer | controlled verification | owner pairing and device | pending owner scan and physical-phone checks |
 | B05 | Implement WhatsApp adapter, AI and Wi-Fi access | coder | vibe-build | owner authorization and private key | completed, 28 safety checks and browser pairing UI pass |
+| 13 | Record, play and transcribe voice notes | coder/reviewer | vibe-build | owner voice approval, task 12 | completed, native teardown fixed; 85 tests, exports and synthetic ASR pass; backend reloaded; phone checks remain owner-tested |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

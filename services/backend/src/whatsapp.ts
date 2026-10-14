@@ -232,10 +232,10 @@ export class WhatsAppAdapter {
     const raw=this.raw(message.conversationId,message.transportId);
     if(!raw)throw new DomainError('media_unavailable',404);
     const content=normalizeMessageContent(raw.message);
-    const attachment=content?.imageMessage ?? content?.stickerMessage ?? (content?.videoMessage?.gifPlayback ? content.videoMessage : undefined);
+    const attachment=content?.imageMessage ?? content?.stickerMessage ?? content?.audioMessage ?? (content?.videoMessage?.gifPlayback ? content.videoMessage : undefined);
     if(!attachment || Number(attachment.fileLength ?? 0)>10*1024*1024)throw new DomainError('media_too_large',413);
     const signal=AbortSignal.timeout(15000);const socket=this.socket;
-    const kind=content?.imageMessage ? 'image' : content?.stickerMessage ? 'sticker' : 'video';
+    const kind=content?.imageMessage ? 'image' : content?.stickerMessage ? 'sticker' : content?.audioMessage ? 'audio' : 'video';
     let bytes:Buffer;
     try{bytes=await downloadAttachment(attachment,kind,signal);}
     catch(error){
@@ -245,7 +245,7 @@ export class WhatsAppAdapter {
       if(this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message) || isViewOnce(updated)
         || updated.key.id!==raw.key.id || updated.key.remoteJid!==raw.key.remoteJid)throw new DomainError('media_unavailable',404);
       const fresh=normalizeMessageContent(updated.message);
-      const next=fresh?.imageMessage ?? fresh?.stickerMessage ?? (fresh?.videoMessage?.gifPlayback ? fresh.videoMessage : undefined);
+      const next=fresh?.imageMessage ?? fresh?.stickerMessage ?? fresh?.audioMessage ?? (fresh?.videoMessage?.gifPlayback ? fresh.videoMessage : undefined);
       if(!next)throw new DomainError('media_unavailable',404);
       bytes=await downloadAttachment(next,kind,signal);
       if(this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
@@ -274,16 +274,20 @@ export class WhatsAppAdapter {
       const reactionRaw = target ? this.raw(c.id,target.transportId) : undefined;
       const quote = outbox.quotedMessageId ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === outbox.quotedMessageId) : undefined;
       const quoted = quote ? this.raw(c.id,quote.transportId) : undefined;
-      if (component.kind === 'reaction' && !reactionRaw || quote && !quoted) return { state: 'failed' };
-      const upload = component.uploadId ? this.flow.store.imageUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
+      if (component.kind === 'reaction' && !reactionRaw || outbox.quotedMessageId && (!quote || !quoted || quote.media?.viewOnce || quote.media?.expiresAt!==undefined && quote.media.expiresAt!==null && quote.media.expiresAt<=Date.now())) return { state: 'failed' };
+      const audio = component.kind==='audio' && component.uploadId ? this.flow.store.audioUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
+      if(component.kind==='audio' && (!audio || outbox.origin!=='owner_manual'))return {state:'failed'};
+      const upload = component.kind==='image' && component.uploadId ? this.flow.store.imageUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
       if (component.kind === 'image' && (!upload || outbox.origin !== 'owner_manual')) return {state:'failed'};
-      const content = component.kind === 'image' && upload
+      const content = component.kind==='audio' && audio
+        ? {audio:Buffer.from(audio.bytes),mimetype:audio.mime,ptt:true,seconds:Math.ceil(audio.duration)}
+        : component.kind === 'image' && upload
         ? {image:Buffer.from(upload.bytes),mimetype:upload.mime,caption:component.text ?? ''}
         : component.kind === 'reaction' && component.reaction && reactionRaw
           ? {react:{text:component.reaction.emoji,key:reactionRaw.key}} : {text:component.text ?? ''};
       const sent = await socket.sendMessage(c.id,content,{messageId:transportId,...(quoted ? {quoted} : {})});
       if (this.socket !== socket || this.verifiedSocket !== socket) return {state:'unknown'};
-      if (sent?.key.id && component.kind === 'image') {
+      if (sent?.key.id && (component.kind === 'image' || component.kind==='audio')) {
         const previous = this.flow.store.waMessage(this.flow.accountId,c.id,sent.key.id);
         if (!previous || !z.object({deleted:z.literal(true)}).safeParse(JSON.parse(previous)).success)
           this.flow.store.saveWaMessage(this.flow.accountId,c.id,sent.key.id,

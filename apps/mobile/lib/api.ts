@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { randomUUID } from './uuid';
-import { Conversation, Draft, Outbox, Message, ImageUpload } from '@replybot/core/contracts';
+import { Conversation, Draft, Outbox, Message, ImageUpload, AudioUpload } from '@replybot/core/contracts';
 export const PauseResult = z.object({ acknowledged: z.literal(true), conversation: Conversation });
 export const DecisionResult = z.object({ draft: Draft.nullable().optional(), outbox: Outbox.nullable().optional(), simulated: z.boolean().optional() });
 export const SendResult = z.object({ simulated: z.boolean(), outbox: Outbox });
@@ -62,6 +62,22 @@ export class ApiClient {
     const json:unknown=await response.json();
     if(!response.ok){const parsed=Failure.safeParse(json);const code=parsed.success ? parsed.data.error : 'image_upload_failed';throw new Error(labels[code] ?? code.replaceAll('_',' '));}
     return ImageUpload.parse(json);
+  }
+  async uploadAudio(conversationId:string,bytes:Uint8Array<ArrayBuffer>,requestId:string):Promise<z.infer<typeof AudioUpload>> {
+    if(!bytes.length || bytes.length>10*1024*1024)throw new Error('Choose non-empty audio under 10 MB.');
+    const response=await fetch(this.baseUrl.replace(/\/$/,'')+'/v1/conversations/'+encodeURIComponent(conversationId)+'/audio-uploads',{
+      method:'POST',headers:{Authorization:'Bearer '+this.token,'Content-Type':'application/octet-stream','X-Request-Id':requestId},body:bytes,
+    });
+    const json:unknown=await response.json();
+    if(!response.ok){const parsed=Failure.safeParse(json);throw new Error(parsed.success ? parsed.data.error.replaceAll('_',' ') : 'Audio upload failed.');}
+    return AudioUpload.parse(json);
+  }
+  async audio(conversationId:string,messageId:string,signal:AbortSignal):Promise<Uint8Array<ArrayBuffer>> {
+    const response=await fetch(this.baseUrl.replace(/\/$/,'')+'/v1/conversations/'+encodeURIComponent(conversationId)+'/media/'+encodeURIComponent(messageId),
+      {headers:{Authorization:'Bearer '+this.token},signal});
+    if(!response.ok || response.headers.get('Content-Type')?.split(';')[0]!=='audio/mpeg')throw new Error('Audio unavailable.');
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    if(bytes.length>10*1024*1024)throw new Error('Audio exceeds 10 MB.');return bytes;
   }
   async media(conversationId:string,messageId:string,signal:AbortSignal):Promise<string> {
     const response=await fetch(this.baseUrl.replace(/\/$/,'')+'/v1/conversations/'+encodeURIComponent(conversationId)+'/media/'+encodeURIComponent(messageId),

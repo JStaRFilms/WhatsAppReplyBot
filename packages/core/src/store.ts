@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload } from './contracts.ts';
+import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload, AudioUpload } from './contracts.ts';
 
 import { AssistantTurn } from './api.ts';
 
@@ -31,6 +31,10 @@ export class SqliteStore {
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
         mime TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, bytes BLOB NOT NULL,
         created_at INTEGER NOT NULL, FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));
+      CREATE TABLE IF NOT EXISTS audio_uploads (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+        mime TEXT NOT NULL, duration REAL NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL,
+        FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));
       CREATE TABLE IF NOT EXISTS assistant_turns (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));`);
     for (const table of ['messages', 'drafts', 'delegations', 'outbox', 'owner_actions'] as const) {
@@ -79,6 +83,32 @@ export class SqliteStore {
       AND (json_extract(o.payload,'$.state') IN ('queued','dispatching','unknown','partial')
         OR json_extract(p.value,'$.state') IN ('queued','dispatching','unknown')))`)
       .run(accountId,before);
+  }
+  saveAudioUpload(accountId:string,conversationId:string,upload:AudioUpload,bytes:Uint8Array,createdAt:number):void {
+    const metadata=AudioUpload.parse(upload);
+    if(!bytes.length || bytes.length>10*1024*1024)throw new DomainError('audio_too_large',413);
+    const total=this.db.prepare('SELECT COALESCE(SUM(length(bytes)),0) AS size FROM audio_uploads WHERE account_id=?').get(accountId);
+    if(z.object({size:z.number()}).parse(total).size+bytes.length>100*1024*1024)throw new DomainError('upload_storage_full',413);
+    this.db.prepare('INSERT INTO audio_uploads VALUES(?,?,?,?,?,?,?)').run(metadata.id,accountId,conversationId,metadata.mime,metadata.duration,bytes,createdAt);
+  }
+  audioUpload(accountId:string,conversationId:string,id:string):(AudioUpload & {bytes:Uint8Array}) | undefined {
+    const row=this.db.prepare('SELECT id,mime,duration,bytes FROM audio_uploads WHERE account_id=? AND conversation_id=? AND id=?').get(accountId,conversationId,id);
+    return row ? AudioUpload.extend({bytes:z.instanceof(Uint8Array)}).parse(row) : undefined;
+  }
+  sentAudioUpload(accountId:string,conversationId:string,transportId:string):(AudioUpload & {bytes:Uint8Array}) | undefined {
+    const row=this.db.prepare(`SELECT u.id,u.mime,u.duration,u.bytes FROM audio_uploads u JOIN outbox o
+      ON o.account_id=u.account_id AND o.conversation_id=u.conversation_id JOIN json_each(o.payload,'$.components') p
+      ON json_extract(p.value,'$.uploadId')=u.id WHERE u.account_id=? AND u.conversation_id=?
+      AND json_extract(o.payload,'$.origin')='owner_manual' AND json_extract(p.value,'$.kind')='audio'
+      AND json_extract(p.value,'$.state')='accepted' AND json_extract(p.value,'$.transportId')=? LIMIT 1`).get(accountId,conversationId,transportId);
+    return row ? AudioUpload.extend({bytes:z.instanceof(Uint8Array)}).parse(row) : undefined;
+  }
+  cleanupAudioUploads(accountId:string,before:number):void {
+    this.db.prepare(`DELETE FROM audio_uploads WHERE account_id=? AND created_at<? AND NOT EXISTS (
+      SELECT 1 FROM outbox o,json_each(o.payload,'$.components') p WHERE o.account_id=audio_uploads.account_id
+      AND o.conversation_id=audio_uploads.conversation_id AND json_extract(p.value,'$.uploadId')=audio_uploads.id
+      AND (json_extract(o.payload,'$.state') IN ('queued','dispatching','unknown','partial')
+        OR json_extract(p.value,'$.state') IN ('queued','dispatching','unknown')))` ).run(accountId,before);
   }
   unreadCounts(accountId:string): Record<string,number> {
     const rows=this.db.prepare(`SELECT m.conversation_id,COUNT(*) AS count FROM messages m LEFT JOIN conversation_views v

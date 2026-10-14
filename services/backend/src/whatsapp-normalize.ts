@@ -8,7 +8,7 @@ export function isViewOnce(raw: WAMessage): boolean {
   if (raw.key.isViewOnce) return true;
   let content: WAMessageContent | null | undefined = raw.message;
   for (let depth = 0; content && depth < 10; depth++) {
-    if (content.viewOnceMessage || content.viewOnceMessageV2 || content.viewOnceMessageV2Extension) return true;
+    if (content.viewOnceMessage || content.viewOnceMessageV2 || content.viewOnceMessageV2Extension || content.audioMessage?.viewOnce) return true;
     content = content.ephemeralMessage?.message ?? content.documentWithCaptionMessage?.message ?? content.editedMessage?.message ?? content.deviceSentMessage?.message;
   }
   return false;
@@ -27,14 +27,14 @@ export function normalizeWhatsApp(raw: WAMessage, accountId: string, chat: strin
   const media = photo ? { kind: 'image' as const, access: 'available' as const }
     : sticker ? { kind: sticker.isAnimated ? 'animated_sticker' as const : 'sticker' as const, access: 'available' as const }
     : video ? video.gifPlayback ? { kind:'gif' as const,access:'available' as const } : {kind:'video' as const,access:'unsupported' as const}
-    : content.audioMessage ? { kind: 'audio' as const, access: 'unsupported' as const }
+    : content.audioMessage ? { kind: 'audio' as const, access: 'available' as const }
     : content.documentMessage ? { kind: 'document' as const, access: 'unsupported' as const } : null;
-  const context = extended?.contextInfo ?? photo?.contextInfo ?? sticker?.contextInfo ?? video?.contextInfo;
+  const context = extended?.contextInfo ?? photo?.contextInfo ?? sticker?.contextInfo ?? video?.contextInfo ?? content.audioMessage?.contextInfo;
   const quoteChat = context?.remoteJid ? jidNormalizedUser(context.remoteJid) : chat;
   const quoted = context?.stanzaId && quoteChat === chat ? messageId(chat, context.stanzaId) : null;
   const seconds = Number(raw.messageTimestamp ?? 0);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
-  const unsupported = !!(content.audioMessage || content.documentMessage || video && !video.gifPlayback);
+  const unsupported = !!(content.documentMessage || video && !video.gifPlayback);
   return {
     id: messageId(chat, raw.key.id), transportId: raw.key.id, accountId, conversationId: chat,
     direction: raw.key.fromMe ? 'outbound' : 'inbound',
@@ -43,6 +43,7 @@ export function normalizeWhatsApp(raw: WAMessage, accountId: string, chat: strin
     occurredAt: seconds*1000, source, quotedMessageId: quoted,
     statusReply: context?.remoteJid === 'status@broadcast', statusContext: null, reaction: null,
     media: media ? { ...media, fixture: null, description: 'WhatsApp '+media.kind, viewOnce,
+      ...(content.audioMessage ? {mime:content.audioMessage.mimetype ?? 'audio/ogg',duration:Number(content.audioMessage.seconds ?? 0)} : {}),
       expiresAt: context?.expiration && context.expiration > 0 ? (seconds+context.expiration)*1000 : null } : null,
   };
 }

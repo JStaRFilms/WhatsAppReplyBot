@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { Draft, DomainError, type Action, type ModelContext, type Workflow } from '@replybot/core';
+import { Draft, DomainError, aiAccess, buildContext, type AudioTranscript, type Action, type ModelContext, type Workflow } from '@replybot/core';
 import { demoReply } from './demo-model.ts';
 import type { VisualFrame } from './media.ts';
-export interface RemoteModel { generate:(context:ModelContext,visuals?:VisualFrame[])=>Promise<Action> }
-export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals:(context:ModelContext)=>Promise<VisualFrame[]>}) {
+import { readableAudio, type AudioService, type Transcriber } from './audio.ts';
+export interface RemoteModel { generate:(context:ModelContext,visuals?:VisualFrame[])=>Promise<Action>; transcribe?:Transcriber['transcribe'] }
+export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals:(context:ModelContext)=>Promise<VisualFrame[]>},audio?:AudioService,now=Date.now) {
   const active=new Map<string,{hash:string;result:Promise<Draft>}>();
   const generations=new Map<string,Promise<Draft>>();
   return async(conversationId:string,requestId:string):Promise<Draft>=>{
@@ -23,13 +24,30 @@ export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals
       let job=generations.get(key);
       if(!job){
         job=(async()=>{
-          const visuals=remote && media ? await media.visuals(context) : [];
-          const current=flow.conversation(conversationId);
-          if(current.workflowVersion!==c.workflowVersion || current.control==='manual')throw new DomainError('stale_workflow');
-          if(remote && !flow.store.modelConsent(flow.accountId))throw new DomainError('model_consent_revoked',403);
-          const action=remote ? await remote.generate(context,visuals) : demoReply(context);
-          if(remote && !flow.store.modelConsent(flow.accountId))throw new DomainError('model_consent_revoked',403);
-          return flow.createDraft(conversationId,action,c.workflowVersion,requestId+'-result');
+          const guard=()=>{
+            const current=flow.conversation(conversationId);
+            if(!aiAccess(current,flow.accountId) || current.control==='manual')throw new DomainError('ai_access_denied',403);
+            if(remote && !flow.store.modelConsent(flow.accountId))throw new DomainError('model_consent_revoked',403);
+            if(current.workflowVersion!==c.workflowVersion || current.policyVersion!==c.policyVersion)throw new DomainError('stale_workflow');
+          };
+          guard();
+          const transcripts=new Map<string,AudioTranscript>();
+          if(remote?.transcribe && audio)for(const message of context.messages.filter(m=>m.direction==='inbound' && readableAudio(m,now())).slice(-2)) {
+            guard();
+            try{transcripts.set(message.id,await audio.transcript(message,{transcribe:remote.transcribe},guard));}
+            catch{guard();}
+          }
+          guard();
+          for(const message of context.messages)if(transcripts.has(message.id)){
+            try{audio?.check(message);}catch{transcripts.delete(message.id);}
+          }
+          const prepared=buildContext(flow.conversation(conversationId),flow.accountId,flow.store.messages(flow.accountId,conversationId),[],8000,now(),transcripts);
+          const visuals=remote && media ? await media.visuals(prepared) : [];
+          guard();
+          for(const message of prepared.messages)if(message.audioTranscript)audio?.check(message);
+          const action=remote ? await remote.generate(prepared,visuals) : demoReply(prepared);
+          guard();
+          return flow.createDraft(conversationId,action,c.workflowVersion,requestId+'-result',prepared.messages.filter(m=>m.audioTranscript).map(m=>m.id));
         })().finally(()=>generations.delete(key));
         generations.set(key,job);
       }

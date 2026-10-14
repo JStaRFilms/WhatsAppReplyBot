@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, ReactionObservation, actionUnits } from './contracts.ts';
+import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, AudioUpload, ReactionObservation, actionUnits } from './contracts.ts';
 import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
 import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
@@ -38,6 +38,17 @@ export class Workflow {
       this.store.cleanupImageUploads(this.accountId,this.clock()-3600000);
       const upload = {...metadata,id:randomUUID()};
       this.store.saveImageUpload(this.accountId,conversationId,upload,image.bytes,this.clock());
+      return upload;
+    });
+  }
+  stageAudio(conversationId:string,audio:Omit<AudioUpload,'id'> & {bytes:Uint8Array},requestId:string):AudioUpload {
+    const metadata=AudioUpload.omit({id:true}).parse(audio);
+    return this.request(requestId,{operation:'audio-upload',conversationId,...metadata,
+      digest:createHash('sha256').update(audio.bytes).digest('hex')},AudioUpload,()=>{
+      this.conversation(conversationId);
+      this.store.cleanupAudioUploads(this.accountId,this.clock()-3600000);
+      const upload={...metadata,id:randomUUID()};
+      this.store.saveAudioUpload(this.accountId,conversationId,upload,audio.bytes,this.clock());
       return upload;
     });
   }
@@ -217,7 +228,7 @@ export class Workflow {
         message.authorship = verifiedOwner ? 'owner_written' : 'unknown';
         if (message.source === 'live') {
           c = this.takeOver(c);
-          if (verifiedOwner) { this.ownerSent(c,message.occurredAt,!!message.text.trim() || message.media?.kind === 'image'); c = this.conversation(c.id); }
+          if (verifiedOwner) { this.ownerSent(c,message.occurredAt,!!message.text.trim() || message.media?.kind === 'image' || message.media?.kind === 'audio'); c = this.conversation(c.id); }
         }
       } else c = this.invalidate(c, false);
       this.store.saveMessage(message);
@@ -235,22 +246,29 @@ export class Workflow {
     if ('quotedMessageId' in action && action.quotedMessageId && quotedMessageId && action.quotedMessageId !== quotedMessageId)
       throw new DomainError('quote_conflict',422);
     quotedMessageId ??= 'quotedMessageId' in action ? action.quotedMessageId ?? null : null;
-    if (quotedMessageId && !('text' in action) && action.kind !== 'image') throw new DomainError('quote_requires_text', 422);
+    if (quotedMessageId && !('text' in action) && action.kind !== 'image' && action.kind !== 'audio') throw new DomainError('quote_requires_text', 422);
     if (quotedMessageId && !messages.some(m => m.id === quotedMessageId)) throw new DomainError('invalid_quote', 422);
     if ('reaction' in action && !messages.some(m => m.id === action.reaction.targetMessageId)) throw new DomainError('invalid_reaction_target', 422);
   }
-  createDraft(conversationId: string, proposed: Action, expectedVersion: number, requestId: string): Draft {
+  private checkAudioSources(c:Conversation,ids:string[]):void {
+    for(const id of ids){
+      const message=this.store.message(this.accountId,id);const media=message?.media;
+      if(message?.conversationId!==c.id || media?.kind!=='audio' || media.viewOnce || media.access!=='available'
+        || media.expiresAt!==null && media.expiresAt<=this.clock())throw new DomainError('audio_source_unavailable',410);
+    }
+  }
+  createDraft(conversationId: string, proposed: Action, expectedVersion: number, requestId: string, audioSourceIds:string[] = []): Draft {
     const action = Action.parse(proposed);
-    return this.request(requestId, { operation: 'draft', conversationId, action, expectedVersion }, Draft, () => {
+    return this.request(requestId, { operation: 'draft', conversationId, action, expectedVersion, ...(audioSourceIds.length ? {audioSourceIds} : {}) }, Draft, () => {
       let c = this.conversation(conversationId);
       if (!aiAccess(c, this.accountId) || c.control === 'manual') throw new DomainError('ai_access_denied', 403);
       if (c.workflowVersion !== expectedVersion) throw new DomainError('stale_workflow');
-      this.targets(c, action);
+      this.targets(c, action);this.checkAudioSources(c,audioSourceIds);
       const trigger = this.store.messages(this.accountId, c.id).filter(m => m.direction === 'inbound').sort((a,b) => b.occurredAt-a.occurredAt)[0];
       if (!trigger) throw new DomainError('no_inbound_message', 422);
       if (action.kind === 'handover') c = this.takeOver(c,true);
       const draft = Draft.parse({ id: randomUUID(), accountId: this.accountId, conversationId, triggerMessageId: trigger.id,
-        workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, revision: 1, action,
+        workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, revision: 1, action, ...(audioSourceIds.length ? {audioSourceIds} : {}),
         state: action.kind === 'handover' ? 'needs_owner' : action.kind === 'silence' ? 'dismissed' : 'pending',
         createdAt: this.clock(), handoverAt: action.kind === 'handover' ? this.clock() : null, edited: false });
       this.store.saveDraft(draft); return draft;
@@ -344,16 +362,23 @@ export class Workflow {
       this.store.saveProposal({ ...p, consumed: true }); return c;
     });
   }
-  private queue(c: Conversation, action: OwnerAction, requestId: string, origin: Outbox['origin'], authoredAs: Outbox['authoredAs'], quotedMessageId: string | null): Outbox {
+  private queue(c: Conversation, action: OwnerAction, requestId: string, origin: Outbox['origin'], authoredAs: Outbox['authoredAs'], quotedMessageId: string | null, audioSourceIds:string[] = []): Outbox {
     quotedMessageId ??= 'quotedMessageId' in action ? action.quotedMessageId ?? null : null;
     this.targets(c, action, quotedMessageId);
     if (action.kind === 'image') {
       if (origin !== 'owner_manual') throw new DomainError('owner_image_only',403);
       if (!this.store.imageUpload(this.accountId,c.id,action.uploadId)) throw new DomainError('upload_not_found',404);
     }
+    if(action.kind==='audio') {
+      if(origin!=='owner_manual')throw new DomainError('owner_audio_only',403);
+      if(!this.store.audioUpload(this.accountId,c.id,action.uploadId))throw new DomainError('upload_not_found',404);
+      const previous=this.store.outboxes(this.accountId,c.id).find(o=>o.components.some(p=>p.kind==='audio' && p.uploadId===action.uploadId && !['failed','cancelled'].includes(p.state)));
+      if(previous)throw new DomainError(previous.components.some(p=>p.state==='unknown' || p.state==='dispatching') ? 'delivery_unknown' : 'audio_already_queued');
+    }
     const units = actionUnits(action); if (!units) throw new DomainError('no_outbound_action', 422);
     let grant: Grant | undefined;
     if (origin !== 'owner_manual') {
+      this.checkAudioSources(c,audioSourceIds);
       if (!aiAccess(c, this.accountId) || c.control === 'manual' || !inPermittedHours(c, this.clock())) throw new DomainError('send_denied', 403);
       if (this.store.outboxes(this.accountId, c.id).some(o => o.components.some(p => p.state === 'unknown'))) throw new DomainError('delivery_unknown');
       grant = this.grant(c.id);
@@ -368,8 +393,9 @@ export class Workflow {
     if ('reaction' in action) components.push({ id: randomUUID(), kind: 'reaction', text: null, reaction: action.reaction, state: 'queued', transportId: null });
     if ('text' in action) components.push({ id: randomUUID(), kind: 'text', text: action.text, reaction: null, state: 'queued', transportId: null });
     if (action.kind === 'image') components.push({ id: randomUUID(), kind:'image', uploadId:action.uploadId, text:action.caption, reaction:null, state:'queued', transportId:null });
+    if(action.kind==='audio')components.push({id:randomUUID(),kind:'audio',uploadId:action.uploadId,text:null,reaction:null,state:'queued',transportId:null});
     const outbox = Outbox.parse({ id: randomUUID(), accountId: this.accountId, conversationId: c.id, requestId,
-      workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, action, origin, authoredAs,
+      workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, action, origin, authoredAs, ...(audioSourceIds.length ? {audioSourceIds} : {}),
       state: 'queued', components, quotedMessageId, grantId: grant?.id ?? null, units, transportId: null, createdAt: this.clock() });
     this.store.saveOutbox(outbox); return outbox;
   }
@@ -379,7 +405,7 @@ export class Workflow {
       if (!draft) throw new DomainError('draft_not_found', 404);
       const c = this.conversation(draft.conversationId);
       if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion || draft.policyVersion !== c.policyVersion) throw new DomainError('stale_draft');
-      const outbox = this.queue(c, draft.action, requestId, 'assistant_approved', draft.edited ? 'owner_edited_assistant' : 'assistant_written', null);
+      const outbox = this.queue(c, draft.action, requestId, 'assistant_approved', draft.edited ? 'owner_edited_assistant' : 'assistant_written', null, draft.audioSourceIds);
       this.store.saveDraft({ ...draft, state: 'approved' }); return outbox;
     });
   }
@@ -389,7 +415,7 @@ export class Workflow {
       if (!draft) throw new DomainError('draft_not_found', 404);
       const c = this.conversation(draft.conversationId);
       if (draft.state !== 'pending' || draft.workflowVersion !== c.workflowVersion || draft.policyVersion !== c.policyVersion) throw new DomainError('stale_draft');
-      const outbox = this.queue(c, draft.action, requestId, 'assistant_auto', 'assistant_written', null);
+      const outbox = this.queue(c, draft.action, requestId, 'assistant_auto', 'assistant_written', null, draft.audioSourceIds);
       this.store.saveDraft({ ...draft, state: 'approved' }); return outbox;
     });
   }
@@ -401,6 +427,7 @@ export class Workflow {
   private fresh(outbox: Outbox): void {
     if (outbox.origin === 'owner_manual') return;
     const c = this.conversation(outbox.conversationId);
+    this.checkAudioSources(c,outbox.audioSourceIds ?? []);
     if (this.store.outboxes(this.accountId, c.id).some(other => other.id !== outbox.id && other.components.some(p => p.state === 'unknown'))) throw new DomainError('delivery_unknown');
     if (!aiAccess(c, this.accountId) || c.control === 'manual' || !inPermittedHours(c, this.clock())
       || c.workflowVersion !== outbox.workflowVersion || c.policyVersion !== outbox.policyVersion) throw new DomainError('stale_delivery');
@@ -445,15 +472,16 @@ export class Workflow {
         this.release(outbox, component, result.state);
         if (result.state === 'accepted') {
           component.transportId = result.transportId; outbox.transportId ??= result.transportId;
-          if ((component.kind === 'text' || component.kind === 'image') && component.text !== null) {
-            const upload = component.uploadId ? this.store.imageUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
+          if (component.kind === 'audio' || (component.kind === 'text' || component.kind === 'image') && component.text !== null) {
+            const audio = component.kind==='audio' && component.uploadId ? this.store.audioUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
+            const upload = component.kind==='image' && component.uploadId ? this.store.imageUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
             const raw=this.store.waMessage(this.accountId,outbox.conversationId,result.transportId);
             const deleted=!!raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success;
             const messageId=randomUUID();
             this.store.saveMessage({ id: messageId, accountId: this.accountId, conversationId: outbox.conversationId,
-              transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: deleted ? '[Message deleted]' : component.text,
+              transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: deleted ? '[Message deleted]' : component.text ?? '',
               occurredAt: this.clock(), source: 'live', quotedMessageId: outbox.quotedMessageId,
-              statusReply: false, statusContext: null, media: !deleted && upload ? {kind:'image',access:'available',fixture:null,
+              statusReply: false, statusContext: null, media: !deleted && audio ? {kind:'audio',access:'available',fixture:null,description:'Owner voice note',viewOnce:false,expiresAt:null,mime:audio.mime,duration:audio.duration} : !deleted && upload ? {kind:'image',access:'available',fixture:null,
                 description:'Owner image',viewOnce:false,expiresAt:null,mime:upload.mime,width:upload.width,height:upload.height} : null, reaction: null });
           } else if (component.reaction) {
             const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
@@ -467,7 +495,7 @@ export class Workflow {
           }
         } else for (const pending of outbox.components) if (pending.state === 'queued') this.release(outbox, pending, 'cancelled');
         outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
-        if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text' || component.kind === 'image');
+        if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text' || component.kind === 'image' || component.kind === 'audio');
       });
     }
     return this.store.transaction(() => {
@@ -492,7 +520,7 @@ export class Workflow {
         const c = this.conversation(id);
         if (c.control === 'assistant_allowed') this.resolveHandovers(c.id);
         else {
-          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && (m.text.trim() || m.media?.kind === 'image')).sort((a,b) => b.occurredAt-a.occurredAt)[0];
+          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && (m.text.trim() || m.media?.kind === 'image' || m.media?.kind === 'audio')).sort((a,b) => b.occurredAt-a.occurredAt)[0];
           if (ownerReply) this.resolveHandovers(c.id,ownerReply.occurredAt);
         }
       }

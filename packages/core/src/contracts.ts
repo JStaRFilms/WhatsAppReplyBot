@@ -26,7 +26,7 @@ export const Media = z.object({
   access: z.enum(['available', 'missing', 'expired', 'unsupported']),
   fixture: z.enum(['image', 'sticker', 'gif']).nullable(),
   description: z.string().max(512), viewOnce: z.boolean(),
-  expiresAt: z.number().nullable(), mime: z.string().optional(), width: z.number().int().positive().optional(), height: z.number().int().positive().optional(),
+  expiresAt: z.number().nullable(), duration:z.number().nonnegative().optional(), mime: z.string().optional(), width: z.number().int().positive().optional(), height: z.number().int().positive().optional(),
 });
 export const ReactionObservation = z.object({
   actor: z.enum(['owner', 'assistant', 'contact', 'unknown']), actorId: z.string().min(1),
@@ -39,6 +39,12 @@ export const ImageUpload = z.object({
   width: z.number().int().positive(), height: z.number().int().positive(),
 });
 export type ImageUpload = z.infer<typeof ImageUpload>;
+export const AudioUpload = z.object({
+  id:z.string().uuid(), mime:z.literal('audio/ogg; codecs=opus'), duration:z.number().positive().max(300),
+});
+export type AudioUpload = z.infer<typeof AudioUpload>;
+export const AudioTranscript = z.object({text:z.string().max(12000),uncertain:z.boolean()}).strict();
+export type AudioTranscript = z.infer<typeof AudioTranscript>;
 export const Message = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), transportId: z.string(),
   direction: z.enum(['inbound', 'outbound']),
@@ -63,12 +69,16 @@ export const OwnerImageAction = z.object({
   kind: z.literal('image'), uploadId: z.string().uuid(), caption: z.string().max(4000), reason: Reason,
 }).strict();
 export type OwnerImageAction = z.infer<typeof OwnerImageAction>;
-export const OwnerAction = z.union([Action, OwnerImageAction]);
+export const OwnerAudioAction = z.object({
+  kind:z.literal('audio'),uploadId:z.string().uuid(),reason:Reason,
+}).strict();
+export type OwnerAudioAction = z.infer<typeof OwnerAudioAction>;
+export const OwnerAction = z.union([Action, OwnerImageAction, OwnerAudioAction]);
 export type OwnerAction = z.infer<typeof OwnerAction>;
 export const Draft = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), triggerMessageId: z.string(),
   workflowVersion: z.number(), policyVersion: z.number(), revision: z.number().int().positive(),
-  action: Action, state: z.enum(['pending', 'needs_owner', 'approved', 'dismissed', 'stale', 'resolved']),
+  action: Action, audioSourceIds:z.array(z.string().min(1)).max(2).optional(), state: z.enum(['pending', 'needs_owner', 'approved', 'dismissed', 'stale', 'resolved']),
   createdAt: z.number(), handoverAt: z.number().nullable().optional(), edited: z.boolean(),
 });
 export type Draft = z.infer<typeof Draft>;
@@ -79,7 +89,7 @@ export const Grant = z.object({
 });
 export type Grant = z.infer<typeof Grant>;
 export const Component = z.object({
-  id: z.string(), kind: z.enum(['text', 'reaction', 'image']), text: z.string().nullable(), uploadId: z.string().uuid().optional(),
+  id: z.string(), kind: z.enum(['text', 'reaction', 'image', 'audio']), text: z.string().nullable(), uploadId: z.string().uuid().optional(),
   reaction: Reaction.nullable(),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed']),
   transportId: z.string().nullable(),
@@ -87,7 +97,7 @@ export const Component = z.object({
 export type Component = z.infer<typeof Component>;
 export const Outbox = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), requestId: z.string(),
-  workflowVersion: z.number(), policyVersion: z.number(), action: OwnerAction,
+  workflowVersion: z.number(), policyVersion: z.number(), action: OwnerAction, audioSourceIds:z.array(z.string().min(1)).max(2).optional(),
   origin: z.enum(['owner_manual', 'assistant_approved', 'assistant_auto']),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed', 'partial']),
   components: z.array(Component).min(1).max(2), quotedMessageId: z.string().nullable(),
@@ -112,7 +122,7 @@ export const Snapshot = z.object({
 export type Snapshot = z.infer<typeof Snapshot>;
 
 export function actionUnits(action: OwnerAction): number {
-  return action.kind === 'reaction_plus_text' ? 2 : action.kind === 'text' || action.kind === 'reaction' || action.kind === 'image' ? 1 : 0;
+  return action.kind === 'reaction_plus_text' ? 2 : action.kind === 'text' || action.kind === 'reaction' || action.kind === 'image' || action.kind === 'audio' ? 1 : 0;
 }
 export class DomainError extends Error {
   constructor(public readonly code: string, public readonly status = 409) { super(code); }

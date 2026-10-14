@@ -12,3 +12,17 @@ test('remote model cannot run without explicit permission; malformed permissions
   const enabled = new OpenRouterClient({ apiKey: 'synthetic-test-key', allowRemote: true, ownerConsent: true, fetcher });
   await assert.rejects(enabled.generate(context), /invalid_model_response/); assert.equal(calls, 1);
 });
+
+test('provider schema uses an object envelope with anyOf and validates the returned action', async () => {
+  const context: ModelContext = { instructions: 'Propose only', messages: [], memories: [], styleExamples: [], limitations: [], worstCaseTextTokens: 100 };
+  const action = { kind: 'text', text: 'yeah, tomorrow works', reason: 'Synthetic test.' };
+  const fetcher: typeof fetch = async (_url, init) => {
+    assert.equal(typeof init?.body, 'string');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.response_format.json_schema.schema.type, 'object');
+    assert.ok(body.response_format.json_schema.schema.properties.action.anyOf);
+    assert.equal(JSON.stringify(body.response_format.json_schema.schema).includes('"oneOf"'), false);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ action }) } }] }));
+  };
+  assert.deepEqual(await new OpenRouterClient({ apiKey: 'synthetic-test-key', allowRemote: true, ownerConsent: true, fetcher }).generate(context), action);
+});

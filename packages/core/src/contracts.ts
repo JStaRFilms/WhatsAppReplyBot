@@ -55,11 +55,19 @@ export const Grant = z.object({
   reservedUnits: z.number().int().nonnegative(), state: z.enum(['active', 'revoked', 'ended']),
 });
 export type Grant = z.infer<typeof Grant>;
+export const Component = z.object({
+  id: z.string(), kind: z.enum(['text', 'reaction']), text: z.string().nullable(),
+  reaction: Reaction.nullable(),
+  state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed']),
+  transportId: z.string().nullable(),
+});
+export type Component = z.infer<typeof Component>;
 export const Outbox = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), requestId: z.string(),
   workflowVersion: z.number(), policyVersion: z.number(), action: Action,
   origin: z.enum(['owner_manual', 'assistant_approved', 'assistant_auto']),
-  state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed']),
+  state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed', 'partial']),
+  components: z.array(Component).min(1).max(2), quotedMessageId: z.string().nullable(),
   grantId: z.string().nullable(), units: z.number(), transportId: z.string().nullable(),
   authoredAs: z.enum(['owner_written', 'assistant_written', 'owner_edited_assistant']), createdAt: z.number(),
 });
@@ -69,6 +77,7 @@ export const Proposal = z.object({
   kind: z.enum(['change_mode', 'resume', 'delegate']), mode: Mode.nullable(),
   maxUnits: z.number().int().min(1).max(20).nullable(), expiresAt: z.number().nullable(),
   workflowVersion: z.number(), policyVersion: z.number(), confirmBy: z.number(), consumed: z.boolean(),
+  payloadHash: z.string().length(64),
 });
 export type Proposal = z.infer<typeof Proposal>;
 export const Snapshot = z.object({

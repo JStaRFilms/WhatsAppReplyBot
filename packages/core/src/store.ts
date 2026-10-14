@@ -1,0 +1,90 @@
+import { DatabaseSync } from 'node:sqlite';
+import { z } from 'zod';
+import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError } from './contracts.ts';
+
+const Payload = z.object({ payload: z.string() });
+const Cached = z.object({ payload_hash: z.string(), result: z.string() });
+type Table = 'conversations' | 'messages' | 'drafts' | 'delegations' | 'outbox' | 'owner_actions';
+type RecordData = Conversation | Message | Draft | Grant | Outbox | Proposal;
+
+export class SqliteStore {
+  private readonly db: DatabaseSync;
+  constructor(path = ':memory:') {
+    this.db = new DatabaseSync(path);
+    this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)),
+        UNIQUE(account_id,id));
+      CREATE TABLE IF NOT EXISTS api_requests (
+        account_id TEXT NOT NULL, request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+        result TEXT NOT NULL, PRIMARY KEY(account_id,request_id));`);
+    for (const table of ['messages', 'drafts', 'delegations', 'outbox', 'owner_actions'] as const) {
+      this.db.exec(`CREATE TABLE IF NOT EXISTS ${table} (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+        payload TEXT NOT NULL CHECK(json_valid(payload)),
+        FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));
+        CREATE INDEX IF NOT EXISTS ${table}_conversation ON ${table}(account_id,conversation_id);`);
+    }
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS message_transport_id ON messages(
+        account_id,conversation_id,json_extract(payload,'$.transportId'));
+      CREATE UNIQUE INDEX IF NOT EXISTS outbox_request_id ON outbox(account_id,json_extract(payload,'$.requestId'));
+      CREATE UNIQUE INDEX IF NOT EXISTS active_grant ON delegations(account_id,conversation_id)
+        WHERE json_extract(payload,'$.state')='active';`);
+  }
+  close(): void { this.db.close(); }
+  transaction<T>(operation: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try { const result = operation(); this.db.exec('COMMIT'); return result; }
+    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  private read<T>(table: Table, accountId: string, id: string, schema: z.ZodType<T>): T | undefined {
+    const row = this.db.prepare(`SELECT payload FROM ${table} WHERE account_id=? AND id=?`).get(accountId, id);
+    return row ? schema.parse(JSON.parse(Payload.parse(row).payload)) : undefined;
+  }
+  private list<T>(table: Table, accountId: string, schema: z.ZodType<T>, conversationId?: string): T[] {
+    const where = conversationId === undefined ? 'account_id=?' : 'account_id=? AND conversation_id=?';
+    const params = conversationId === undefined ? [accountId] : [accountId, conversationId];
+    return this.db.prepare(`SELECT payload FROM ${table} WHERE ${where} ORDER BY rowid`).all(...params)
+      .map(row => schema.parse(JSON.parse(Payload.parse(row).payload)));
+  }
+  private put(table: Table, record: RecordData): void {
+    let changes = 0;
+    if (table === 'conversations') {
+      changes = Number(this.db.prepare(`INSERT INTO conversations(id,account_id,payload) VALUES(?,?,?)
+        ON CONFLICT(id) DO UPDATE SET payload=excluded.payload WHERE account_id=excluded.account_id`)
+        .run(record.id, record.accountId, JSON.stringify(record)).changes);
+    } else if ('conversationId' in record) {
+      changes = Number(this.db.prepare(`INSERT INTO ${table}(id,account_id,conversation_id,payload) VALUES(?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET payload=excluded.payload
+        WHERE account_id=excluded.account_id AND conversation_id=excluded.conversation_id`)
+        .run(record.id, record.accountId, record.conversationId, JSON.stringify(record)).changes);
+    } else { throw new Error('invalid_record_table'); }
+    if (!changes) throw new DomainError('record_scope_conflict', 403);
+  }
+  conversation(accountId: string, id: string): Conversation | undefined { return this.read('conversations', accountId, id, Conversation); }
+  conversations(accountId: string): Conversation[] { return this.list('conversations', accountId, Conversation); }
+  saveConversation(record: Conversation): void { this.put('conversations', Conversation.parse(record)); }
+  messages(accountId: string, conversationId: string): Message[] { return this.list('messages', accountId, Message, conversationId); }
+  saveMessage(record: Message): void { this.put('messages', Message.parse(record)); }
+  drafts(accountId: string, conversationId?: string): Draft[] { return this.list('drafts', accountId, Draft, conversationId); }
+  draft(accountId: string, id: string): Draft | undefined { return this.read('drafts', accountId, id, Draft); }
+  saveDraft(record: Draft): void { this.put('drafts', Draft.parse(record)); }
+  grants(accountId: string, conversationId?: string): Grant[] { return this.list('delegations', accountId, Grant, conversationId); }
+  saveGrant(record: Grant): void { this.put('delegations', Grant.parse(record)); }
+  outboxes(accountId: string, conversationId?: string): Outbox[] { return this.list('outbox', accountId, Outbox, conversationId); }
+  outbox(accountId: string, id: string): Outbox | undefined { return this.read('outbox', accountId, id, Outbox); }
+  saveOutbox(record: Outbox): void { this.put('outbox', Outbox.parse(record)); }
+  proposal(accountId: string, id: string): Proposal | undefined { return this.read('owner_actions', accountId, id, Proposal); }
+  saveProposal(record: Proposal): void { this.put('owner_actions', Proposal.parse(record)); }
+  request(accountId: string, id: string): { hash: string; result: unknown } | undefined {
+    const row = this.db.prepare('SELECT payload_hash,result FROM api_requests WHERE account_id=? AND request_id=?').get(accountId, id);
+    if (!row) return undefined;
+    const saved = Cached.parse(row);
+    return { hash: saved.payload_hash, result: JSON.parse(saved.result) };
+  }
+  saveRequest(accountId: string, id: string, hash: string, result: unknown): void {
+    this.db.prepare('INSERT INTO api_requests(account_id,request_id,payload_hash,result) VALUES(?,?,?,?)')
+      .run(accountId, id, hash, JSON.stringify(result));
+  }
+}

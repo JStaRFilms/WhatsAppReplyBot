@@ -1,19 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Conversation, Message, Action, actionUnits } from '../src/contracts.ts';
+import { Action, actionUnits } from '../src/contracts.ts';
 import { latestTen, automaticDecision, inPermittedHours } from '../src/policy.ts';
 import { buildContext } from '../src/context.ts';
 
-export function chat(id = 'c1'): Conversation {
-  return { id, accountId: 'a', contactId: id, name: id, kind: 'direct', mode: null,
-    excluded: false, control: 'assistant_allowed', workflowVersion: 1, policyVersion: 1,
-    lastHumanActivityAt: 100, hours: null };
-}
-export function message(id = 'm1', conversationId = 'c1'): Message {
-  return { id, accountId: 'a', conversationId, transportId: id, direction: 'inbound',
-    authorship: 'contact_written', text: 'hello', occurredAt: 100, source: 'live',
-    quotedMessageId: null, statusReply: false, statusContext: null, media: null, reaction: null };
-}
+import { chat, message } from './fixtures.ts';
 test('select ten after removing explicit modes, exclusion and non-direct chats', () => {
   const chats = Array.from({ length: 15 }, (_, i) => ({ ...chat('c' + i), lastHumanActivityAt: i }));
   const explicit = { ...chat('auto'), mode: 'auto_reply' as const, lastHumanActivityAt: 1000 };

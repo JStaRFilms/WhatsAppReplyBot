@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Send, SlidersHorizontal, Smile, X } from 'lucide-react-native';
 import { randomUUID } from 'expo-crypto';
@@ -20,6 +20,7 @@ export default function ConversationScreen() {
   const [quote, setQuote] = useState<Message | null>(null); const [selected, setSelected] = useState<Message | null>(null);
   const [permissions, setPermissions] = useState(false); const [pauseState, setPauseState] = useState<'idle'|'pending'|'acknowledged'|'failed'>('idle');
   const [sending, setSending] = useState(false); const sendLock = useRef(false);
+  const [drafting, setDrafting] = useState(false); const draftLock = useRef(false);
   const pendingIntent = useRef<{ key: string; requestId: string } | null>(null);
   const scroll = useRef<ScrollView>(null);
   const nearBottom = useRef(true); const opened = useRef(false); const viewportHeight = useRef(0);
@@ -45,6 +46,12 @@ export default function ConversationScreen() {
     const result = await perform('/v1/conversations/'+encodeURIComponent(id)+'/pause', PauseResult, {});
     setPauseState(result?.acknowledged ? 'acknowledged' : 'failed');
   };
+  const requestDraft = async () => {
+    if (!id || draftLock.current || status !== 'online') return;
+    draftLock.current = true; setDrafting(true);
+    try { await perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }
+    finally { draftLock.current = false; setDrafting(false); }
+  };
   const send = async (action: Action, quotedMessageId: string | null = null) => {
     if (!id || sendLock.current) return; sendLock.current = true; setSending(true);
     const key = JSON.stringify({ action, quotedMessageId });
@@ -61,8 +68,10 @@ export default function ConversationScreen() {
     <Stack.Screen options={{ title: c.name, headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)} style={{ padding: 10 }}><SlidersHorizontal color={palette.text} size={21}/></Pressable> }}/>
     <View style={{ paddingHorizontal: 20, paddingBottom: 10, flexDirection: 'row', justifyContent: 'space-between' }}>
       <ChatBadge conversation={c} pending={drafts.some(d => d.state === 'pending')}/>
-      {c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && c.control !== 'manual' && <Pressable accessibilityRole="button" onPress={() => { void perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }}>
-        <Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 12 }}>Draft reply</Text>
+      {c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && c.control !== 'manual' && <Pressable accessibilityRole="button" accessibilityState={{ busy: drafting, disabled: drafting || status !== 'online' }}
+        disabled={drafting || status !== 'online'} onPress={() => { void requestDraft(); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {drafting && <ActivityIndicator size="small" color={palette.accent}/>}
+        <Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 12 }}>{drafting ? 'Drafting…' : 'Draft reply'}</Text>
       </Pressable>}
     </View>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>

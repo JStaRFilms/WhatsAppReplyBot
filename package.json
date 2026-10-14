@@ -1,0 +1,21 @@
+{
+  "name": "whatsapp-reply-bot",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "pnpm --filter @replybot/core test && pnpm --filter @replybot/backend test",
+    "typecheck": "pnpm -r typecheck",
+    "backend": "pnpm --filter @replybot/backend dev",
+    "mobile": "pnpm --filter @replybot/mobile start",
+    "mobile:web": "pnpm --filter @replybot/mobile web"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.21.0"
+  }
+}

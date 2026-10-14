@@ -11,6 +11,15 @@ Thumbs.db
 # --- Local orchestration state ---
 .pi/takomi/
 
+# --- Assistant runtime and local credentials ---
+.runtime/
+.env.*
+!.env.example
+.expo/
+web-export/
+playwright-report/
+test-results/
+
 # --- Python / AI ---
 __pycache__/
 *.py[cod]

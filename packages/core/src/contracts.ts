@@ -81,7 +81,7 @@ export const Proposal = z.object({
 });
 export type Proposal = z.infer<typeof Proposal>;
 export const Snapshot = z.object({
-  demo: z.literal(true), connection: z.literal('disconnected'), model: z.literal('local-demo'),
+  demo: z.literal(true), connection: z.literal('disconnected'), model: z.enum(['local-demo', 'openai/gpt-6-luna']),
   accountId: z.string(), conversations: z.array(Conversation), drafts: z.array(Draft), grants: z.array(Grant),
   outbox: z.array(Outbox),
 });

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
-import { DomainError, aiAccess, type Conversation, type Workflow } from '@replybot/core';
+import { DomainError, aiAccess, type Conversation, type Workflow, type Draft } from '@replybot/core';
 import { AssistantResponse } from '@replybot/core/api';
-import { demoReply } from './demo-model.ts';
 
 export function attention(flow: Workflow, start = Date.now()-5*60*60*1000, end = Date.now()) {
   const conversations = flow.store.conversations(flow.accountId);
@@ -22,14 +21,15 @@ function resolve(flow: Workflow, name: string): Conversation[] {
   const exact = all.filter(c => c.name.toLowerCase() === lower);
   return exact.length ? exact : all.filter(c => c.name.toLowerCase().startsWith(lower));
 }
-export function assistantTurn(flow: Workflow, text: string, requestId: string, now: number): AssistantResponse {
+export async function assistantTurn(flow: Workflow, text: string, requestId: string, now: number,
+  generateDraft: (conversationId: string, requestId: string) => Promise<Draft>): Promise<AssistantResponse> {
   const payloadHash = createHash('sha256').update(JSON.stringify({ operation: 'assistant-turn', text })).digest('hex');
   const saved = flow.store.request(flow.accountId, requestId);
   if (saved) {
     if (saved.hash !== payloadHash) throw new DomainError('request_id_conflict');
     return AssistantResponse.parse(saved.result);
   }
-  let result: AssistantResponse = { text: 'Offline demo. Try "review the past five hours", "draft for David", "never reply to Tolu", or "resume David". No real model or WhatsApp account is connected.',
+  let result: AssistantResponse = { text: 'This build supports "review the past five hours", "draft for David", "never reply to Tolu", or "resume David". WhatsApp is not connected; messages are simulated.',
     proposal: null, draftId: null, candidates: [] };
   const match = /^(draft(?: a reply)? for|never reply to|auto reply to|draft only for|resume)\s+(.+)$/i.exec(text.trim());
   if (/^review\b|^what needs me\b/i.test(text.trim())) {
@@ -46,9 +46,8 @@ export function assistantTurn(flow: Workflow, text: string, requestId: string, n
     } else {
       const verb = match[1].toLowerCase();
       if (verb.startsWith('draft') && verb.includes('for') && !verb.startsWith('draft only')) {
-        const context = flow.context(contact.id);
-        const d = flow.createDraft(contact.id, demoReply(context), contact.workflowVersion, requestId+'-draft');
-        result.text = d.state === 'needs_owner' ? d.action.reason : 'Created a local demo draft for '+contact.name+'. No message was sent.';
+        const d = await generateDraft(contact.id, requestId+'-draft');
+        result.text = d.state === 'needs_owner' ? d.action.reason : 'Created a draft for '+contact.name+'. No message was sent.';
         result.draftId = d.id;
       } else {
         const mode = verb === 'never reply to' ? 'never_reply' : verb === 'auto reply to' ? 'auto_reply' : 'draft_only';
@@ -58,6 +57,11 @@ export function assistantTurn(flow: Workflow, text: string, requestId: string, n
           : 'Confirm changing '+contact.name+' to '+mode.replaceAll('_',' ')+'. This has not been applied.';
       }
     }
+  }
+  const completed = flow.store.request(flow.accountId, requestId);
+  if (completed) {
+    if (completed.hash !== payloadHash) throw new DomainError('request_id_conflict');
+    return AssistantResponse.parse(completed.result);
   }
   flow.store.transaction(() => {
     flow.store.saveAssistantTurn({ id: requestId+'-owner', accountId: flow.accountId, role: 'owner', text, createdAt: now, result: null });

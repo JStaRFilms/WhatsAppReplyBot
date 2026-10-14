@@ -20,6 +20,8 @@ export class SqliteStore {
       CREATE TABLE IF NOT EXISTS api_requests (
         account_id TEXT NOT NULL, request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
         result TEXT NOT NULL, PRIMARY KEY(account_id,request_id));
+      CREATE TABLE IF NOT EXISTS account_settings (
+        account_id TEXT PRIMARY KEY, model_consent INTEGER NOT NULL DEFAULT 0 CHECK(model_consent IN (0,1)));
       CREATE TABLE IF NOT EXISTS assistant_turns (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));`);
     for (const table of ['messages', 'drafts', 'delegations', 'outbox', 'owner_actions'] as const) {
@@ -37,6 +39,14 @@ export class SqliteStore {
         WHERE json_extract(payload,'$.state')='active';`);
   }
   close(): void { this.db.close(); }
+  modelConsent(accountId: string): boolean {
+    const row = this.db.prepare('SELECT model_consent FROM account_settings WHERE account_id=?').get(accountId);
+    return row ? z.object({ model_consent: z.number() }).parse(row).model_consent === 1 : false;
+  }
+  saveModelConsent(accountId: string, consent: boolean): void {
+    this.db.prepare('INSERT INTO account_settings(account_id,model_consent) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET model_consent=excluded.model_consent')
+      .run(accountId, consent ? 1 : 0);
+  }
   assistantTurns(accountId: string): AssistantTurn[] {
     return this.db.prepare('SELECT payload FROM assistant_turns WHERE account_id=? ORDER BY rowid DESC LIMIT 100').all(accountId)
       .map(row => AssistantTurn.parse(JSON.parse(Payload.parse(row).payload))).reverse();

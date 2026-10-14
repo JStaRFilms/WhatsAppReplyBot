@@ -42,6 +42,13 @@ export class Workflow {
       return result;
     });
   }
+  setModelConsent(consent: boolean, requestId: string): { consent: boolean } {
+    return this.request(requestId, { operation: 'model-consent', consent }, z.object({ consent: z.boolean() }), () => {
+      this.store.saveModelConsent(this.accountId, consent);
+      for (const c of this.store.conversations(this.accountId)) this.invalidate(c, true);
+      return { consent };
+    });
+  }
   private grant(conversationId: string): Grant | undefined {
     return this.store.grants(this.accountId, conversationId).find(g => g.state === 'active');
   }

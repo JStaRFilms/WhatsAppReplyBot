@@ -5,18 +5,19 @@ import { z } from 'zod';
 import { Action, DomainError, Workflow, aiAccess, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
 import { ClientSnapshot } from '@replybot/core/api';
 import { assistantTurn, attention } from './assistant.ts';
-import { demoReply } from './demo-model.ts';
+import { draftGenerator, type RemoteModel } from './draft-model.ts';
 import { DEMO_ACCOUNT, seedDemo } from './seed.ts';
 
 const Request = z.object({ requestId: z.string().min(1).max(96) });
 const Id = z.object({ id: z.string().min(1).max(128) });
 const localOrigin = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-export function createApp(options: { store: SqliteStore; token: string; now?: () => number; seed?: boolean }) {
+export function createApp(options: { store: SqliteStore; token: string; now?: () => number; seed?: boolean; remoteModel?: RemoteModel }) {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const now = options.now ?? Date.now;
   const flow = new Workflow(options.store, DEMO_ACCOUNT, now);
   if (options.seed !== false) seedDemo(options.store, now());
   flow.recover();
+  const generateDraft = draftGenerator(flow, options.remoteModel);
   app.register(cors, { origin: (origin, callback) => callback(null, !origin || localOrigin(origin)) });
   app.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin;
@@ -33,11 +34,12 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     if (error instanceof z.ZodError) return reply.code(422).send({ error: 'invalid_request' });
     return reply.code(500).send({ error: 'service_error' });
   });
-  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(),
+  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
+    modelConsent: options.store.modelConsent(DEMO_ACCOUNT),
     lastMessages: options.store.conversations(DEMO_ACCOUNT).map(c => options.store.messages(DEMO_ACCOUNT, c.id).at(-1)).filter(m => m !== undefined),
     latestTenIds: latestTen(options.store.conversations(DEMO_ACCOUNT), DEMO_ACCOUNT, now()) });
   const simulate = (id: string) => flow.dispatch(id, async () => ({ state: 'accepted', transportId: 'demo-'+randomUUID() }));
-  app.get('/v1/health', async () => ({ demo: true, service: 'ready', whatsapp: 'disconnected', model: 'local-demo' }));
+  app.get('/v1/health', async () => ({ demo: true, service: 'ready', whatsapp: 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo' }));
   app.post('/v1/local-provision', async request => {
     z.object({ confirmLocalDemo: z.literal(true) }).strict().parse(request.body);
     if (!['127.0.0.1', '::1'].includes(request.ip) || !request.headers.origin || !localOrigin(request.headers.origin))
@@ -45,6 +47,10 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     return { token: options.token, demo: true };
   });
   app.get('/v1/snapshot', async () => snapshot());
+  app.post('/v1/model-consent', async request => {
+    const body = Request.extend({ consent: z.boolean() }).strict().parse(request.body);
+    return flow.setModelConsent(body.consent, body.requestId);
+  });
   app.get('/v1/conversations/:id/messages', async request => {
     const { id } = Id.parse(request.params); flow.conversation(id);
     return options.store.messages(DEMO_ACCOUNT, id).slice(-100);
@@ -61,8 +67,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   app.post('/v1/conversations/:id/draft', async request => {
     const { id } = Id.parse(request.params); const body = Request.strict().parse(request.body);
-    const c = flow.conversation(id); const context = flow.context(id);
-    return flow.createDraft(id, demoReply(context), c.workflowVersion, body.requestId);
+    return generateDraft(id, body.requestId);
   });
   app.post('/v1/drafts/:id/decision', async request => {
     const { id } = Id.parse(request.params);
@@ -94,7 +99,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   app.get('/v1/assistant/turns', async () => options.store.assistantTurns(DEMO_ACCOUNT));
   app.post('/v1/assistant/turns', async request => {
     const body = Request.extend({ text: z.string().trim().min(1).max(4000) }).strict().parse(request.body);
-    return assistantTurn(flow, body.text, body.requestId, now());
+    return assistantTurn(flow, body.text, body.requestId, now(), generateDraft);
   });
   app.get('/v1/review', async () => attention(flow, now()-5*60*60*1000, now()));
   app.post('/v1/conversations/:id/demo-incoming', async request => {
@@ -115,7 +120,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
       const grant = options.store.grants(DEMO_ACCOUNT, id).find(g => g.state === 'active');
       const decision = automaticDecision(current, options.store.conversations(DEMO_ACCOUNT), DEMO_ACCOUNT, now(), body.source, grant);
       if (decision !== 'none') {
-        const d = flow.createDraft(id, demoReply(flow.context(id)), current.workflowVersion, body.requestId+'-draft');
+        const d = await generateDraft(id, body.requestId+'-draft');
         if (decision === 'auto' && d.state === 'pending') {
           const queued = flow.autoSend(d.id, body.requestId+'-auto'); await simulate(queued.id);
         }

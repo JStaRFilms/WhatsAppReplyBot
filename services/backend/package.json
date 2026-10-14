@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "openrouter": "node --env-file-if-exists=../../.env --import tsx src/index.ts --enable-openrouter",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },

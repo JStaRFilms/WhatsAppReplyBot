@@ -33,6 +33,7 @@ export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
       : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>
         {'text' in draft.action ? draft.action.text : 'reaction' in draft.action ? 'React '+draft.action.reaction.emoji : draft.action.reason}
       </Text>}
+    {draft.state === 'stale' && <Button label="Dismiss" secondary disabled={busy || status!=='online'} onPress={()=>{void decide('dismiss');}}/>}
     {draft.state === 'needs_owner' && <Button label="Handled" secondary disabled={busy || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>}
     {pending && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       <Button label={editing ? 'Save draft' : 'Send reply'} disabled={busy || status !== 'online' || (editing && !text.trim())} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>

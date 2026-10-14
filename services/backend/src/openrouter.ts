@@ -38,7 +38,9 @@ export class OpenRouterClient {
         'X-OpenRouter-Title':this.options.appName || 'Otherme','X-OpenRouter-App-Visibility':'hidden' },
       body:JSON.stringify({ model:'openai/gpt-6-luna',max_tokens:1000,
         messages:[{role:'system',content:context.instructions},{role:'user',content}],
-        response_format:{type:'json_schema',json_schema:{name:'reply_action',strict:true,schema:z.toJSONSchema(Reply)}},
+        response_format:{type:'json_schema',json_schema:{name:'reply_action',strict:true,schema:z.toJSONSchema(Reply,{override:({jsonSchema})=>{
+          if(jsonSchema.type==='object' && jsonSchema.properties?.quotedMessageId)jsonSchema.required=Object.keys(jsonSchema.properties);
+        }})}},
       }),
     });
     if (!response.ok) throw new DomainError('model_request_failed',502);

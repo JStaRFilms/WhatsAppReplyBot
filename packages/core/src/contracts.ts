@@ -26,8 +26,19 @@ export const Media = z.object({
   access: z.enum(['available', 'missing', 'expired', 'unsupported']),
   fixture: z.enum(['image', 'sticker', 'gif']).nullable(),
   description: z.string().max(512), viewOnce: z.boolean(),
-  expiresAt: z.number().nullable(),
+  expiresAt: z.number().nullable(), mime: z.string().optional(), width: z.number().int().positive().optional(), height: z.number().int().positive().optional(),
 });
+export const ReactionObservation = z.object({
+  actor: z.enum(['owner', 'assistant', 'contact', 'unknown']), actorId: z.string().min(1),
+  transportId: z.string().min(1), emoji: z.string().max(64).nullable(),
+  occurredAt: z.number().nonnegative(), source: z.enum(['live', 'backfill', 'replay', 'unknown']),
+});
+export type ReactionObservation = z.infer<typeof ReactionObservation>;
+export const ImageUpload = z.object({
+  id: z.string().uuid(), mime: z.literal('image/jpeg'),
+  width: z.number().int().positive(), height: z.number().int().positive(),
+});
+export type ImageUpload = z.infer<typeof ImageUpload>;
 export const Message = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), transportId: z.string(),
   direction: z.enum(['inbound', 'outbound']),
@@ -35,7 +46,7 @@ export const Message = z.object({
   text: z.string().max(100_000), occurredAt: z.number(),
   source: z.enum(['live', 'backfill', 'replay', 'unknown']),
   quotedMessageId: z.string().nullable(), statusReply: z.boolean(), statusContext: z.string().max(2000).nullable(),
-  media: Media.nullable(), reaction: z.string().nullable(),
+  media: Media.nullable(), reaction: z.string().nullable(), observedReactions: z.array(ReactionObservation).optional(),
 });
 export type Message = z.infer<typeof Message>;
 const Reason = z.string().min(1).max(512);
@@ -43,11 +54,17 @@ const Reaction = z.object({ targetMessageId: z.string().min(1), emoji: z.enum(['
 export const Action = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('silence'), reason: Reason }).strict(),
   z.object({ kind: z.literal('handover'), reason: Reason }).strict(),
-  z.object({ kind: z.literal('text'), text: z.string().trim().min(1).max(4000), reason: Reason }).strict(),
+  z.object({ kind: z.literal('text'), text: z.string().trim().min(1).max(4000), quotedMessageId: z.string().min(1).nullable().optional(), reason: Reason }).strict(),
   z.object({ kind: z.literal('reaction'), reaction: Reaction, reason: Reason }).strict(),
-  z.object({ kind: z.literal('reaction_plus_text'), reaction: Reaction, text: z.string().trim().min(1).max(4000), reason: Reason }).strict(),
+  z.object({ kind: z.literal('reaction_plus_text'), reaction: Reaction, text: z.string().trim().min(1).max(4000), quotedMessageId: z.string().min(1).nullable().optional(), reason: Reason }).strict(),
 ]);
 export type Action = z.infer<typeof Action>;
+export const OwnerImageAction = z.object({
+  kind: z.literal('image'), uploadId: z.string().uuid(), caption: z.string().max(4000), reason: Reason,
+}).strict();
+export type OwnerImageAction = z.infer<typeof OwnerImageAction>;
+export const OwnerAction = z.union([Action, OwnerImageAction]);
+export type OwnerAction = z.infer<typeof OwnerAction>;
 export const Draft = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), triggerMessageId: z.string(),
   workflowVersion: z.number(), policyVersion: z.number(), revision: z.number().int().positive(),
@@ -62,7 +79,7 @@ export const Grant = z.object({
 });
 export type Grant = z.infer<typeof Grant>;
 export const Component = z.object({
-  id: z.string(), kind: z.enum(['text', 'reaction']), text: z.string().nullable(),
+  id: z.string(), kind: z.enum(['text', 'reaction', 'image']), text: z.string().nullable(), uploadId: z.string().uuid().optional(),
   reaction: Reaction.nullable(),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed']),
   transportId: z.string().nullable(),
@@ -70,7 +87,7 @@ export const Component = z.object({
 export type Component = z.infer<typeof Component>;
 export const Outbox = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), requestId: z.string(),
-  workflowVersion: z.number(), policyVersion: z.number(), action: Action,
+  workflowVersion: z.number(), policyVersion: z.number(), action: OwnerAction,
   origin: z.enum(['owner_manual', 'assistant_approved', 'assistant_auto']),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed', 'partial']),
   components: z.array(Component).min(1).max(2), quotedMessageId: z.string().nullable(),
@@ -94,8 +111,8 @@ export const Snapshot = z.object({
 });
 export type Snapshot = z.infer<typeof Snapshot>;
 
-export function actionUnits(action: Action): number {
-  return action.kind === 'reaction_plus_text' ? 2 : action.kind === 'text' || action.kind === 'reaction' ? 1 : 0;
+export function actionUnits(action: OwnerAction): number {
+  return action.kind === 'reaction_plus_text' ? 2 : action.kind === 'text' || action.kind === 'reaction' || action.kind === 'image' ? 1 : 0;
 }
 export class DomainError extends Error {
   constructor(public readonly code: string, public readonly status = 409) { super(code); }

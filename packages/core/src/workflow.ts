@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, actionUnits } from './contracts.ts';
+import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, ReactionObservation, actionUnits } from './contracts.ts';
 import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
 import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
@@ -28,6 +28,47 @@ export class Workflow {
     const c = this.store.conversation(this.accountId, id);
     if (!c) throw new DomainError('conversation_not_found', 404);
     return c;
+  }
+  stageImage(conversationId: string, image: Omit<ImageUpload, 'id'> & { bytes: Uint8Array }, requestId: string): ImageUpload {
+    const metadata = ImageUpload.omit({id:true}).parse(image);
+    if (!image.bytes.length || image.bytes.length > 10*1024*1024) throw new DomainError('image_too_large',413);
+    return this.request(requestId, {operation:'image-upload',conversationId,...metadata,
+      digest:createHash('sha256').update(image.bytes).digest('hex')}, ImageUpload, () => {
+      this.conversation(conversationId);
+      this.store.cleanupImageUploads(this.accountId,this.clock()-3600000);
+      const upload = {...metadata,id:randomUUID()};
+      this.store.saveImageUpload(this.accountId,conversationId,upload,image.bytes,this.clock());
+      return upload;
+    });
+  }
+  observeReaction(conversationId: string, targetMessageId: string, input: ReactionObservation, verifiedOwner = false): boolean {
+    const observation = ReactionObservation.parse(input);
+    return this.store.transaction(() => {
+      const c = this.conversation(conversationId);
+      const target = this.store.message(this.accountId,targetMessageId);
+      if (!target || target.conversationId !== c.id) throw new DomainError('invalid_reaction_target',422);
+      const known = this.store.outboxes(this.accountId,c.id).find(o => o.components.some(p => p.kind === 'reaction' && p.transportId === observation.transportId && p.reaction?.targetMessageId === target.id));
+      observation.actor = known ? known.origin === 'owner_manual' ? 'owner' : 'assistant'
+        : verifiedOwner ? 'owner' : observation.actor === 'contact' ? 'contact' : 'unknown';
+      if (observation.actor === 'owner' || observation.actor === 'assistant') observation.actorId = 'account';
+      const observations = target.observedReactions ?? [];
+      const sameActor=(r:ReactionObservation)=>observation.actorId==='account' ? r.actor==='owner' || r.actor==='assistant' : r.actorId===observation.actorId;
+      const previous=observations.filter(sameActor).sort((a,b)=>a.occurredAt-b.occurredAt).at(-1);
+      if (previous && (previous.occurredAt > observation.occurredAt || previous.transportId === observation.transportId
+        && previous.emoji === observation.emoji && (previous.source === 'live' || observation.source !== 'live'))) return false;
+      this.store.saveMessage({...target,reaction:observation.emoji,
+        observedReactions:[...observations.filter(r => !sameActor(r)),observation]});
+      if (observation.source === 'live' && observation.actor !== 'assistant' && !known) {
+        if (verifiedOwner) {
+          const next = this.takeOver(c);
+          this.ownerSent(next,observation.occurredAt,false);
+        } else {
+          const pause = pauseState(c); pause.catchUpMessageId = null;
+          this.invalidate({...c,pause},false);
+        }
+      }
+      return true;
+    });
   }
   private request<T>(requestId: string, payload: unknown, schema: z.ZodType<T>, operation: () => T): T {
     if (!requestId || requestId.length > 128) throw new DomainError('invalid_request_id', 422);
@@ -176,7 +217,7 @@ export class Workflow {
         message.authorship = verifiedOwner ? 'owner_written' : 'unknown';
         if (message.source === 'live') {
           c = this.takeOver(c);
-          if (verifiedOwner) { this.ownerSent(c,message.occurredAt,!!message.text.trim()); c = this.conversation(c.id); }
+          if (verifiedOwner) { this.ownerSent(c,message.occurredAt,!!message.text.trim() || message.media?.kind === 'image'); c = this.conversation(c.id); }
         }
       } else c = this.invalidate(c, false);
       this.store.saveMessage(message);
@@ -189,9 +230,12 @@ export class Workflow {
     const c = this.conversation(conversationId);
     return buildContext(c, this.accountId, this.store.messages(this.accountId, c.id), [], 8000, this.clock());
   }
-  private targets(c: Conversation, action: Action, quotedMessageId: string | null = null): void {
+  private targets(c: Conversation, action: OwnerAction, quotedMessageId: string | null = null): void {
     const messages = this.store.messages(this.accountId, c.id);
-    if (quotedMessageId && !('text' in action)) throw new DomainError('quote_requires_text', 422);
+    if ('quotedMessageId' in action && action.quotedMessageId && quotedMessageId && action.quotedMessageId !== quotedMessageId)
+      throw new DomainError('quote_conflict',422);
+    quotedMessageId ??= 'quotedMessageId' in action ? action.quotedMessageId ?? null : null;
+    if (quotedMessageId && !('text' in action) && action.kind !== 'image') throw new DomainError('quote_requires_text', 422);
     if (quotedMessageId && !messages.some(m => m.id === quotedMessageId)) throw new DomainError('invalid_quote', 422);
     if ('reaction' in action && !messages.some(m => m.id === action.reaction.targetMessageId)) throw new DomainError('invalid_reaction_target', 422);
   }
@@ -300,8 +344,13 @@ export class Workflow {
       this.store.saveProposal({ ...p, consumed: true }); return c;
     });
   }
-  private queue(c: Conversation, action: Action, requestId: string, origin: Outbox['origin'], authoredAs: Outbox['authoredAs'], quotedMessageId: string | null): Outbox {
+  private queue(c: Conversation, action: OwnerAction, requestId: string, origin: Outbox['origin'], authoredAs: Outbox['authoredAs'], quotedMessageId: string | null): Outbox {
+    quotedMessageId ??= 'quotedMessageId' in action ? action.quotedMessageId ?? null : null;
     this.targets(c, action, quotedMessageId);
+    if (action.kind === 'image') {
+      if (origin !== 'owner_manual') throw new DomainError('owner_image_only',403);
+      if (!this.store.imageUpload(this.accountId,c.id,action.uploadId)) throw new DomainError('upload_not_found',404);
+    }
     const units = actionUnits(action); if (!units) throw new DomainError('no_outbound_action', 422);
     let grant: Grant | undefined;
     if (origin !== 'owner_manual') {
@@ -318,6 +367,7 @@ export class Workflow {
     const components: Component[] = [];
     if ('reaction' in action) components.push({ id: randomUUID(), kind: 'reaction', text: null, reaction: action.reaction, state: 'queued', transportId: null });
     if ('text' in action) components.push({ id: randomUUID(), kind: 'text', text: action.text, reaction: null, state: 'queued', transportId: null });
+    if (action.kind === 'image') components.push({ id: randomUUID(), kind:'image', uploadId:action.uploadId, text:action.caption, reaction:null, state:'queued', transportId:null });
     const outbox = Outbox.parse({ id: randomUUID(), accountId: this.accountId, conversationId: c.id, requestId,
       workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, action, origin, authoredAs,
       state: 'queued', components, quotedMessageId, grantId: grant?.id ?? null, units, transportId: null, createdAt: this.clock() });
@@ -343,8 +393,8 @@ export class Workflow {
       this.store.saveDraft({ ...draft, state: 'approved' }); return outbox;
     });
   }
-  manualSend(conversationId: string, proposed: Action, requestId: string, quotedMessageId: string | null = null): Outbox {
-    const action = Action.parse(proposed);
+  manualSend(conversationId: string, proposed: OwnerAction, requestId: string, quotedMessageId: string | null = null): Outbox {
+    const action = OwnerAction.parse(proposed);
     return this.request(requestId, { operation: 'manual', conversationId, action, quotedMessageId }, Outbox,
       () => this.queue(this.takeOver(this.conversation(conversationId)), action, requestId, 'owner_manual', 'owner_written', quotedMessageId));
   }
@@ -383,6 +433,8 @@ export class Workflow {
         component.state = 'dispatching'; outbox.state = 'dispatching'; this.store.saveOutbox(outbox); return component;
       });
       if (!part) break;
+      const reactionBefore=part.reaction ? this.store.message(this.accountId,part.reaction.targetMessageId)?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1)?.transportId : undefined;
+      const handoffAt=this.clock();
       let result: TransportResult;
       try { result = await handoff(part); } catch { result = { state: 'unknown' }; }
       this.store.transaction(() => {
@@ -393,19 +445,29 @@ export class Workflow {
         this.release(outbox, component, result.state);
         if (result.state === 'accepted') {
           component.transportId = result.transportId; outbox.transportId ??= result.transportId;
-          if (component.kind === 'text' && component.text !== null) {
+          if ((component.kind === 'text' || component.kind === 'image') && component.text !== null) {
+            const upload = component.uploadId ? this.store.imageUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
+            const raw=this.store.waMessage(this.accountId,outbox.conversationId,result.transportId);
+            const deleted=!!raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success;
             const messageId=randomUUID();
             this.store.saveMessage({ id: messageId, accountId: this.accountId, conversationId: outbox.conversationId,
-              transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: component.text,
+              transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: deleted ? '[Message deleted]' : component.text,
               occurredAt: this.clock(), source: 'live', quotedMessageId: outbox.quotedMessageId,
-              statusReply: false, statusContext: null, media: null, reaction: null });
+              statusReply: false, statusContext: null, media: !deleted && upload ? {kind:'image',access:'available',fixture:null,
+                description:'Owner image',viewOnce:false,expiresAt:null,mime:upload.mime,width:upload.width,height:upload.height} : null, reaction: null });
           } else if (component.reaction) {
             const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
-            if (target) this.store.saveMessage({ ...target, reaction: component.reaction.emoji });
+            const currentReaction=target?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1);
+            if(target && (!currentReaction || currentReaction.transportId===reactionBefore || currentReaction.transportId===result.transportId)) {
+              const actor = outbox.origin === 'owner_manual' ? 'owner' : 'assistant';
+              this.store.saveMessage({ ...target, reaction:component.reaction.emoji,
+                observedReactions:[...(target.observedReactions ?? []).filter(r => r.actor!=='owner' && r.actor!=='assistant'),
+                  {actor,actorId:'account',transportId:result.transportId,emoji:component.reaction.emoji,occurredAt:handoffAt,source:'live'}] });
+            }
           }
         } else for (const pending of outbox.components) if (pending.state === 'queued') this.release(outbox, pending, 'cancelled');
         outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
-        if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text');
+        if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text' || component.kind === 'image');
       });
     }
     return this.store.transaction(() => {
@@ -430,7 +492,7 @@ export class Workflow {
         const c = this.conversation(id);
         if (c.control === 'assistant_allowed') this.resolveHandovers(c.id);
         else {
-          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && m.text.trim()).sort((a,b) => b.occurredAt-a.occurredAt)[0];
+          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && (m.text.trim() || m.media?.kind === 'image')).sort((a,b) => b.occurredAt-a.occurredAt)[0];
           if (ownerReply) this.resolveHandovers(c.id,ownerReply.occurredAt);
         }
       }

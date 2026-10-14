@@ -2,13 +2,15 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Action, DomainError, Workflow, aiAccess, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
+import { Action, OwnerAction, DomainError, Workflow, aiAccess, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
 import { ClientSnapshot } from '@replybot/core/api';
 import { assistantTurn, attention } from './assistant.ts';
 import { draftGenerator, type RemoteModel } from './draft-model.ts';
 import { WhatsAppAdapter } from './whatsapp.ts';
 import { DEMO_ACCOUNT, seedDemo } from './seed.ts';
-import { MediaService } from './media.ts';
+import { MediaService,readableMedia } from './media.ts';
+import { ReplyWindow } from './reply-window.ts';
+import { registerImageUploads } from './image-uploads.ts';
 
 const Request = z.object({ requestId: z.string().min(1).max(96) });
 const Id = z.object({ id: z.string().min(1).max(128) });
@@ -21,16 +23,36 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   if (!options.whatsapp && options.seed !== false) seedDemo(options.store, now());
   flow.recover();
   const allowedOrigin = (origin: string) => localOrigin(origin) || (options.allowedOrigins ?? []).includes(origin);
-  const whatsapp = options.whatsapp ? new WhatsAppAdapter(flow, options.whatsapp.authDir, async message => {
-    if (!options.remoteModel || !options.store.modelConsent(accountId)) return;
-    const c = flow.conversation(message.conversationId);
-    const grant = options.store.grants(accountId,c.id).find(g => g.state === 'active');
-    const decision = automaticDecision(c, options.store.conversations(accountId), accountId, now(), message.source, grant);
-    if (decision === 'none') return;
-    const draft = await generateDraft(c.id,'wa-draft-'+message.id);
-    if (decision === 'auto' && draft.state === 'pending') await whatsapp?.dispatch(flow.autoSend(draft.id,'wa-auto-'+draft.id).id);
-  }) : undefined;
-  const media=whatsapp ? new MediaService(m=>whatsapp.downloadMedia(m),m=>whatsapp.mediaCurrent(m),now) : undefined;
+  const replyWindow=new ReplyWindow(async(message,isCurrent)=>{
+    if(!isCurrent() || whatsapp && (whatsapp.snapshot().state!=='connected' || !options.remoteModel || !options.store.modelConsent(accountId)))return;
+    const c=flow.conversation(message.conversationId);
+    const grant=options.store.grants(accountId,c.id).find(g=>g.state==='active');
+    const decision=automaticDecision(c,options.store.conversations(accountId),accountId,now(),message.source,grant);
+    if(decision==='none')return;
+    let draft;
+    try{draft=await generateDraft(c.id,'window-'+message.id+':'+c.workflowVersion);}
+    catch(error){if(error instanceof DomainError && ['stale_workflow','stale_draft','ai_access_denied','model_consent_revoked'].includes(error.code))return;throw error;}
+    if(!isCurrent() || whatsapp && whatsapp.snapshot().state!=='connected')return;
+    const current=flow.conversation(c.id);const allowance=options.store.grants(accountId,c.id).find(g=>g.state==='active');
+    const latest=options.store.draft(accountId,draft.id);
+    if(automaticDecision(current,options.store.conversations(accountId),accountId,now(),message.source,allowance)==='auto'
+      && latest?.state==='pending' && !latest.edited)await dispatch(flow.autoSend(latest.id,'window-auto-'+latest.id).id);
+  });
+  const whatsapp=options.whatsapp ? new WhatsAppAdapter(flow,options.whatsapp.authDir,async message=>{
+    if(options.remoteModel && options.store.modelConsent(accountId))await replyWindow.enqueue(message);
+  },()=>replyWindow.clear()) : undefined;
+  const media=new MediaService(async message=>{
+    const upload=options.store.sentImageUpload(accountId,message.conversationId,message.transportId);
+    if(upload)return Buffer.from(upload.bytes);
+    if(!whatsapp)throw new DomainError('media_unavailable',404);
+    return whatsapp.downloadMedia(message);
+  },message=>{
+    const saved=options.store.message(accountId,message.id);
+    const raw=options.store.waMessage(accountId,message.conversationId,message.transportId);
+    if(raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success)return false;
+    return !!saved && saved.conversationId===message.conversationId && readableMedia(saved,now())
+      && (!!options.store.sentImageUpload(accountId,message.conversationId,message.transportId) || whatsapp?.mediaCurrent(message)===true);
+  },now);
   const generateDraft=draftGenerator(flow,options.remoteModel,media);
   app.register(cors, { origin: (origin, callback) => callback(null, !origin || allowedOrigin(origin)) });
   app.addHook('onRequest', async (request, reply) => {
@@ -50,6 +72,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     if (error instanceof z.ZodError) return reply.code(422).send({ error: 'invalid_request' });
     return reply.code(500).send({ error: 'service_error' });
   });
+  registerImageUploads(app,flow);
   const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
     modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
     lastMessages: options.store.lastMessages(accountId),
@@ -71,7 +94,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     await whatsapp.start(); return whatsapp.snapshot();
   });
   app.post('/v1/whatsapp/disconnect', async request => {
-    Request.strict().parse(request.body); await whatsapp?.stop(); return { disconnected: true };
+    Request.strict().parse(request.body);replyWindow.clear(); await whatsapp?.stop(); return { disconnected: true };
   });
   app.post('/v1/model-consent', async request => {
     const body = Request.extend({ consent: z.boolean() }).strict().parse(request.body);
@@ -89,7 +112,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   app.get('/v1/conversations/:id/media/:messageId',async(request,reply)=>{
     const {id,messageId}=Id.extend({messageId:z.string().min(1).max(256)}).parse(request.params);flow.conversation(id);
     const message=options.store.message(accountId,messageId);
-    if(!message || message.conversationId!==id || !media)throw new DomainError('media_unavailable',404);
+    if(!message || message.conversationId!==id)throw new DomainError('media_unavailable',404);
     const preview=await media.preview(message);
     return reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').type(preview.mime).send(preview.bytes);
   });
@@ -114,7 +137,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   app.post('/v1/conversations/:id/manual-send', async request => {
     const { id } = Id.parse(request.params);
-    const body = Request.extend({ action: Action, quotedMessageId: z.string().nullable().default(null) }).strict().parse(request.body);
+    const body = Request.extend({ action: OwnerAction, quotedMessageId: z.string().nullable().default(null) }).strict().parse(request.body);
     ready();
     const queued = flow.manualSend(id, body.action, body.requestId, body.quotedMessageId);
     return { simulated: !whatsapp, outbox: await dispatch(queued.id) };
@@ -172,17 +195,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
       quotedMessageId: null, statusReply: false, statusContext: null, reaction: null,
       media: body.media ? { kind: body.media, access: 'available', fixture: body.media, description: 'Synthetic demo media', viewOnce: false, expiresAt: null } : null };
     const inserted = flow.observe(message);
-    if (inserted && aiAccess(c, DEMO_ACCOUNT)) {
-      const current = flow.conversation(id);
-      const grant = options.store.grants(DEMO_ACCOUNT, id).find(g => g.state === 'active');
-      const decision = automaticDecision(current, options.store.conversations(DEMO_ACCOUNT), DEMO_ACCOUNT, now(), body.source, grant);
-      if (decision !== 'none') {
-        const d = await generateDraft(id, body.requestId+'-draft');
-        if (decision === 'auto' && d.state === 'pending') {
-          const queued = flow.autoSend(d.id, body.requestId+'-auto'); await dispatch(queued.id);
-        }
-      }
-    }
+    if(inserted && aiAccess(c,DEMO_ACCOUNT))await replyWindow.enqueue(message);
     return snapshot();
   });
   const catchUps = new Map<string,Promise<void>>();
@@ -201,6 +214,6 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     }
   },1000);
   timer.unref();
-  app.addHook('onClose', async () => { clearInterval(timer); await Promise.allSettled(catchUps.values()); await whatsapp?.stop(); options.store.close(); });
+  app.addHook('onClose', async () => { clearInterval(timer);await replyWindow.close(); await Promise.allSettled(catchUps.values()); await whatsapp?.stop(); options.store.close(); });
   return app;
 }

@@ -3,7 +3,9 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, 
 import { Stack, useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { ChevronLeft, Send, SlidersHorizontal, Smile, X } from 'lucide-react-native';
 import { randomUUID } from '../../lib/uuid';
-import { Draft, type Message, type Action } from '@replybot/core/contracts';
+import { Draft, type Message, type OwnerAction } from '@replybot/core/contracts';
+import { Image } from 'expo-image';
+import { AttachmentPicker,type PickedImage } from '../../components/attachment-picker';
 import { Page, Button } from '../../components/ui';
 import { ChatBadge } from '../../components/chat-badge';
 import { MessageBubble } from '../../components/message-bubble';
@@ -24,11 +26,17 @@ export default function ConversationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const foreground = useForeground();
-  const { snapshot, palette, perform, history, status, reportError, composer, viewed } = useApp();
+  const { snapshot, palette, perform, history, status, reportError, composer, viewed, client } = useApp();
   const cached = useSyncExternalStore(history.subscribe,() => history.get(id),() => undefined);
   const messages = cached?.messages ?? [];
   const [historyError, setHistoryError] = useState(false);
   const {text,setText,ready:draftReady}=useLocalDraft(id);
+  const [attachment,setAttachment]=useState<PickedImage | null>(null);
+  const [picking,setPicking]=useState(false);const [uploading,setUploading]=useState(false);
+  const uploadLock=useRef(false);const activeId=useRef(id);activeId.current=id;
+  const uploadIntent=useRef<{image:PickedImage;requestId:string;uploadId?:string} | null>(null);
+  const occupied=!!text || !!attachment || picking;
+  useEffect(()=>()=>{if(process.env.EXPO_OS==='web' && attachment?.uri.startsWith('blob:'))URL.revokeObjectURL(attachment.uri);},[attachment]);
   const composerState=useRef<{id:string;hasText:boolean} | null>(null);
   const [composerRetry,setComposerRetry]=useState(0);
   const [quote, setQuote] = useState<Message | null>(null); const [selected, setSelected] = useState<Message | null>(null);
@@ -74,6 +82,7 @@ export default function ConversationScreen() {
   useLayoutEffect(() => {
     setPauseState('idle'); setHistoryError(false); setPositioned(false); setAtBottom(false);
     setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);
+    setAttachment(null);setPicking(false);uploadIntent.current=null;
     composerState.current=null; seenMessage.current=null;
     return () => { frames.current.forEach(cancelAnimationFrame); cancelViewed(); };
   }, [id,history,cancelViewed]);
@@ -108,7 +117,7 @@ export default function ConversationScreen() {
   },[id,history,status]));
   useEffect(()=>{
     if(!draftReady||status!=='online'||!id)return;
-    const hasText=!!text;
+    const hasText=occupied;
     if(composerState.current?.id===id&&composerState.current.hasText===hasText)return;
     let active=true;let retry:ReturnType<typeof setTimeout> | undefined;
     setPauseState('pending');
@@ -118,7 +127,7 @@ export default function ConversationScreen() {
       if(active){composerState.current=null;setPauseState('failed');reportError(e instanceof Error?e.message:'AI pause was not acknowledged.');retry=setTimeout(()=>setComposerRetry(n=>n+1),2000);}
     });
     return()=>{active=false;clearTimeout(retry);};
-  },[id,!!text,draftReady,status,composer,composerRetry]);
+  },[id,occupied,draftReady,status,composer,composerRetry]);
   const seenMessage = useRef<string | null>(null);
   useEffect(() => {
     cancelViewed();
@@ -139,16 +148,34 @@ export default function ConversationScreen() {
     try { await perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }
     finally { draftLock.current = false; setDrafting(false); }
   };
-  const send = async (action: Action, quotedMessageId: string | null = null) => {
+  const send = async (action: OwnerAction, quotedMessageId: string | null = null) => {
     if (!id || sendLock.current) return; sendLock.current = true; setSending(true);
     const key = JSON.stringify({ action, quotedMessageId });
     if (pendingIntent.current?.key !== key) pendingIntent.current = { key, requestId: randomUUID() };
     const result = await perform('/v1/conversations/'+encodeURIComponent(id)+'/manual-send', SendResult,
       { action, quotedMessageId, requestId: pendingIntent.current.requestId });
     if (result && result.outbox.state !== 'accepted') reportError(result.outbox.state === 'unknown' || result.outbox.state === 'partial' ? 'Send outcome is uncertain. Do not resend this message.' : 'The message was not accepted. Check WhatsApp connection.');
-    if (result?.outbox.state === 'accepted') { position.atBottom = true; scrollToLatest(); setText(''); setQuote(null); pendingIntent.current = null; setPauseState('acknowledged'); }
-    sendLock.current = false; setSending(false);
+    if(result?.outbox.state==='accepted'){
+      if(action.kind!=='reaction')setText('');
+      if(activeId.current===id){position.atBottom=true;scrollToLatest();
+        if(action.kind!=='reaction'){setAttachment(null);uploadIntent.current=null;setQuote(null);}
+        pendingIntent.current=null;setPauseState('acknowledged');}
+    }
+    if(result?.outbox.state==='failed')pendingIntent.current=null;
+    sendLock.current=false;setSending(false);
   };
+  const sendComposed=async()=>{
+    if(!attachment){await send({kind:'text',text:text.trim(),reason:'Owner manual message.'},quote?.id ?? null);return;}
+    if(uploadLock.current || sendLock.current)return;uploadLock.current=true;setUploading(true);
+    try{
+      if(uploadIntent.current?.image!==attachment)uploadIntent.current={image:attachment,requestId:randomUUID()};
+      const intent=uploadIntent.current;
+      if(!intent.uploadId)intent.uploadId=(await client.uploadImage(id,attachment.base64,intent.requestId)).id;
+      await send({kind:'image',uploadId:intent.uploadId,caption:text.trim(),reason:'Owner image message.'},quote?.id ?? null);
+    }catch(error){reportError(error instanceof Error ? error.message : 'The image could not be uploaded.');}
+    finally{uploadLock.current=false;setUploading(false);}
+  };
+  const busy=sending || uploading || picking;
   const header = <Stack.Screen options={{
     title: c?.name ?? 'Conversation', headerBackVisible: false,
     headerLeft: () => <Pressable accessibilityRole="button" accessibilityLabel="Back to Chats" onPress={() => router.dismissTo('/(tabs)')}
@@ -158,7 +185,12 @@ export default function ConversationScreen() {
     headerRight: c ? () => <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)} style={{ padding: 10 }}><SlidersHorizontal color={palette.text} size={21}/></Pressable> : undefined,
   }}/>;
   if (!c) return <Page>{header}<Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Conversation unavailable. Connect to the service first.</Text></Page>;
-  const drafts = snapshot?.drafts.filter(d => d.conversationId === id && ['pending','needs_owner','stale'].includes(d.state)) ?? [];
+  const turnDrafts=new Map<string,Draft>();
+  for(const draft of snapshot?.drafts ?? [])if(draft.conversationId===id){
+    const previous=turnDrafts.get(draft.triggerMessageId);
+    if(!previous || draft.createdAt>=previous.createdAt)turnDrafts.set(draft.triggerMessageId,draft);
+  }
+  const drafts=[...turnDrafts.values()].filter(d=>['pending','needs_owner','stale'].includes(d.state));
   return <Page scroll={false}>
     {header}
     <View style={{ paddingHorizontal: 16, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -192,8 +224,13 @@ export default function ConversationScreen() {
           }
         }}>
         {!cached && <View style={{ padding: 24, alignItems: 'center' }}>{historyError ? <Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Could not load messages.</Text> : <ActivityIndicator color={palette.accent}/>}</View>}
-        {messages.map(m => <MessageBubble key={m.id} message={m} quoted={messages.find(q => q.id === m.quotedMessageId)} onSelect={setSelected} onQuote={setQuote}/>)}
-        {cached && drafts.map(d => <View key={d.id} style={{ paddingVertical: 8 }}><DraftCard draft={d}/></View>)}
+        {messages.map(m=>{
+          const draft=turnDrafts.get(m.id);
+          return <View key={m.id} testID={'turn-'+m.id}>
+            <MessageBubble message={m} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={setSelected} onQuote={setQuote}/>
+            {draft && ['pending','needs_owner','stale'].includes(draft.state) && <View style={{paddingVertical:8}}><DraftCard draft={draft}/></View>}
+          </View>;
+        })}
       </ScrollView>
       {emojiOpen && <View accessibilityLabel="Emoji picker" style={{flexDirection:'row',flexWrap:'wrap',paddingHorizontal:16,paddingVertical:6,gap:4,backgroundColor:palette.surface}}>
         {emojis.map(emoji => <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'Insert '+emoji} style={{padding:8}}
@@ -207,6 +244,11 @@ export default function ConversationScreen() {
           }}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}
         <Pressable accessibilityRole="button" accessibilityLabel="Close emoji picker" style={{padding:8}} onPress={() => setEmojiOpen(false)}><X size={22} color={palette.muted}/></Pressable>
       </View>}
+      {attachment && <View style={{flexDirection:'row',alignItems:'center',gap:12,padding:10,marginHorizontal:16,backgroundColor:palette.surface,borderRadius:12}}>
+        <Image source={{uri:attachment.uri}} accessibilityLabel="Selected image preview" contentFit="contain" style={{width:110,height:100}}/>
+        <Text style={{flex:1,color:palette.muted,fontFamily:fonts.regular,fontSize:13}}>Add a caption below</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Remove image" disabled={busy} onPress={()=>{setAttachment(null);uploadIntent.current=null;}}><X color={palette.muted} size={20}/></Pressable>
+      </View>}
       {quote && <View style={{ padding: 12, marginHorizontal: 16, borderLeftWidth: 3, borderColor: palette.accent, backgroundColor: palette.surface, flexDirection: 'row', gap: 8 }}>
         <Text numberOfLines={2} style={{ flex: 1, fontFamily: fonts.regular, color: palette.muted, fontSize: 13 }}>{quote.text || quote.media?.kind}</Text>
         <Pressable accessibilityLabel="Remove quote" onPress={() => setQuote(null)}><X size={18} color={palette.muted}/></Pressable>
@@ -214,12 +256,14 @@ export default function ConversationScreen() {
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', padding: 12, paddingBottom: 24, gap: 8 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.surface, borderRadius: 26, padding: 13 }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Choose emoji" accessibilityState={{expanded:emojiOpen}} onPress={() => setEmojiOpen(open=>!open)}><Smile size={21} color={palette.muted}/></Pressable>
-          <TextInput ref={input} accessibilityLabel="Message" value={text} multiline maxLength={4000} placeholder="Message" placeholderTextColor={palette.muted}
-            editable={draftReady} onChangeText={setText} selection={selection} onSelectionChange={event => setSelection(event.nativeEvent.selection)}
+          <TextInput ref={input} accessibilityLabel="Message" value={text} multiline maxLength={4000} placeholder={attachment ? 'Caption' : 'Message'} placeholderTextColor={palette.muted}
+            editable={draftReady && !busy} onChangeText={setText} selection={selection} onSelectionChange={event => setSelection(event.nativeEvent.selection)}
             style={{ flex: 1, color: palette.text, fontFamily: fonts.regular, fontSize: 16, maxHeight: 110, padding: 0 }}/>
+          <AttachmentPicker disabled={busy || !draftReady || status!=='online'} onPick={image=>{setAttachment(image);uploadIntent.current=null;}} onBusyChange={setPicking}
+            beforePick={async()=>{await composer(id,true);composerState.current={id,hasText:true};setPauseState('acknowledged');}}/>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!text.trim() || sending || status !== 'online'} onPress={() => { void send({ kind: 'text', text: text.trim(), reason: 'Owner manual message.' }, quote?.id ?? null); }}
-          style={{ height: 49, width: 49, borderRadius: 25, backgroundColor: palette.accent, alignItems: 'center', justifyContent: 'center', opacity: !text.trim() || sending || status !== 'online' ? 0.4 : 1 }}><Send color={palette.accentText} size={22}/></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={(!text.trim() && !attachment) || busy || status!=='online'} onPress={()=>{void sendComposed();}}
+          style={{ height: 49, width: 49, borderRadius: 25, backgroundColor: palette.accent, alignItems: 'center', justifyContent: 'center', opacity: (!text.trim() && !attachment) || busy || status!=='online' ? 0.4 : 1 }}>{sending || uploading ? <ActivityIndicator color={palette.accentText}/> : <Send color={palette.accentText} size={22}/>}</Pressable>
       </View>
       {pauseState !== 'idle' && <Text style={{ color: pauseState === 'failed' ? palette.danger : palette.muted, fontFamily: fonts.regular, fontSize: 11, textAlign: 'center', paddingBottom: 7 }}>
         {pauseState === 'pending' ? 'Pause requested…' : pauseState === 'failed' ? 'Pause was not acknowledged' : 'Pause acknowledged'}

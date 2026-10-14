@@ -23,9 +23,9 @@ export class WhatsAppAdapter {
   private openedAt = 0;
   private events: Promise<void> = Promise.resolve();
   constructor(private readonly flow: Workflow, private readonly authDir: string,
-    private readonly incoming: (message: Message) => Promise<void>) {}
+    private readonly incoming: (message: Message) => Promise<void>,private readonly onConnectionLost?:()=>void) {}
   snapshot(): WhatsAppStatus { return { ...this.status }; }
-  requireReady(): void { if (this.status.state !== 'connected' || !this.socket) throw new DomainError('whatsapp_not_connected', 503); }
+  requireReady(): void { if (this.status.state !== 'connected' || !this.socket || this.verifiedSocket !== this.socket) throw new DomainError('whatsapp_not_connected', 503); }
   async start(): Promise<void> {
     if (this.starting) return this.starting;
     if (this.socket && ['connecting','connected','qr'].includes(this.status.state)) return;
@@ -69,6 +69,7 @@ export class WhatsAppAdapter {
         this.openedAt = Date.now(); this.status = { ...this.status, state: 'connected', qr: null, error: null };
       }
       if (update.connection === 'close') {
+        this.onConnectionLost?.();
         this.socket = undefined; this.verifiedSocket = undefined; this.status = { ...this.status, state: 'disconnected', qr: null };
         const parsed = z.object({ output: z.object({ statusCode: z.number() }) }).safeParse(update.lastDisconnect?.error);
         if (parsed.success && parsed.data.output.statusCode === DisconnectReason.loggedOut) {
@@ -101,6 +102,12 @@ export class WhatsAppAdapter {
           const live = event.type === 'notify' && !event.requestId && this.status.state === 'connected' && timestamp >= this.openedAt-5000;
           await this.receive(raw, live ? 'live' : 'replay');
         }
+      });
+    });
+    socket.ev.on('messages.reaction', reactions => {
+      this.enqueueData(socket, async () => {
+        // This event has no upsert source. Only a matching live upsert may pause work.
+        for (const event of reactions) this.receiveReaction(event.key,event.reaction,'unknown');
       });
     });
     socket.ev.on('messages.update', updates => {
@@ -174,8 +181,28 @@ export class WhatsAppAdapter {
     const raw = proto.WebMessageInfo.decode(Buffer.from(parsed.data.protobuf,'base64'));
     return raw.key ? { ...raw, key: raw.key } : undefined;
   }
+  private receiveReaction(key: WAMessage['key'], reaction: proto.IReaction, source: Message['source']): void {
+    const reactor = reaction.key;
+    if (!key.remoteJid || !key.id || !reactor?.remoteJid || !reactor.id) return;
+    const chat = this.flow.store.waCanonical(this.flow.accountId,jidNormalizedUser(key.remoteJid));
+    const reactorChat = this.flow.store.waCanonical(this.flow.accountId,jidNormalizedUser(reactor.remoteJid));
+    if (!directJid(chat) || reactorChat !== chat) return;
+    const target = this.flow.store.messages(this.flow.accountId,chat).find(m => m.transportId === key.id);
+    if (!target || !this.raw(chat,key.id)) return;
+    const at = Number(reaction.senderTimestampMs ?? 0);
+    if (!Number.isFinite(at) || at <= 0) return;
+    this.flow.observeReaction(chat,target.id,{
+      actor:reactor.fromMe === false ? 'contact' : 'unknown', actorId:reactor.fromMe ? 'owner' : chat,
+      transportId:reactor.id,emoji:reaction.text || null,occurredAt:at,source,
+    },reactor.fromMe === true);
+  }
   private async receive(raw: WAMessage, source: Message['source']): Promise<void> {
     if (!raw.key.remoteJid || !directJid(raw.key.remoteJid)) return;
+    const reaction = normalizeMessageContent(raw.message)?.reactionMessage;
+    if (reaction?.key) {
+      this.receiveReaction(reaction.key,{key:raw.key,text:reaction.text ?? null,senderTimestampMs:reaction.senderTimestampMs ?? Number(raw.messageTimestamp ?? 0)*1000},source);
+      return;
+    }
     const chat = this.canonical(raw.key.remoteJid, raw.key.remoteJidAlt);
     this.conversation(chat, raw.key.fromMe ? undefined : raw.pushName);
     const message = normalizeWhatsApp(raw,this.flow.accountId,chat,source);
@@ -236,7 +263,7 @@ export class WhatsAppAdapter {
     if (c.kind !== 'direct' || !c.id.endsWith('@s.whatsapp.net')) throw new DomainError('unverified_chat_identity',403);
     return this.flow.dispatch(outboxId, async component => {
       const socket = this.socket;
-      if (!socket || this.status.state !== 'connected') return { state: 'failed' };
+      if (!socket || this.verifiedSocket !== socket || this.status.state !== 'connected') return { state: 'failed' };
       const transportId = generateMessageIDV2(socket.user?.id);
       const current = this.flow.store.outbox(this.flow.accountId,outboxId);
       if (!current) return { state: 'failed' };
@@ -248,14 +275,25 @@ export class WhatsAppAdapter {
       const quote = outbox.quotedMessageId ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === outbox.quotedMessageId) : undefined;
       const quoted = quote ? this.raw(c.id,quote.transportId) : undefined;
       if (component.kind === 'reaction' && !reactionRaw || quote && !quoted) return { state: 'failed' };
-      const sent = await socket.sendMessage(c.id,
-        component.kind === 'reaction' && component.reaction && reactionRaw ? { react: { text: component.reaction.emoji, key: reactionRaw.key } } : { text: component.text ?? '' },
-        { messageId: transportId, ...(quoted ? { quoted } : {}) });
+      const upload = component.uploadId ? this.flow.store.imageUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
+      if (component.kind === 'image' && (!upload || outbox.origin !== 'owner_manual')) return {state:'failed'};
+      const content = component.kind === 'image' && upload
+        ? {image:Buffer.from(upload.bytes),mimetype:upload.mime,caption:component.text ?? ''}
+        : component.kind === 'reaction' && component.reaction && reactionRaw
+          ? {react:{text:component.reaction.emoji,key:reactionRaw.key}} : {text:component.text ?? ''};
+      const sent = await socket.sendMessage(c.id,content,{messageId:transportId,...(quoted ? {quoted} : {})});
+      if (this.socket !== socket || this.verifiedSocket !== socket) return {state:'unknown'};
+      if (sent?.key.id && component.kind === 'image') {
+        const previous = this.flow.store.waMessage(this.flow.accountId,c.id,sent.key.id);
+        if (!previous || !z.object({deleted:z.literal(true)}).safeParse(JSON.parse(previous)).success)
+          this.flow.store.saveWaMessage(this.flow.accountId,c.id,sent.key.id,
+            JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(sent).finish()).toString('base64')}));
+      }
       return sent?.key.id ? { state: 'accepted', transportId: sent.key.id } : { state: 'unknown' };
     });
   }
   async stop(): Promise<void> {
-    this.stopped = true; clearTimeout(this.reconnect);
+    this.stopped = true; clearTimeout(this.reconnect);this.onConnectionLost?.();
     const socket = this.socket; this.socket = undefined; this.verifiedSocket = undefined;
     socket?.end(new Error('Owner disconnected'));
     await this.events; this.status = { ...this.status, state: 'disconnected', qr: null };

@@ -73,6 +73,15 @@ are not retried. Never-reply contacts cannot be passed to AI. Historical sync
 never triggers replies. The assistant supports review, drafting, contact-mode
 changes and resumption commands; it is not a general-purpose tool planner yet.
 
+The paperclip opens Gallery or Camera. Selected photos stay local until Send,
+with an image preview and optional caption. Owner image sends use the same guarded
+outbox and cooldown as text. Unknown outcomes are never automatically retried.
+
+AI waits for five seconds of quiet after the latest incoming message. New messages
+reset that window. Draft generation is shared for one conversation turn; outdated
+cards stay beside their source message and can be dismissed. AI can quote relevant
+messages and sees labeled owner/contact/assistant reactions.
+
 Images, stickers and GIFs now have authenticated previews and model image input.
 Animation uses sampled frames, not full-video understanding. View-once, deleted
 and expired media are excluded. Old or expired WhatsApp download links can still
@@ -100,7 +109,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-51 focused safety tests, strict typechecks and web export pass. Browser checks
+68 focused safety tests, strict typechecks and web export pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
 image-recognition request are verified. Browser checks cover live-preview

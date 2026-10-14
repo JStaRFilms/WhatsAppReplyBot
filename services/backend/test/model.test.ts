@@ -21,6 +21,9 @@ test('provider schema uses an object envelope with anyOf and validates the retur
     const body = JSON.parse(String(init?.body));
     assert.equal(body.response_format.json_schema.schema.type, 'object');
     assert.ok(body.response_format.json_schema.schema.properties.action.anyOf);
+    const textSchema=body.response_format.json_schema.schema.properties.action.anyOf.find((s:{properties?:{kind?:{const?:string}}})=>s.properties?.kind?.const==='text');
+    assert.ok(textSchema.required.includes('quotedMessageId'));
+    assert.ok(JSON.stringify(textSchema.properties.quotedMessageId).includes('null'));
     assert.equal(JSON.stringify(body.response_format.json_schema.schema).includes('"oneOf"'), false);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ action }) } }] }));
   };

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SqliteStore, type Action } from '@replybot/core';
+import { SqliteStore, Workflow, type Action } from '@replybot/core';
 import { createApp } from '../src/server.ts';
 import { DEMO_ACCOUNT } from '../src/seed.ts';
 
@@ -25,14 +25,19 @@ test('remote drafting requires consent, respects takeover, and coalesces duplica
     await post('/v1/model-consent', { requestId: 'consent', consent: true });
     const excluded = await post('/v1/conversations/demo-chat-3/draft', { requestId: 'never-reply' });
     assert.equal(excluded.statusCode, 403); assert.equal(calls, 0);
-    const [first, duplicate] = await Promise.all([
+    const [first, duplicate, otherCaller] = await Promise.all([
       post('/v1/conversations/demo-chat-6/draft', { requestId: 'same-draft' }),
       post('/v1/conversations/demo-chat-6/draft', { requestId: 'same-draft' }),
+      post('/v1/conversations/demo-chat-6/draft', { requestId: 'other-device-draft' }),
     ]);
-    assert.equal(first.statusCode, 200); assert.equal(duplicate.json().id, first.json().id); assert.equal(calls, 1);
+    assert.equal(first.statusCode,200);assert.equal(duplicate.json().id,first.json().id);assert.equal(otherCaller.json().id,first.json().id);assert.equal(calls,1);
+    const repeated=await post('/v1/conversations/demo-chat-6/draft',{requestId:'again'});assert.equal(repeated.json().id,first.json().id);assert.equal(calls,1);
+    const incoming=store.recentMessages(DEMO_ACCOUNT,'demo-chat-6').find(m=>m.direction==='inbound');assert.ok(incoming);
+    new Workflow(store,DEMO_ACCOUNT).observe({...incoming,id:'new-turn',transportId:'new-turn',occurredAt:Date.now(),text:'another question',source:'live'});
+    const next=await post('/v1/conversations/demo-chat-6/draft',{requestId:'new-turn-draft'});assert.notEqual(next.json().id,first.json().id);assert.equal(calls,2);
     await post('/v1/conversations/demo-chat-6/pause', { requestId: 'pause' });
     assert.equal((await post('/v1/conversations/demo-chat-6/draft', { requestId: 'paused-draft' })).statusCode, 403);
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     delayed = true;
     const started = new Promise<void>(resolve => { notify = resolve; });
     const pending = post('/v1/conversations/demo-chat-7/draft', { requestId: 'in-flight' });

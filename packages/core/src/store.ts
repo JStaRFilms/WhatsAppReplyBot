@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError } from './contracts.ts';
+import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload } from './contracts.ts';
 
 import { AssistantTurn } from './api.ts';
 
@@ -27,6 +27,10 @@ export class SqliteStore {
       CREATE TABLE IF NOT EXISTS composer_holds (account_id TEXT NOT NULL,conversation_id TEXT NOT NULL,client_id TEXT NOT NULL,has_text INTEGER NOT NULL CHECK(has_text IN (0,1)),PRIMARY KEY(account_id,conversation_id,client_id));
       CREATE TABLE IF NOT EXISTS wa_aliases (account_id TEXT NOT NULL, alias TEXT NOT NULL, canonical TEXT NOT NULL, PRIMARY KEY(account_id,alias));
       CREATE TABLE IF NOT EXISTS wa_messages (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, transport_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(account_id,conversation_id,transport_id));
+      CREATE TABLE IF NOT EXISTS image_uploads (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+        mime TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, bytes BLOB NOT NULL,
+        created_at INTEGER NOT NULL, FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));
       CREATE TABLE IF NOT EXISTS assistant_turns (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));`);
     for (const table of ['messages', 'drafts', 'delegations', 'outbox', 'owner_actions'] as const) {
@@ -45,6 +49,37 @@ export class SqliteStore {
         WHERE json_extract(payload,'$.state')='active';`);
   }
   close(): void { this.db.close(); }
+  saveImageUpload(accountId: string, conversationId: string, upload: ImageUpload, bytes: Uint8Array, createdAt: number): void {
+    const metadata = ImageUpload.parse(upload);
+    if (!bytes.length || bytes.length > 10*1024*1024) throw new DomainError('image_too_large',413);
+    const total = this.db.prepare('SELECT COALESCE(SUM(length(bytes)),0) AS size FROM image_uploads WHERE account_id=?').get(accountId);
+    if (z.object({size:z.number()}).parse(total).size + bytes.length > 100*1024*1024) throw new DomainError('upload_storage_full',413);
+    this.db.prepare('INSERT INTO image_uploads VALUES(?,?,?,?,?,?,?,?)')
+      .run(metadata.id,accountId,conversationId,metadata.mime,metadata.width,metadata.height,bytes,createdAt);
+  }
+  imageUpload(accountId: string, conversationId: string, id: string): (ImageUpload & { bytes: Uint8Array }) | undefined {
+    const row = this.db.prepare('SELECT id,mime,width,height,bytes FROM image_uploads WHERE account_id=? AND conversation_id=? AND id=?')
+      .get(accountId,conversationId,id);
+    return row ? ImageUpload.extend({bytes:z.instanceof(Uint8Array)}).parse(row) : undefined;
+  }
+  sentImageUpload(accountId:string,conversationId:string,transportId:string):(ImageUpload & {bytes:Uint8Array}) | undefined {
+    const row=this.db.prepare(`SELECT u.id,u.mime,u.width,u.height,u.bytes FROM image_uploads u JOIN outbox o
+      ON o.account_id=u.account_id AND o.conversation_id=u.conversation_id JOIN json_each(o.payload,'$.components') p
+      ON json_extract(p.value,'$.uploadId')=u.id WHERE u.account_id=? AND u.conversation_id=?
+      AND json_extract(o.payload,'$.origin')='owner_manual' AND json_extract(p.value,'$.kind')='image'
+      AND json_extract(p.value,'$.state')='accepted' AND json_extract(p.value,'$.transportId')=? LIMIT 1`)
+      .get(accountId,conversationId,transportId);
+    return row ? ImageUpload.extend({bytes:z.instanceof(Uint8Array)}).parse(row) : undefined;
+  }
+  cleanupImageUploads(accountId: string, before: number): void {
+    // Uncertain or unfinished outboxes retain their bytes even across restarts.
+    this.db.prepare(`DELETE FROM image_uploads WHERE account_id=? AND created_at<? AND NOT EXISTS (
+      SELECT 1 FROM outbox o,json_each(o.payload,'$.components') p WHERE o.account_id=image_uploads.account_id
+      AND o.conversation_id=image_uploads.conversation_id AND json_extract(p.value,'$.uploadId')=image_uploads.id
+      AND (json_extract(o.payload,'$.state') IN ('queued','dispatching','unknown','partial')
+        OR json_extract(p.value,'$.state') IN ('queued','dispatching','unknown')))`)
+      .run(accountId,before);
+  }
   unreadCounts(accountId:string): Record<string,number> {
     const rows=this.db.prepare(`SELECT m.conversation_id,COUNT(*) AS count FROM messages m LEFT JOIN conversation_views v
       ON v.account_id=m.account_id AND v.conversation_id=m.conversation_id WHERE m.account_id=? AND m.rowid>COALESCE(v.last_rowid,0)

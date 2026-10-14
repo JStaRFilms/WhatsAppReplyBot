@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { randomUUID } from './uuid';
-import { Conversation, Draft, Outbox, Message } from '@replybot/core/contracts';
+import { Conversation, Draft, Outbox, Message, ImageUpload } from '@replybot/core/contracts';
 export const PauseResult = z.object({ acknowledged: z.literal(true), conversation: Conversation });
 export const DecisionResult = z.object({ draft: Draft.nullable().optional(), outbox: Outbox.nullable().optional(), simulated: z.boolean().optional() });
 export const SendResult = z.object({ simulated: z.boolean(), outbox: Outbox });
@@ -24,6 +24,10 @@ const labels: Record<string, string> = {
   model_consent_revoked: 'OpenRouter consent was disabled. This draft was discarded.',
   media_unavailable: 'This attachment is unavailable.',
   media_encoder_unavailable: 'Install FFmpeg on the Windows service to display media.',
+  image_too_large:'Choose an image under 10 MB.',
+  invalid_image:'This image could not be read. Choose another.',
+  unsupported_image:'This image format is not supported.',
+  image_upload_busy:'Another image is processing. Try again shortly.',
   model_request_failed: 'The model request failed. No draft was approved or sent.',
   invalid_model_response: 'The model returned an invalid action. Nothing was sent.',
   local_browser_provision_only: 'Enter the service token from your computer to connect this phone.',
@@ -47,6 +51,17 @@ export class ApiClient {
       throw new Error(labels[code] ?? code.replaceAll('_',' '));
     }
     return schema.parse(json);
+  }
+  async uploadImage(conversationId:string,base64:string,requestId:string):Promise<z.infer<typeof ImageUpload>> {
+    if(base64.length>14*1024*1024)throw new Error(labels.image_too_large);
+    const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
+    if(bytes.length>10*1024*1024)throw new Error(labels.image_too_large);
+    const response=await fetch(this.baseUrl.replace(/\/$/,'')+'/v1/conversations/'+encodeURIComponent(conversationId)+'/uploads',{
+      method:'POST',headers:{Authorization:'Bearer '+this.token,'Content-Type':'application/octet-stream','X-Request-Id':requestId},body:bytes,
+    });
+    const json:unknown=await response.json();
+    if(!response.ok){const parsed=Failure.safeParse(json);const code=parsed.success ? parsed.data.error : 'image_upload_failed';throw new Error(labels[code] ?? code.replaceAll('_',' '));}
+    return ImageUpload.parse(json);
   }
   async media(conversationId:string,messageId:string,signal:AbortSignal):Promise<string> {
     const response=await fetch(this.baseUrl.replace(/\/$/,'')+'/v1/conversations/'+encodeURIComponent(conversationId)+'/media/'+encodeURIComponent(messageId),

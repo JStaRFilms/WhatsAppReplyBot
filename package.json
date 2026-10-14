@@ -10,12 +10,14 @@
     "test": "pnpm --filter @replybot/core test && pnpm --filter @replybot/backend test",
     "typecheck": "pnpm -r typecheck",
     "backend": "pnpm --filter @replybot/backend dev",
+    "backend:openrouter": "pnpm --filter @replybot/backend openrouter",
     "mobile": "pnpm --filter @replybot/mobile start",
     "mobile:web": "pnpm --filter @replybot/mobile web"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
     "@types/node": "^24.0.0",
-    "tsx": "^4.21.0"
+    "playwright": "^1.64.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.3"
   }
 }

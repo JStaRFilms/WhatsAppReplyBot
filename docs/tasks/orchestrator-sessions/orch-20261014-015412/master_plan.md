@@ -7,8 +7,8 @@
 - Checkout: C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot
 - Mission: build reliable owner-controlled messaging assistance without changing
   the old app or the existing CreativeOS application.
-- Current phase: UI/UX Design, second mobile direction. The owner approved
-  Paper design and continued offline implementation without further questions.
+- Current phase: Build, offline demo and verification. The owner accepted V2
+  light/dark UI and authorized implementation without further questions.
 
 ## Context Intake
 
@@ -61,7 +61,11 @@ account access, provider requests, real sends and deployment remain gated.
 | 04 | Validate WhatsApp normalization and prepare a read-only probe | coder | Genesis technical feasibility | accepted spike contracts | planned |
 | 05 | Review prototype, record evidence and hand off | reviewer/orchestrator | Genesis acceptance | 03, 04 | planned |
 | D01 | Author Paper mobile direction and exact exports | designer | vibe-design | accepted foundation | completed |
-| D02 | Add WhatsApp-like second direction below originals | designer | vibe-design | D01, user reference | in-progress |
+| D02 | Add WhatsApp-like second direction below originals | designer | vibe-design | D01, user reference | accepted, completed locally after Paper quota stop |
+| B01 | Implement durable core and authenticated demo service | coder | vibe-build | accepted foundation | completed, 26 focused safety checks pass |
+| B02 | Implement V2 mobile-size client and themes | coder | vibe-build | D02, B01 | completed, web interaction checks and export pass |
+| B03 | Wire opt-in OpenRouter text drafting and consent | coder | vibe-build | B01 | completed with mock verification, paid calls untested |
+| B04 | Verify native device and live adapter | coder/reviewer | controlled verification | owner keys and device | blocked, native ANR and live integration unfinished |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct
@@ -82,8 +86,10 @@ but only one writer owns a file at a time.
 - [x] Complete a focused foundation review.
 - [x] Commit reviewed foundation as b158cdc.
 - [x] Author and visually review three Paper mobile screens.
-- [ ] Complete and review the second WhatsApp-like design direction.
-- [ ] Prove local permission, cancellation and replay invariants offline.
+- [x] Complete and review the accepted local V2 design direction.
+- [x] Prove local permission, cancellation and replay invariants offline.
+- [x] Run workspace typechecks, Expo web export and browser interaction checks.
+- [ ] Verify native keyboard/background behavior on an owner device.
 - [ ] Document actual adapter capabilities and untested live behavior.
 - [ ] Commit verified prototype changes in separate reviewable batches.
 - [x] Receive explicit owner approval for Paper design and offline build.

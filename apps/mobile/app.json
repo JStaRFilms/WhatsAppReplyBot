@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Reply",
+    "slug": "whatsapp-reply-bot",
+    "scheme": "replybot",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    }
+  }
+}

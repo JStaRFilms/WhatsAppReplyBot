@@ -38,10 +38,10 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     const latest=options.store.draft(accountId,draft.id);
     if(automaticDecision(current,options.store.conversations(accountId),accountId,now(),message.source,allowance)==='auto'
       && latest?.state==='pending' && !latest.edited)await dispatch(flow.autoSend(latest.id,'window-auto-'+latest.id).id);
-  });
+  },5000,(message,isCurrent)=>whatsapp?.beginPresence(message.conversationId,isCurrent) ?? (()=>{}));
   const whatsapp=options.whatsapp ? new WhatsAppAdapter(flow,options.whatsapp.authDir,async message=>{
     if(options.remoteModel && options.store.modelConsent(accountId))await replyWindow.enqueue(message);
-  },()=>replyWindow.clear()) : undefined;
+  },()=>replyWindow.clear(),now) : undefined;
   const media=new MediaService(async message=>{
     const upload=options.store.sentImageUpload(accountId,message.conversationId,message.transportId);
     if(upload)return Buffer.from(upload.bytes);

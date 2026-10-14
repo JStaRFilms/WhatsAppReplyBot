@@ -41,17 +41,18 @@ export function useVoiceRecorder(onClip:(clip:AudioClip)=>void,onError:(message:
     const maximum=setTimeout(()=>{void stopRef.current();},299000);
     return()=>{clearInterval(timer);clearTimeout(maximum);};
   },[recording]);
-  return {recording,seconds,canRecord:true,stop,start:async()=>{
+  return {recording,seconds,canRecord:true,stop,start:async(isActive:()=>boolean=()=>true)=>{
+    if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
     const permission=await requestRecordingPermissionsAsync();
     if(!permission.granted)throw new Error('Allow microphone access in Expo Go to record a voice note.');
-    if(!alive.current || !isForeground())throw new Error('Return to the chat before recording.');
+    if(!alive.current || !isForeground() || !isActive())throw new Error('Return to the chat before recording.');
     try{
       await setAudioModeAsync({allowsRecording:true,shouldPlayInBackground:false});
-      if(!alive.current)throw new Error('Recording cancelled.');
+      if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
       await recorder.prepareToRecordAsync();
       if(!alive.current)throw new Error('Recording cancelled.');
       localUri.current=recorder.uri;
-      if(!isForeground()){await recorder.stop();throw new Error('Recording cancelled.');}
+      if(!isForeground() || !isActive()){await recorder.stop();throw new Error('Recording cancelled.');}
       recorder.record({forDuration:300});running.current=true;setSeconds(0);setRecording(true);
     }catch(error){await resetMode();discard();throw error;}
   }};

@@ -18,6 +18,7 @@ interface Controller {
   setTheme: (choice: ThemeChoice) => void;
   composer: (id: string,hasText: boolean) => Promise<void>;
   viewed: (id:string,watermark:number) => Promise<void>;
+  control: (id:string,action:'resume'|'extend'|'indefinite') => Promise<Conversation | undefined>;
   perform: <T>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>) => Promise<T | undefined>;
 }
 const Context = createContext<Controller | null>(null);
@@ -64,6 +65,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       acceptedSnapshot.current=request;
       clock.calibrate(data.serverTime);
       setSnapshot(current => {
+        if(activeClient.current!==client||sessionEpoch.current!==epoch)return current;
         if (!current || current.accountId !== data.accountId) return data;
         const savedConversations=new Map(current.conversations.map(c=>[c.id,c]));
         return {...data, conversations:data.conversations.map(incoming => {
@@ -99,10 +101,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const epoch=sessionEpoch.current;
     const previous=composerQueue.get(id) ?? Promise.resolve();
     const task=previous.catch(()=>{}).then(async()=>{
-      if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
-      const result=await client.request('/v1/conversations/'+encodeURIComponent(id)+'/composer',z.object({acknowledged:z.boolean(),conversation:Conversation}),{hasText,clientId:await getClientId()});
-      if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
-      setSnapshot(current=>current ? {...current,conversations:current.conversations.map(c=>c.id===id&&c.accountId===result.conversation.accountId&&result.conversation.workflowVersion>=c.workflowVersion?result.conversation:c)}:current);
+      if(activeClient.current!==client||sessionEpoch.current!==epoch)throw new Error('Connection changed. Try again.');
+      const result=await client.request('/v1/conversations/'+encodeURIComponent(id)+'/composer',z.object({acknowledged:z.literal(true),conversation:Conversation}),{hasText,clientId:await getClientId()});
+      if(activeClient.current!==client||sessionEpoch.current!==epoch)throw new Error('Connection changed. Try again.');
+      setSnapshot(current=>activeClient.current===client&&sessionEpoch.current===epoch&&current ? {...current,conversations:current.conversations.map(c=>c.id===id&&c.accountId===result.conversation.accountId&&result.conversation.workflowVersion>=c.workflowVersion?result.conversation:c)}:current);
     }).finally(()=>{if(composerQueue.get(id)===task)composerQueue.delete(id);});
     composerQueue.set(id,task);return task;
   },[client,composerQueue]);
@@ -113,13 +115,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // The server knows whether newer messages arrived beyond this watermark.
     await refresh();
   },[client,refresh]);
-  const perform = async <T,>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>): Promise<T | undefined> => {
+  const control=useCallback(async(id:string,action:'resume'|'extend'|'indefinite'):Promise<Conversation | undefined>=>{
+    const epoch=sessionEpoch.current;
     setError(null);
-    try { const result = await client.request(path, schema, payload); await refresh(); return result; }
-    catch (e) { setError(e instanceof Error ? e.message : 'Action failed.'); return undefined; }
+    try{
+      const conversation=await client.request('/v1/conversations/'+encodeURIComponent(id)+'/control',Conversation,{action});
+      if(activeClient.current!==client||sessionEpoch.current!==epoch)return undefined;
+      setSnapshot(current=>activeClient.current===client&&sessionEpoch.current===epoch&&current ? {...current,conversations:current.conversations.map(c=>c.id===conversation.id&&c.accountId===conversation.accountId&&conversation.workflowVersion>=c.workflowVersion?conversation:c)}:current);
+      void refresh();
+      return conversation;
+    }catch(e){
+      if(activeClient.current===client&&sessionEpoch.current===epoch)setError(e instanceof Error ? e.message : 'Action failed.');
+      return undefined;
+    }
+  },[client,refresh]);
+  const perform = async <T,>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>): Promise<T | undefined> => {
+    const epoch=sessionEpoch.current;
+    setError(null);
+    try {
+      const result = await client.request(path, schema, payload);
+      if(activeClient.current!==client||sessionEpoch.current!==epoch)return undefined;
+      await refresh();
+      return activeClient.current===client&&sessionEpoch.current===epoch ? result : undefined;
+    }
+    catch (e) { if(activeClient.current===client&&sessionEpoch.current===epoch)setError(e instanceof Error ? e.message : 'Action failed.'); return undefined; }
   };
   return <Context value={{ snapshot, status, error, palette: dark ? palettes.dark : palettes.light, dark,
-    themeChoice, baseUrl, client, history, clock, refresh, connect, perform, composer, viewed, clearError: () => setError(null), reportError: setError,
+    themeChoice, baseUrl, client, history, clock, refresh, connect, perform, composer, viewed, control, clearError: () => setError(null), reportError: setError,
     setTheme: choice => { setThemeChoice(choice); void saveSetting('replybot-theme', choice).catch(() => setError('Theme preference could not be saved.')); } }}>
     {children}
   </Context>;

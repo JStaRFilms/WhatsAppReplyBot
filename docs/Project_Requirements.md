@@ -107,7 +107,9 @@ No issue files or v1 implementation for these items:
 - Calendar integration and proposed events. Initial calendar writes need
   confirmation.
 - Completion reports and deeper follow-up responsibility tracking.
-- Voice-note transcription, calls, status publishing and full attachment parity.
+- Calls, status publishing and full attachment parity. Voice-note recording,
+  playback and incoming transcription are now implemented under the separate
+  owner approval in [Voice_Notes.md](features/Voice_Notes.md).
 - GIF search, generated media and autonomous media sending.
 - Server-hosted operation independent of Windows, commercial hosting, billing,
   licensing, subscriptions, catalogs and multi-customer operation. Require a

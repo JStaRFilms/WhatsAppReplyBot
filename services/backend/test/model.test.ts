@@ -25,6 +25,13 @@ test('provider schema uses an object envelope with anyOf and validates the retur
     assert.ok(textSchema.required.includes('quotedMessageId'));
     assert.ok(JSON.stringify(textSchema.properties.quotedMessageId).includes('null'));
     assert.equal(JSON.stringify(body.response_format.json_schema.schema).includes('"oneOf"'), false);
+    const variants=body.response_format.json_schema.schema.properties.action.anyOf;
+    const sequenceSchema=variants.find((s:{properties?:{kind?:{const?:string}}})=>s.properties?.kind?.const==='text_sequence');
+    assert.equal(sequenceSchema.properties.messages.minItems,2);assert.equal(sequenceSchema.properties.messages.maxItems,5);
+    assert.ok(sequenceSchema.properties.messages.items.required.includes('quotedMessageId'));
+    const reactionSchema=variants.find((s:{properties?:{kind?:{const?:string}}})=>s.properties?.kind?.const==='reaction').properties.reaction.properties.emoji;
+    assert.equal(reactionSchema.type,'string');assert.equal(reactionSchema.maxLength,64);assert.equal(reactionSchema.pattern,undefined);
+    assert.ok(JSON.stringify(body.response_format.json_schema.schema).length<15000);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ action }) } }] }));
   };
   assert.deepEqual(await new OpenRouterClient({ apiKey: 'synthetic-test-key', allowRemote: true, ownerConsent: true, fetcher }).generate(context), action);

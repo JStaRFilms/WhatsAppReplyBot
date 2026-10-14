@@ -10,7 +10,8 @@ export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
   const { palette, perform, status } = useApp();
   const [editing, setEditing] = useState(false);
   const [editingRevision, setEditingRevision] = useState(draft.revision);
-  const [text, setText] = useState('text' in draft.action ? draft.action.text : '');
+  const editableText=draft.action.kind==='text_sequence' ? draft.action.messages.map(message=>message.text).join('\n\n') : 'text' in draft.action ? draft.action.text : '';
+  const [text, setText] = useState(editableText);
   const [busy, setBusy] = useState(false);
   const pending = draft.state === 'pending';
   const decide = async (operation: 'approve' | 'dismiss' | 'edit' | 'needs_owner') => {
@@ -29,15 +30,21 @@ export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
       </Text>
       {pending && <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>Not sent</Text>}
     </View>
-    {editing ? <TextInput accessibilityLabel="Edit draft" multiline value={text} onChangeText={setText} style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54 }}/>
-      : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>
+    {editing && draft.action.kind==='text_sequence' && <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>Saving combines these messages into one text reply. Sequence quotes are removed. Keep it under 4000 characters.</Text>}
+    {editing ? <TextInput accessibilityLabel="Edit draft" multiline maxLength={4000} value={text} onChangeText={setText} style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54 }}/>
+      : draft.action.kind==='text_sequence' ? <View accessibilityLabel="Ordered reply sequence" style={{gap:8}}>
+        {draft.action.messages.map((message,index)=><View key={index} style={{padding:10,borderRadius:8,backgroundColor:palette.surface}}>
+          <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:11}}>Message {index+1}{message.quotedMessageId ? ' · quoted reply' : ''}</Text>
+          <Text selectable style={{fontFamily:fonts.regular,fontSize:16,lineHeight:23,color:palette.text}}>{message.text}</Text>
+        </View>)}
+      </View> : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>
         {'text' in draft.action ? draft.action.text : 'reaction' in draft.action ? 'React '+draft.action.reaction.emoji : draft.action.reason}
       </Text>}
     {draft.state === 'stale' && <Button label="Dismiss" secondary disabled={busy || status!=='online'} onPress={()=>{void decide('dismiss');}}/>}
     {draft.state === 'needs_owner' && <Button label="Handled" secondary disabled={busy || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>}
     {pending && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      <Button label={editing ? 'Save draft' : 'Send reply'} disabled={busy || status !== 'online' || (editing && !text.trim())} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
-      {!editing && 'text' in draft.action && <Button label="Edit" secondary disabled={busy} onPress={() => { setText('text' in draft.action ? draft.action.text : ''); setEditingRevision(draft.revision); setEditing(true); }}/>}
+      <Button label={editing ? 'Save draft' : 'Send reply'} disabled={busy || status !== 'online' || (editing && (!text.trim() || text.trim().length>4000))} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
+      {!editing && ('text' in draft.action || draft.action.kind==='text_sequence') && <Button label={draft.action.kind==='text_sequence' ? 'Edit as one reply' : 'Edit'} secondary disabled={busy} onPress={() => { setText(editableText); setEditingRevision(draft.revision); setEditing(true); }}/>}
       <Button label="Dismiss" secondary disabled={busy || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>
     </View>}
   </View>;

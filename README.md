@@ -84,6 +84,13 @@ audio file on HTTP web. Audio is capped at 10MB and five minutes. FFmpeg is requ
 Older notes already stored as unsupported remain unavailable. See
 `docs/features/Voice_Notes.md` for privacy rules and device checks.
 
+The composer uses a microphone when empty, Send with content and Stop while
+recording. Resume applies acknowledged state without waiting for a full snapshot.
+Original WhatsApp reactions are grouped by actor; reactions support valid single
+Unicode emoji, including fire. Eligible automatic replies can show typing and
+choose two to five messages, with five-second gaps. Each message uses a reply unit;
+owner activity or uncertain outcomes cancel the remaining sequence.
+
 AI waits for five seconds of quiet after the latest incoming message. New messages
 reset that window. Draft generation is shared for one conversation turn; outdated
 cards stay beside their source message and can be dismissed. AI can quote relevant
@@ -116,7 +123,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-85 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
+121 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
 image-recognition request and a synthetic speech-transcription request are verified.

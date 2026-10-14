@@ -5,11 +5,13 @@ import { useApp } from '../lib/app-state';
 import { fonts } from '../lib/theme';
 import { AudioPlayback } from './audio-playback';
 import { MediaAttachment } from './media-attachment';
+import { groupMessageReactions } from '../lib/message-reactions';
 const webSwipeStyle: { touchAction?: 'pan-y' } = Platform.OS === 'web' ? { touchAction: 'pan-y' } : {};
 const time = new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'});
 export const MessageBubble = memo(function MessageBubble({ message, quoted, onSelect, onQuote, active=true }: { message: Message; active?:boolean; quoted?: Message; onSelect: (message: Message) => void; onQuote: (message: Message) => void }) {
   const { palette, snapshot } = useApp(); const owner = message.direction === 'outbound';
   const media = message.media;
+  const reactions=groupMessageReactions(message);
   const translation = useRef(new Animated.Value(0)).current;
   const swipe = useMemo(() => {
     const reset = () => Animated.spring(translation, { toValue: 0, useNativeDriver: Platform.OS !== 'web' }).start();
@@ -47,8 +49,10 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
       </Text>
     </Pressable>
     </Animated.View>
-    {message.reaction && <View style={{ borderRadius: 16, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, paddingHorizontal: 8, paddingVertical: 3 }}>
-      <Text style={{ fontSize: 14 }}>{message.reaction}</Text>
+    {reactions.length>0 && <View style={{flexDirection:'row',flexWrap:'wrap',gap:4}}>
+      {reactions.map(({emoji,actors})=><View key={emoji} accessibilityLabel={emoji+' · '+actors.join(', ')} style={{borderRadius:16,backgroundColor:palette.surface,borderWidth:1,borderColor:palette.border,paddingHorizontal:8,paddingVertical:3}}>
+        <Text style={{fontSize:14,color:palette.text}}>{emoji}{actors.length>1 ? ' '+actors.length : ''}</Text>
+      </View>)}
     </View>}
   </View>;
 });

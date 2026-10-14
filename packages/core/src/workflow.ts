@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { setTimeout as wait } from 'node:timers/promises';
 import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, AudioUpload, ReactionObservation, actionUnits } from './contracts.ts';
 import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
@@ -7,6 +8,10 @@ import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
 import { SqliteStore } from './store.ts';
 
 export type TransportResult = { state: 'accepted'; transportId: string } | { state: 'failed' | 'unknown' };
+export interface DispatchOptions {
+  signal?: AbortSignal;
+  check?: () => void;
+}
 export interface ProposalInput {
   kind: 'change_mode' | 'resume' | 'delegate' | 'configure'; mode?: Conversation['mode']; maxUnits?: number | null | undefined; expiresAt?: number | null | undefined; acknowledgeRisk?: boolean | undefined;
 }
@@ -23,7 +28,13 @@ function outboxState(components: Component[]): Outbox['state'] {
 
 export class Workflow {
   private readonly lanes = new Map<string, Promise<void>>();
-  constructor(readonly store: SqliteStore, readonly accountId: string, private readonly clock = Date.now) {}
+  private readonly changes = new Set<(conversationId: string) => void>();
+  constructor(readonly store: SqliteStore, readonly accountId: string, private readonly clock = Date.now,
+    private readonly sleep = (ms: number, signal: AbortSignal): Promise<void> => wait(ms, undefined, { signal })) {}
+  onChange(listener: (conversationId: string) => void): () => void {
+    this.changes.add(listener);
+    return () => { this.changes.delete(listener); };
+  }
   conversation(id: string): Conversation {
     const c = this.store.conversation(this.accountId, id);
     if (!c) throw new DomainError('conversation_not_found', 404);
@@ -130,6 +141,7 @@ export class Workflow {
     if (revokeGrant) for (const g of this.store.grants(this.accountId, c.id)) {
       if (g.state === 'active') this.store.saveGrant({ ...g, state: 'revoked' });
     }
+    for (const listener of this.changes) listener(c.id);
     return next;
   }
   private resolveHandovers(conversationId: string, answeredAt?: number): void {
@@ -248,6 +260,9 @@ export class Workflow {
     quotedMessageId ??= 'quotedMessageId' in action ? action.quotedMessageId ?? null : null;
     if (quotedMessageId && !('text' in action) && action.kind !== 'image' && action.kind !== 'audio') throw new DomainError('quote_requires_text', 422);
     if (quotedMessageId && !messages.some(m => m.id === quotedMessageId)) throw new DomainError('invalid_quote', 422);
+    if (action.kind === 'text_sequence') {
+      for (const part of action.messages) if (part.quotedMessageId && !messages.some(m => m.id === part.quotedMessageId)) throw new DomainError('invalid_quote',422);
+    }
     if ('reaction' in action && !messages.some(m => m.id === action.reaction.targetMessageId)) throw new DomainError('invalid_reaction_target', 422);
   }
   private checkAudioSources(c:Conversation,ids:string[]):void {
@@ -392,6 +407,10 @@ export class Workflow {
     const components: Component[] = [];
     if ('reaction' in action) components.push({ id: randomUUID(), kind: 'reaction', text: null, reaction: action.reaction, state: 'queued', transportId: null });
     if ('text' in action) components.push({ id: randomUUID(), kind: 'text', text: action.text, reaction: null, state: 'queued', transportId: null });
+    if (action.kind === 'text_sequence') for (const [index, message] of action.messages.entries()) components.push({
+      id: randomUUID(), kind: 'text', text: message.text, reaction: null, state: 'queued', transportId: null,
+      quotedMessageId: message.quotedMessageId ?? null, delayAfterPreviousMs: index ? 5000 : 0, dueAt: index ? null : this.clock(),
+    });
     if (action.kind === 'image') components.push({ id: randomUUID(), kind:'image', uploadId:action.uploadId, text:action.caption, reaction:null, state:'queued', transportId:null });
     if(action.kind==='audio')components.push({id:randomUUID(),kind:'audio',uploadId:action.uploadId,text:null,reaction:null,state:'queued',transportId:null});
     const outbox = Outbox.parse({ id: randomUUID(), accountId: this.accountId, conversationId: c.id, requestId,
@@ -425,8 +444,11 @@ export class Workflow {
       () => this.queue(this.takeOver(this.conversation(conversationId)), action, requestId, 'owner_manual', 'owner_written', quotedMessageId));
   }
   private fresh(outbox: Outbox): void {
-    if (outbox.origin === 'owner_manual') return;
     const c = this.conversation(outbox.conversationId);
+    if (outbox.origin === 'owner_manual') {
+      if (outbox.action.kind === 'text_sequence' && c.workflowVersion !== outbox.workflowVersion) throw new DomainError('stale_delivery');
+      return;
+    }
     this.checkAudioSources(c,outbox.audioSourceIds ?? []);
     if (this.store.outboxes(this.accountId, c.id).some(other => other.id !== outbox.id && other.components.some(p => p.state === 'unknown'))) throw new DomainError('delivery_unknown');
     if (!aiAccess(c, this.accountId) || c.control === 'manual' || !inPermittedHours(c, this.clock())
@@ -436,82 +458,117 @@ export class Workflow {
       if (!g || g.state !== 'active' || g.expiresAt!==null && g.expiresAt <= this.clock()) throw new DomainError('grant_expired');
     }
   }
-  async dispatch(id: string, handoff: (component: Component) => Promise<TransportResult>): Promise<Outbox> {
+  async dispatch(id: string, handoff: (component: Component) => Promise<TransportResult>, options: DispatchOptions = {}): Promise<Outbox> {
     const outbox = this.store.outbox(this.accountId, id);
     if (!outbox) throw new DomainError('outbox_not_found', 404);
     const key = outbox.conversationId;
     const previous = this.lanes.get(key) ?? Promise.resolve();
-    const run = previous.then(() => this.dispatchInLane(id, handoff));
+    const run = previous.then(() => this.dispatchInLane(id, handoff, options));
     const settled = run.then(() => {}, () => {}); this.lanes.set(key, settled);
     try { return await run; } finally { if (this.lanes.get(key) === settled) this.lanes.delete(key); }
   }
-  private async dispatchInLane(id: string, handoff: (component: Component) => Promise<TransportResult>): Promise<Outbox> {
-    for (;;) {
-      const part = this.store.transaction(() => {
-        const outbox = this.store.outbox(this.accountId, id);
-        if (!outbox) throw new DomainError('outbox_not_found', 404);
-        const component = outbox.components.find(c => c.state === 'queued');
-        if (!component || outbox.components.some(c => c.state === 'unknown')) return undefined;
-        try { this.fresh(outbox); } catch (error) {
-          if (!(error instanceof DomainError)) throw error;
-          for (const p of outbox.components) if (p.state === 'queued') this.release(outbox, p, 'cancelled');
-          outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox); return undefined;
+  private async dispatchInLane(id: string, handoff: (component: Component) => Promise<TransportResult>, options: DispatchOptions): Promise<Outbox> {
+    const wake = new AbortController();
+    const abort = () => wake.abort();
+    const conversationId = this.store.outbox(this.accountId,id)?.conversationId;
+    const unsubscribe = this.onChange(chat => { if (chat === conversationId) abort(); });
+    options.signal?.addEventListener('abort',abort,{once:true});
+    if (options.signal?.aborted) abort();
+    try {
+      for (;;) {
+        const pending = this.store.outbox(this.accountId,id)?.components.find(c => c.state === 'queued');
+        if (pending?.dueAt && pending.dueAt > this.clock() && !wake.signal.aborted) {
+          const outbox = this.store.outbox(this.accountId,id);
+          const grant = outbox?.grantId ? this.store.grants(this.accountId,outbox.conversationId).find(g => g.id === outbox.grantId) : undefined;
+          // Expiry can end a gap before the next component is due, without polling.
+          const quoteId = pending.quotedMessageId !== undefined ? pending.quotedMessageId : outbox?.quotedMessageId;
+          const expiries = [grant?.expiresAt,quoteId ? this.store.message(this.accountId,quoteId)?.media?.expiresAt : null,
+            ...(outbox?.audioSourceIds ?? []).map(source => this.store.message(this.accountId,source)?.media?.expiresAt)];
+          const deadline = Math.min(pending.dueAt,...expiries.filter((at): at is number => at != null));
+          try { await this.sleep(Math.max(0,deadline - this.clock()),wake.signal); } catch { abort(); }
         }
-        component.state = 'dispatching'; outbox.state = 'dispatching'; this.store.saveOutbox(outbox); return component;
-      });
-      if (!part) break;
-      const reactionBefore=part.reaction ? this.store.message(this.accountId,part.reaction.targetMessageId)?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1)?.transportId : undefined;
-      const handoffAt=this.clock();
-      let result: TransportResult;
-      try { result = await handoff(part); } catch { result = { state: 'unknown' }; }
-      this.store.transaction(() => {
+        const part = this.store.transaction(() => {
+          const outbox = this.store.outbox(this.accountId, id);
+          if (!outbox) throw new DomainError('outbox_not_found', 404);
+          const component = outbox.components.find(c => c.state === 'queued');
+          if (!component || outbox.components.some(c => c.state === 'unknown')) return undefined;
+          try {
+            if (wake.signal.aborted) throw new DomainError('delivery_cancelled');
+            options.check?.(); this.fresh(outbox);
+            if (component.dueAt && component.dueAt > this.clock()) throw new DomainError('delivery_not_due');
+            const quoteId = component.quotedMessageId !== undefined ? component.quotedMessageId : outbox.quotedMessageId;
+            if (quoteId) {
+              const quote = this.store.message(this.accountId,quoteId);
+              const raw = quote && this.store.waMessage(this.accountId,outbox.conversationId,quote.transportId);
+              if (!quote || quote.conversationId !== outbox.conversationId || quote.media?.viewOnce
+                || quote.media?.expiresAt != null && quote.media.expiresAt <= this.clock()
+                || raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success) throw new DomainError('invalid_quote',422);
+            }
+          } catch (error) {
+            if (!(error instanceof DomainError)) throw error;
+            for (const p of outbox.components) if (p.state === 'queued') this.release(outbox, p, 'cancelled');
+            outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox); return undefined;
+          }
+          component.state = 'dispatching'; outbox.state = 'dispatching'; this.store.saveOutbox(outbox); return component;
+        });
+        if (!part) break;
+        const reactionBefore=part.reaction ? this.store.message(this.accountId,part.reaction.targetMessageId)?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1)?.transportId : undefined;
+        const handoffAt=this.clock();
+        let result: TransportResult;
+        try { result = await handoff(part); } catch { result = { state: 'unknown' }; }
+        this.store.transaction(() => {
+          const outbox = this.store.outbox(this.accountId, id);
+          if (!outbox) throw new DomainError('outbox_not_found', 404);
+          const component = outbox.components.find(c => c.id === part.id);
+          if (!component || component.state !== 'dispatching') return;
+          this.release(outbox, component, result.state);
+          if (result.state === 'accepted') {
+            component.transportId = result.transportId; outbox.transportId ??= result.transportId;
+            const next = outbox.components.find(p => p.state === 'queued');
+            if (next?.delayAfterPreviousMs) next.dueAt = this.clock() + next.delayAfterPreviousMs;
+            if (component.kind === 'audio' || (component.kind === 'text' || component.kind === 'image') && component.text !== null) {
+              const audio = component.kind==='audio' && component.uploadId ? this.store.audioUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
+              const upload = component.kind==='image' && component.uploadId ? this.store.imageUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
+              const raw=this.store.waMessage(this.accountId,outbox.conversationId,result.transportId);
+              const deleted=!!raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success;
+              const messageId=randomUUID();
+              this.store.saveMessage({ id: messageId, accountId: this.accountId, conversationId: outbox.conversationId,
+                transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: deleted ? '[Message deleted]' : component.text ?? '',
+                occurredAt: this.clock(), source: 'live', quotedMessageId: component.quotedMessageId !== undefined ? component.quotedMessageId : outbox.quotedMessageId,
+                statusReply: false, statusContext: null, media: !deleted && audio ? {kind:'audio',access:'available',fixture:null,description:'Owner voice note',viewOnce:false,expiresAt:null,mime:audio.mime,duration:audio.duration} : !deleted && upload ? {kind:'image',access:'available',fixture:null,
+                  description:'Owner image',viewOnce:false,expiresAt:null,mime:upload.mime,width:upload.width,height:upload.height} : null, reaction: null });
+            } else if (component.reaction) {
+              const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
+              const currentReaction=target?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1);
+              if(target && (!currentReaction || currentReaction.transportId===reactionBefore || currentReaction.transportId===result.transportId)) {
+                const actor = outbox.origin === 'owner_manual' ? 'owner' : 'assistant';
+                this.store.saveMessage({ ...target, reaction:component.reaction.emoji,
+                  observedReactions:[...(target.observedReactions ?? []).filter(r => r.actor!=='owner' && r.actor!=='assistant'),
+                    {actor,actorId:'account',transportId:result.transportId,emoji:component.reaction.emoji,occurredAt:handoffAt,source:'live'}] });
+              }
+            }
+          } else for (const pending of outbox.components) if (pending.state === 'queued') this.release(outbox, pending, 'cancelled');
+          outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
+          if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text' || component.kind === 'image' || component.kind === 'audio');
+        });
+      }
+      return this.store.transaction(() => {
         const outbox = this.store.outbox(this.accountId, id);
         if (!outbox) throw new DomainError('outbox_not_found', 404);
-        const component = outbox.components.find(c => c.id === part.id);
-        if (!component || component.state !== 'dispatching') return;
-        this.release(outbox, component, result.state);
-        if (result.state === 'accepted') {
-          component.transportId = result.transportId; outbox.transportId ??= result.transportId;
-          if (component.kind === 'audio' || (component.kind === 'text' || component.kind === 'image') && component.text !== null) {
-            const audio = component.kind==='audio' && component.uploadId ? this.store.audioUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
-            const upload = component.kind==='image' && component.uploadId ? this.store.imageUpload(this.accountId,outbox.conversationId,component.uploadId) : undefined;
-            const raw=this.store.waMessage(this.accountId,outbox.conversationId,result.transportId);
-            const deleted=!!raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success;
-            const messageId=randomUUID();
-            this.store.saveMessage({ id: messageId, accountId: this.accountId, conversationId: outbox.conversationId,
-              transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: deleted ? '[Message deleted]' : component.text ?? '',
-              occurredAt: this.clock(), source: 'live', quotedMessageId: outbox.quotedMessageId,
-              statusReply: false, statusContext: null, media: !deleted && audio ? {kind:'audio',access:'available',fixture:null,description:'Owner voice note',viewOnce:false,expiresAt:null,mime:audio.mime,duration:audio.duration} : !deleted && upload ? {kind:'image',access:'available',fixture:null,
-                description:'Owner image',viewOnce:false,expiresAt:null,mime:upload.mime,width:upload.width,height:upload.height} : null, reaction: null });
-          } else if (component.reaction) {
-            const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
-            const currentReaction=target?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1);
-            if(target && (!currentReaction || currentReaction.transportId===reactionBefore || currentReaction.transportId===result.transportId)) {
-              const actor = outbox.origin === 'owner_manual' ? 'owner' : 'assistant';
-              this.store.saveMessage({ ...target, reaction:component.reaction.emoji,
-                observedReactions:[...(target.observedReactions ?? []).filter(r => r.actor!=='owner' && r.actor!=='assistant'),
-                  {actor,actorId:'account',transportId:result.transportId,emoji:component.reaction.emoji,occurredAt:handoffAt,source:'live'}] });
-            }
-          }
-        } else for (const pending of outbox.components) if (pending.state === 'queued') this.release(outbox, pending, 'cancelled');
-        outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
-        if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text' || component.kind === 'image' || component.kind === 'audio');
+        const c = this.conversation(outbox.conversationId);
+        if (outbox.state === 'accepted' && outbox.origin === 'owner_manual') {
+          this.store.saveConversation({ ...c, lastHumanActivityAt: Math.max(c.lastHumanActivityAt, outbox.createdAt) });
+        }
+        if ((outbox.state === 'failed' || outbox.state === 'cancelled' && outbox.action.kind === 'text_sequence') && outbox.origin === 'owner_manual') {
+          const current = this.conversation(c.id); const pause = pauseState(current); pause.sending = false;
+          this.store.saveConversation({ ...current, pause });
+        }
+        if (outbox.components.some(p => p.state === 'accepted') && outbox.origin !== 'owner_manual' && c.workflowVersion === outbox.workflowVersion) this.invalidate(c, false);
+        return outbox;
       });
+    } finally {
+      unsubscribe(); options.signal?.removeEventListener('abort',abort);
     }
-    return this.store.transaction(() => {
-      const outbox = this.store.outbox(this.accountId, id);
-      if (!outbox) throw new DomainError('outbox_not_found', 404);
-      const c = this.conversation(outbox.conversationId);
-      if (outbox.state === 'accepted' && outbox.origin === 'owner_manual') {
-        this.store.saveConversation({ ...c, lastHumanActivityAt: Math.max(c.lastHumanActivityAt, outbox.createdAt) });
-      }
-      if (outbox.state === 'failed' && outbox.origin === 'owner_manual') {
-        const current = this.conversation(c.id); const pause = pauseState(current); pause.sending = false;
-        this.store.saveConversation({ ...current, pause });
-      }
-      if (outbox.components.some(p => p.state === 'accepted') && outbox.origin !== 'owner_manual' && c.workflowVersion === outbox.workflowVersion) this.invalidate(c, false);
-      return outbox;
-    });
   }
   recover(): void {
     this.store.transaction(() => {
@@ -525,7 +582,10 @@ export class Workflow {
         }
       }
       for (const outbox of this.store.outboxes(this.accountId)) {
-        for (const component of outbox.components) if (component.state === 'dispatching') component.state = 'unknown';
+        for (const component of outbox.components) {
+          if (component.state === 'dispatching') component.state = 'unknown';
+          else if (component.state === 'queued' && outbox.action.kind === 'text_sequence') this.release(outbox,component,'cancelled');
+        }
         outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
       }
     });

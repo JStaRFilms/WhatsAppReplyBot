@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DomainError, type Workflow, type Message, type Conversation } from '@replybot/core';
+import { DomainError, automaticDecision, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation } from '@replybot/core';
 import { directJid, normalizeWhatsApp, isViewOnce } from './whatsapp-normalize.ts';
 import { downloadAttachment, mediaDeadline } from './whatsapp-media.ts';
 
@@ -22,8 +22,12 @@ export class WhatsAppAdapter {
   private reconnect: ReturnType<typeof setTimeout> | undefined;
   private openedAt = 0;
   private events: Promise<void> = Promise.resolve();
+  private connectionLife = new AbortController();
+  private readonly presence = new Map<string, () => void>();
+  private readonly presenceLanes = new Map<string, Promise<void>>();
   constructor(private readonly flow: Workflow, private readonly authDir: string,
-    private readonly incoming: (message: Message) => Promise<void>,private readonly onConnectionLost?:()=>void) {}
+    private readonly incoming: (message: Message) => Promise<void>,private readonly onConnectionLost?:()=>void,
+    private readonly clock = Date.now) {}
   snapshot(): WhatsAppStatus { return { ...this.status }; }
   requireReady(): void { if (this.status.state !== 'connected' || !this.socket || this.verifiedSocket !== this.socket) throw new DomainError('whatsapp_not_connected', 503); }
   async start(): Promise<void> {
@@ -65,11 +69,12 @@ export class WhatsAppAdapter {
           this.fail('This session belongs to a different owner. Account history was not mixed.'); this.stopped = true; socket.end(new Error('owner_mismatch')); return;
         }
         if (!existsSync(path)) writeFileSync(path, JSON.stringify({ owner }), { mode: 0o600 });
+        this.connectionLife = new AbortController();
         this.verifiedSocket = socket;
-        this.openedAt = Date.now(); this.status = { ...this.status, state: 'connected', qr: null, error: null };
+        this.openedAt = this.clock(); this.status = { ...this.status, state: 'connected', qr: null, error: null };
       }
       if (update.connection === 'close') {
-        this.onConnectionLost?.();
+        this.connectionLife.abort(); this.clearPresence(); this.onConnectionLost?.();
         this.socket = undefined; this.verifiedSocket = undefined; this.status = { ...this.status, state: 'disconnected', qr: null };
         const parsed = z.object({ output: z.object({ statusCode: z.number() }) }).safeParse(update.lastDisconnect?.error);
         if (parsed.success && parsed.data.output.statusCode === DisconnectReason.loggedOut) {
@@ -181,12 +186,15 @@ export class WhatsAppAdapter {
     const raw = proto.WebMessageInfo.decode(Buffer.from(parsed.data.protobuf,'base64'));
     return raw.key ? { ...raw, key: raw.key } : undefined;
   }
-  private receiveReaction(key: WAMessage['key'], reaction: proto.IReaction, source: Message['source']): void {
+  private receiveReaction(key: WAMessage['key'], reaction: Omit<proto.IReaction,'key'> & {key?: WAMessage['key'] | null}, source: Message['source']): void {
     const reactor = reaction.key;
-    if (!key.remoteJid || !key.id || !reactor?.remoteJid || !reactor.id) return;
-    const chat = this.flow.store.waCanonical(this.flow.accountId,jidNormalizedUser(key.remoteJid));
-    const reactorChat = this.flow.store.waCanonical(this.flow.accountId,jidNormalizedUser(reactor.remoteJid));
-    if (!directJid(chat) || reactorChat !== chat) return;
+    if (!key.id || !reactor?.id) return;
+    // Baileys uses the target key here, and the reactor's envelope key in reaction.key.
+    // A missing chat is scoped by the other key, never by a global message-ID lookup.
+    const reactorChat = reactor.remoteJid ? this.canonical(reactor.remoteJid,reactor.remoteJidAlt) : undefined;
+    const targetChat = key.remoteJid ? this.canonical(key.remoteJid,key.remoteJidAlt) : undefined;
+    const chat = targetChat ?? reactorChat;
+    if (!chat || !directJid(chat) || reactorChat && reactorChat !== chat) return;
     const target = this.flow.store.messages(this.flow.accountId,chat).find(m => m.transportId === key.id);
     if (!target || !this.raw(chat,key.id)) return;
     const at = Number(reaction.senderTimestampMs ?? 0);
@@ -200,6 +208,7 @@ export class WhatsAppAdapter {
     if (!raw.key.remoteJid || !directJid(raw.key.remoteJid)) return;
     const reaction = normalizeMessageContent(raw.message)?.reactionMessage;
     if (reaction?.key) {
+      this.canonical(raw.key.remoteJid,raw.key.remoteJidAlt);
       this.receiveReaction(reaction.key,{key:raw.key,text:reaction.text ?? null,senderTimestampMs:reaction.senderTimestampMs ?? Number(raw.messageTimestamp ?? 0)*1000},source);
       return;
     }
@@ -223,8 +232,8 @@ export class WhatsAppAdapter {
     const raw=this.raw(message.conversationId,message.transportId);
     const normalized=raw ? normalizeWhatsApp(raw,this.flow.accountId,message.conversationId,message.source) : null;
     return message.accountId===this.flow.accountId && saved?.conversationId===message.conversationId && !!saved.media && !!raw && !isViewOnce(raw) && !!normalized?.media
-      && !saved.media.viewOnce && (saved.media.expiresAt===null || saved.media.expiresAt>Date.now())
-      && (normalized.media.expiresAt===null || normalized.media.expiresAt>Date.now());
+      && !saved.media.viewOnce && (saved.media.expiresAt===null || saved.media.expiresAt>this.clock())
+      && (normalized.media.expiresAt===null || normalized.media.expiresAt>this.clock());
   }
   async downloadMedia(message:Message):Promise<Buffer> {
     this.requireReady();
@@ -255,49 +264,109 @@ export class WhatsAppAdapter {
     if(!this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
     return bytes;
   }
+  beginPresence(chat: string, isCurrent: () => boolean, outboxId?: string): () => void {
+    this.presence.get(chat)?.();
+    const socket = this.socket;
+    const c = this.flow.conversation(chat);
+    const eligible = () => {
+      if (!socket || this.socket !== socket || this.verifiedSocket !== socket || this.status.state !== 'connected'
+        || !isCurrent() || !this.flow.store.modelConsent(this.flow.accountId)) return false;
+      const current = this.flow.conversation(chat);
+      if (!chat.endsWith('@s.whatsapp.net') || !aiAccess(current,this.flow.accountId) || current.control !== 'assistant_allowed'
+        || current.workflowVersion !== c.workflowVersion || current.policyVersion !== c.policyVersion
+        || !inPermittedHours(current,this.clock())) return false;
+      const grant = this.flow.store.grants(this.flow.accountId,chat).find(g => g.state === 'active');
+      if (!outboxId) return automaticDecision(current,this.flow.store.conversations(this.flow.accountId),this.flow.accountId,this.clock(),'live',grant) === 'auto';
+      const outbox = this.flow.store.outbox(this.flow.accountId,outboxId);
+      return !!outbox && outbox.origin === 'assistant_auto' && outbox.conversationId === chat && outbox.grantId === grant?.id
+        && outbox.workflowVersion === current.workflowVersion && !!grant && grant.reservedUnits > 0
+        && (grant.expiresAt === null || grant.expiresAt > this.clock())
+        && (grant.maxUnits === null || grant.successfulUnits + grant.reservedUnits <= grant.maxUnits)
+        && outbox.components.some(p => p.state === 'queued' || p.state === 'dispatching');
+    };
+    if (!eligible()) return () => {};
+    let timer: ReturnType<typeof setInterval>;
+    let unsubscribe = () => {};
+    const send = (state: 'composing' | 'paused') => {
+      const previous = this.presenceLanes.get(chat) ?? Promise.resolve();
+      const job = previous.then(async () => {
+        if (!socket || this.socket !== socket || this.verifiedSocket !== socket) return;
+        if (state === 'composing' ? this.presence.get(chat) !== finish || !eligible() : this.presence.has(chat)) return;
+        await socket.sendPresenceUpdate(state,chat);
+      }).catch(() => {}).finally(() => { if (this.presenceLanes.get(chat) === job) this.presenceLanes.delete(chat); });
+      this.presenceLanes.set(chat,job);
+    };
+    const finish = () => {
+      if (this.presence.get(chat) !== finish) return;
+      this.presence.delete(chat); clearInterval(timer); unsubscribe(); send('paused');
+    };
+    this.presence.set(chat,finish);
+    unsubscribe = this.flow.onChange(id => { if (id === chat) finish(); });
+    let ticks = 0;
+    timer = setInterval(() => { if (!eligible()) finish(); else if (++ticks % 4 === 0) send('composing'); },1000);
+    timer.unref(); send('composing');
+    return finish;
+  }
+  private clearPresence(): void { for (const finish of this.presence.values()) finish(); }
   async dispatch(outboxId: string) {
-    this.requireReady();
     const outbox = this.flow.store.outbox(this.flow.accountId,outboxId);
     if (!outbox) throw new DomainError('outbox_not_found',404);
+    if (outbox.action.kind !== 'text_sequence') this.requireReady();
     const c = this.flow.conversation(outbox.conversationId);
     if (c.kind !== 'direct' || !c.id.endsWith('@s.whatsapp.net')) throw new DomainError('unverified_chat_identity',403);
-    return this.flow.dispatch(outboxId, async component => {
-      const socket = this.socket;
-      if (!socket || this.verifiedSocket !== socket || this.status.state !== 'connected') return { state: 'failed' };
-      const transportId = generateMessageIDV2(socket.user?.id);
-      const current = this.flow.store.outbox(this.flow.accountId,outboxId);
-      if (!current) return { state: 'failed' };
-      const part = current.components.find(p => p.id === component.id);
-      if (!part) return { state: 'failed' };
-      part.transportId = transportId; this.flow.store.saveOutbox(current);
-      const target = component.reaction ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === component.reaction?.targetMessageId) : undefined;
-      const reactionRaw = target ? this.raw(c.id,target.transportId) : undefined;
-      const quote = outbox.quotedMessageId ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === outbox.quotedMessageId) : undefined;
-      const quoted = quote ? this.raw(c.id,quote.transportId) : undefined;
-      if (component.kind === 'reaction' && !reactionRaw || outbox.quotedMessageId && (!quote || !quoted || quote.media?.viewOnce || quote.media?.expiresAt!==undefined && quote.media.expiresAt!==null && quote.media.expiresAt<=Date.now())) return { state: 'failed' };
-      const audio = component.kind==='audio' && component.uploadId ? this.flow.store.audioUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
-      if(component.kind==='audio' && (!audio || outbox.origin!=='owner_manual'))return {state:'failed'};
-      const upload = component.kind==='image' && component.uploadId ? this.flow.store.imageUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
-      if (component.kind === 'image' && (!upload || outbox.origin !== 'owner_manual')) return {state:'failed'};
-      const content = component.kind==='audio' && audio
-        ? {audio:Buffer.from(audio.bytes),mimetype:audio.mime,ptt:true,seconds:Math.ceil(audio.duration)}
-        : component.kind === 'image' && upload
-        ? {image:Buffer.from(upload.bytes),mimetype:upload.mime,caption:component.text ?? ''}
-        : component.kind === 'reaction' && component.reaction && reactionRaw
-          ? {react:{text:component.reaction.emoji,key:reactionRaw.key}} : {text:component.text ?? ''};
-      const sent = await socket.sendMessage(c.id,content,{messageId:transportId,...(quoted ? {quoted} : {})});
-      if (this.socket !== socket || this.verifiedSocket !== socket) return {state:'unknown'};
-      if (sent?.key.id && (component.kind === 'image' || component.kind==='audio')) {
-        const previous = this.flow.store.waMessage(this.flow.accountId,c.id,sent.key.id);
-        if (!previous || !z.object({deleted:z.literal(true)}).safeParse(JSON.parse(previous)).success)
-          this.flow.store.saveWaMessage(this.flow.accountId,c.id,sent.key.id,
-            JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(sent).finish()).toString('base64')}));
-      }
-      return sent?.key.id ? { state: 'accepted', transportId: sent.key.id } : { state: 'unknown' };
-    });
+    const dispatchSocket = this.socket;
+    const finishPresence = outbox.action.kind === 'text_sequence' && outbox.origin === 'assistant_auto'
+      ? this.beginPresence(c.id,() => true,outboxId) : () => {};
+    try {
+      return await this.flow.dispatch(outboxId, async component => {
+        const socket = this.socket;
+        if (!socket || this.verifiedSocket !== socket || this.status.state !== 'connected') return { state: 'failed' };
+        const transportId = generateMessageIDV2(socket.user?.id);
+        const current = this.flow.store.outbox(this.flow.accountId,outboxId);
+        if (!current) return { state: 'failed' };
+        const part = current.components.find(p => p.id === component.id);
+        if (!part) return { state: 'failed' };
+        part.transportId = transportId; this.flow.store.saveOutbox(current);
+        const target = component.reaction ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === component.reaction?.targetMessageId) : undefined;
+        const reactionRaw = target ? this.raw(c.id,target.transportId) : undefined;
+        const quoteId = component.quotedMessageId !== undefined ? component.quotedMessageId : outbox.quotedMessageId;
+        const quote = quoteId ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === quoteId) : undefined;
+        const quoted = quote ? this.raw(c.id,quote.transportId) : undefined;
+        if (component.kind === 'reaction' && !reactionRaw || quoteId && (!quote || !quoted || quote.media?.viewOnce || quote.media?.expiresAt!==undefined && quote.media.expiresAt!==null && quote.media.expiresAt<=this.clock())) return { state: 'failed' };
+        const audio = component.kind==='audio' && component.uploadId ? this.flow.store.audioUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
+        if(component.kind==='audio' && (!audio || outbox.origin!=='owner_manual'))return {state:'failed'};
+        const upload = component.kind==='image' && component.uploadId ? this.flow.store.imageUpload(this.flow.accountId,c.id,component.uploadId) : undefined;
+        if (component.kind === 'image' && (!upload || outbox.origin !== 'owner_manual')) return {state:'failed'};
+        const content = component.kind==='audio' && audio
+          ? {audio:Buffer.from(audio.bytes),mimetype:audio.mime,ptt:true,seconds:Math.ceil(audio.duration)}
+          : component.kind === 'image' && upload
+          ? {image:Buffer.from(upload.bytes),mimetype:upload.mime,caption:component.text ?? ''}
+          : component.kind === 'reaction' && component.reaction && reactionRaw
+            ? {react:{text:component.reaction.emoji,key:reactionRaw.key}} : {text:component.text ?? ''};
+        const sent = await socket.sendMessage(c.id,content,{messageId:transportId,...(quoted ? {quoted} : {})});
+        if (this.socket !== socket || this.verifiedSocket !== socket) return {state:'unknown'};
+        if (sent?.key.id && (component.kind === 'image' || component.kind==='audio')) {
+          const previous = this.flow.store.waMessage(this.flow.accountId,c.id,sent.key.id);
+          if (!previous || !z.object({deleted:z.literal(true)}).safeParse(JSON.parse(previous)).success)
+            this.flow.store.saveWaMessage(this.flow.accountId,c.id,sent.key.id,
+              JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(sent).finish()).toString('base64')}));
+        }
+        return sent?.key.id ? { state: 'accepted', transportId: sent.key.id } : { state: 'unknown' };
+      }, {signal:this.connectionLife.signal,check:() => {
+        this.requireReady();
+        if (!dispatchSocket || this.socket !== dispatchSocket || this.verifiedSocket !== dispatchSocket) throw new DomainError('whatsapp_not_connected',503);
+        if (outbox.origin !== 'owner_manual') {
+          if (!this.flow.store.modelConsent(this.flow.accountId)) throw new DomainError('model_consent_revoked',403);
+          for (const id of outbox.audioSourceIds ?? []) {
+            const message = this.flow.store.message(this.flow.accountId,id);
+            if (!message || !this.mediaCurrent(message)) throw new DomainError('audio_source_unavailable',410);
+          }
+        }
+      }});
+    } finally { finishPresence(); }
   }
   async stop(): Promise<void> {
-    this.stopped = true; clearTimeout(this.reconnect);this.onConnectionLost?.();
+    this.stopped = true; clearTimeout(this.reconnect);this.connectionLife.abort();this.clearPresence();this.onConnectionLost?.();
     const socket = this.socket; this.socket = undefined; this.verifiedSocket = undefined;
     socket?.end(new Error('Owner disconnected'));
     await this.events; this.status = { ...this.status, state: 'disconnected', qr: null };

@@ -11,10 +11,11 @@ export function useVoiceRecorder(onClip:(clip:AudioClip)=>void,onError:(message:
   const stop=async()=>{if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());};
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;void stop();};},[]);
   useEffect(()=>{if(!foreground && recording)void stop();},[foreground,recording]);
-  return {recording,seconds,canRecord,stop,start:async()=>{
+  return {recording,seconds,canRecord,stop,start:async(isActive:()=>boolean=()=>true)=>{
+    if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
     if(!canRecord)throw new Error('Recording needs Expo Go or HTTPS. Choose an audio file on HTTP.');
     const input=await navigator.mediaDevices.getUserMedia({audio:true});
-    if(!alive.current || !isForeground()){input.getTracks().forEach(t=>t.stop());throw new Error('Recording cancelled.');}
+    if(!alive.current || !isForeground() || !isActive()){input.getTracks().forEach(t=>t.stop());throw new Error('Recording cancelled.');}
     stream.current=input;
     const media=new MediaRecorder(input);recorder.current=media;
     const chunks:Blob[]=[];let size=0;let rejected=false;const started=Date.now();

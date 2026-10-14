@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import emojiRegex from 'emoji-regex';
 
 export const Mode = z.enum(['never_reply', 'draft_only', 'auto_reply']);
 export const Hours = z.object({
@@ -56,11 +57,19 @@ export const Message = z.object({
 });
 export type Message = z.infer<typeof Message>;
 const Reason = z.string().min(1).max(512);
-const Reaction = z.object({ targetMessageId: z.string().min(1), emoji: z.enum(['👍', '😂', '❤️', '🙏', '🎉', '😮', '😢']) }).strict();
+export const SingleEmoji = z.string().min(1).max(64).refine(value => {
+  if (/^\p{Emoji_Modifier}$/u.test(value)) return false;
+  const matches = value.match(emojiRegex());
+  return matches?.length === 1 && matches[0] === value;
+}, 'Expected one Unicode emoji');
+const Reaction = z.object({ targetMessageId: z.string().min(1), emoji: SingleEmoji }).strict();
 export const Action = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('silence'), reason: Reason }).strict(),
   z.object({ kind: z.literal('handover'), reason: Reason }).strict(),
   z.object({ kind: z.literal('text'), text: z.string().trim().min(1).max(4000), quotedMessageId: z.string().min(1).nullable().optional(), reason: Reason }).strict(),
+  z.object({ kind: z.literal('text_sequence'), messages: z.array(z.object({
+    text: z.string().trim().min(1).max(4000), quotedMessageId: z.string().min(1).nullable().optional(),
+  }).strict()).min(2).max(5), reason: Reason }).strict().refine(action => action.messages.reduce((total, message) => total + message.text.length, 0) <= 4000, 'Sequence exceeds 4000 characters'),
   z.object({ kind: z.literal('reaction'), reaction: Reaction, reason: Reason }).strict(),
   z.object({ kind: z.literal('reaction_plus_text'), reaction: Reaction, text: z.string().trim().min(1).max(4000), quotedMessageId: z.string().min(1).nullable().optional(), reason: Reason }).strict(),
 ]);
@@ -91,6 +100,8 @@ export type Grant = z.infer<typeof Grant>;
 export const Component = z.object({
   id: z.string(), kind: z.enum(['text', 'reaction', 'image', 'audio']), text: z.string().nullable(), uploadId: z.string().uuid().optional(),
   reaction: Reaction.nullable(),
+  quotedMessageId: z.string().min(1).nullable().optional(),
+  delayAfterPreviousMs: z.number().int().nonnegative().optional(), dueAt: z.number().nonnegative().nullable().optional(),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed']),
   transportId: z.string().nullable(),
 });
@@ -100,7 +111,7 @@ export const Outbox = z.object({
   workflowVersion: z.number(), policyVersion: z.number(), action: OwnerAction, audioSourceIds:z.array(z.string().min(1)).max(2).optional(),
   origin: z.enum(['owner_manual', 'assistant_approved', 'assistant_auto']),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed', 'partial']),
-  components: z.array(Component).min(1).max(2), quotedMessageId: z.string().nullable(),
+  components: z.array(Component).min(1).max(5), quotedMessageId: z.string().nullable(),
   grantId: z.string().nullable(), units: z.number(), transportId: z.string().nullable(),
   authoredAs: z.enum(['owner_written', 'assistant_written', 'owner_edited_assistant']), createdAt: z.number(),
 });
@@ -122,7 +133,7 @@ export const Snapshot = z.object({
 export type Snapshot = z.infer<typeof Snapshot>;
 
 export function actionUnits(action: OwnerAction): number {
-  return action.kind === 'reaction_plus_text' ? 2 : action.kind === 'text' || action.kind === 'reaction' || action.kind === 'image' || action.kind === 'audio' ? 1 : 0;
+  return action.kind === 'text_sequence' ? action.messages.length : action.kind === 'reaction_plus_text' ? 2 : action.kind === 'text' || action.kind === 'reaction' || action.kind === 'image' || action.kind === 'audio' ? 1 : 0;
 }
 export class DomainError extends Error {
   constructor(public readonly code: string, public readonly status = 409) { super(code); }

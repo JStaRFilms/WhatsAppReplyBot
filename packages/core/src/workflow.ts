@@ -8,7 +8,7 @@ import { SqliteStore } from './store.ts';
 
 export type TransportResult = { state: 'accepted'; transportId: string } | { state: 'failed' | 'unknown' };
 export interface ProposalInput {
-  kind: 'change_mode' | 'resume' | 'delegate' | 'configure'; mode?: Conversation['mode']; maxUnits?: number | undefined; expiresAt?: number | undefined;
+  kind: 'change_mode' | 'resume' | 'delegate' | 'configure'; mode?: Conversation['mode']; maxUnits?: number | null | undefined; expiresAt?: number | null | undefined; acknowledgeRisk?: boolean | undefined;
 }
 function hash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function outboxState(components: Component[]): Outbox['state'] {
@@ -180,7 +180,6 @@ export class Workflow {
         }
       } else c = this.invalidate(c, false);
       this.store.saveMessage(message);
-      if (verifiedOwner && message.direction === 'outbound' && message.source === 'live') this.store.markViewed(this.accountId,c.id,message.id);
       if (message.direction === 'inbound' || verifiedOwner) this.store.saveConversation({ ...c,
         lastHumanActivityAt: Math.max(c.lastHumanActivityAt, message.occurredAt) });
       return true;
@@ -243,11 +242,17 @@ export class Workflow {
       const configured = input.kind === 'configure';
       const delegated = input.kind === 'delegate' || configured && input.mode === 'auto_reply';
       if (configured && input.mode !== 'never_reply' && (c.excluded || c.kind !== 'direct')) throw new DomainError('ai_access_denied',403);
-      if (delegated && (!input.maxUnits || !input.expiresAt || input.expiresAt <= this.clock() || input.expiresAt > this.clock()+24*60*60*1000)) throw new DomainError('invalid_delegation',422);
+      if(delegated){
+        if(input.maxUnits===undefined || input.expiresAt===undefined
+          || input.maxUnits!==null && (!Number.isSafeInteger(input.maxUnits) || input.maxUnits<1)
+          || input.expiresAt!==null && (!Number.isFinite(input.expiresAt) || input.expiresAt<=this.clock()))throw new DomainError('invalid_delegation',422);
+        if((input.maxUnits===null || input.maxUnits>20 || input.expiresAt===null || input.expiresAt>this.clock()+86400000)
+          && !input.acknowledgeRisk)throw new DomainError('delegation_warning_required',422);
+      }
       const fields = { id: randomUUID(), accountId: this.accountId, conversationId, kind: input.kind,
         mode: input.kind === 'change_mode' || configured ? input.mode : null,
         maxUnits: delegated ? input.maxUnits : null,
-        expiresAt: delegated ? input.expiresAt : null,
+        expiresAt: delegated ? input.expiresAt : null, riskAccepted:delegated && input.acknowledgeRisk===true,
         workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, confirmBy: this.clock()+300000, consumed: false };
       const proposal = Proposal.parse({ ...fields, payloadHash: hash(fields) });
       this.store.saveProposal(proposal); return proposal;
@@ -267,9 +272,13 @@ export class Workflow {
         pause.indefinite = false; pause.handover = false; pause.until = null; pause.typingUntil = null;
         c = this.invalidate({ ...c, pause, control: held(pause,this.clock()) ? 'manual' : 'assistant_allowed' },true);
       }
+      if((p.kind==='delegate' || p.kind==='configure' && p.mode==='auto_reply')
+        && (p.expiresAt!==null && p.expiresAt<=this.clock()))throw new DomainError('invalid_delegation',422);
+      if((p.kind==='delegate' || p.kind==='configure' && p.mode==='auto_reply')
+        && (p.maxUnits===null || p.maxUnits>20 || p.expiresAt===null || p.expiresAt>this.clock()+86400000)
+        && !p.riskAccepted)throw new DomainError('delegation_warning_required',422);
       if (p.kind === 'delegate') {
         if (!aiAccess(c, this.accountId) || c.mode !== 'auto_reply' || c.control === 'manual') throw new DomainError('delegation_denied', 403);
-        if (!p.expiresAt || p.expiresAt <= this.clock() || !p.maxUnits) throw new DomainError('invalid_delegation', 422);
         if (this.store.outboxes(this.accountId, c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
         c = this.invalidate(c, true);
         this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
@@ -279,13 +288,12 @@ export class Workflow {
         if (!p.mode) throw new DomainError('mode_required',422);
         if (p.mode !== 'never_reply' && (c.excluded || c.kind !== 'direct')) throw new DomainError('ai_access_denied',403);
         if (p.mode === 'auto_reply') {
-          if (!p.expiresAt || p.expiresAt <= this.clock() || !p.maxUnits) throw new DomainError('invalid_delegation',422);
           if (this.store.outboxes(this.accountId,c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
         }
         const pause = pauseState(c);
         pause.indefinite = p.mode === 'never_reply'; pause.handover = false; pause.until = null; pause.typingUntil = null; pause.catchUpMessageId = null;
         c = this.invalidate({ ...c, pause, mode: p.mode, control: held(pause,this.clock()) ? 'manual' : 'assistant_allowed', policyVersion: c.policyVersion+1 },true);
-        if (p.mode === 'auto_reply' && p.expiresAt && p.maxUnits) this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
+        if (p.mode === 'auto_reply') this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
           expiresAt: p.expiresAt, maxUnits: p.maxUnits, successfulUnits: 0, reservedUnits: 0, state: 'active' });
       }
       if (p.kind === 'resume' || p.kind === 'configure' || p.kind === 'change_mode') this.resolveHandovers(c.id);
@@ -300,11 +308,11 @@ export class Workflow {
       if (!aiAccess(c, this.accountId) || c.control === 'manual' || !inPermittedHours(c, this.clock())) throw new DomainError('send_denied', 403);
       if (this.store.outboxes(this.accountId, c.id).some(o => o.components.some(p => p.state === 'unknown'))) throw new DomainError('delivery_unknown');
       grant = this.grant(c.id);
-      if (grant && grant.expiresAt <= this.clock()) {
+      if (grant && grant.expiresAt!==null && grant.expiresAt <= this.clock()) {
         this.store.saveGrant({ ...grant, state: 'ended' }); grant = undefined;
       }
       if (origin === 'assistant_auto' && (c.mode !== 'auto_reply' || !grant)) throw new DomainError('autonomy_denied', 403);
-      if (grant && (grant.expiresAt <= this.clock() || grant.successfulUnits+grant.reservedUnits+units > grant.maxUnits)) throw new DomainError('grant_limit');
+      if (grant && (grant.expiresAt!==null && grant.expiresAt <= this.clock() || grant.maxUnits!==null && grant.successfulUnits+grant.reservedUnits+units > grant.maxUnits)) throw new DomainError('grant_limit');
       if (grant) this.store.saveGrant({ ...grant, reservedUnits: grant.reservedUnits + units });
     }
     const components: Component[] = [];
@@ -348,7 +356,7 @@ export class Workflow {
       || c.workflowVersion !== outbox.workflowVersion || c.policyVersion !== outbox.policyVersion) throw new DomainError('stale_delivery');
     if (outbox.grantId) {
       const g = this.store.grants(this.accountId, c.id).find(g => g.id === outbox.grantId);
-      if (!g || g.state !== 'active' || g.expiresAt <= this.clock()) throw new DomainError('grant_expired');
+      if (!g || g.state !== 'active' || g.expiresAt!==null && g.expiresAt <= this.clock()) throw new DomainError('grant_expired');
     }
   }
   async dispatch(id: string, handoff: (component: Component) => Promise<TransportResult>): Promise<Outbox> {
@@ -391,7 +399,6 @@ export class Workflow {
               transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: component.text,
               occurredAt: this.clock(), source: 'live', quotedMessageId: outbox.quotedMessageId,
               statusReply: false, statusContext: null, media: null, reaction: null });
-            if(outbox.origin === 'owner_manual')this.store.markViewed(this.accountId,outbox.conversationId,messageId);
           } else if (component.reaction) {
             const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
             if (target) this.store.saveMessage({ ...target, reaction: component.reaction.emoji });

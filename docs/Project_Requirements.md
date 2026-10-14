@@ -69,8 +69,11 @@ in those issues share the contracts in
   unresolved handover require owner intervention. See
   [owner controls](features/Owner_Control_and_Local_Drafts.md).
 - A reply action may contain text, a reaction, or both. Each successful outbound
-  component consumes a reply unit. A twenty-unit ceiling covers reactions and
-  split bubbles; expiry and early completion stop the grant sooner.
+  component consumes a reply unit. Twenty units remains a preset, not a ceiling.
+  The owner-approved update permits custom/unlimited counts and arbitrary/no
+  expiry only after a warning and exact owner confirmation. Reservations,
+  revocation, pause and unknown-delivery protections still apply. See
+  [media and delegation](features/Media_and_Delegation.md).
 - Approval and the last pre-delivery check both validate freshness. A transport
   handoff is not cancellable with certainty. Unknown outcomes never trigger a
   blind retry and never free reply capacity for another action.

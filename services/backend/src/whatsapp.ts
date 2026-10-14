@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, jidNormalizedUser, DisconnectReason, proto, generateMessageIDV2, type WAMessage } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, jidNormalizedUser, DisconnectReason, proto, generateMessageIDV2, normalizeMessageContent, type WAMessage } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { DomainError, type Workflow, type Message, type Conversation } from '@replybot/core';
 import { directJid, normalizeWhatsApp, isViewOnce } from './whatsapp-normalize.ts';
+import { downloadAttachment, mediaDeadline } from './whatsapp-media.ts';
 
 export const WhatsAppStatus = z.object({
   state: z.enum(['disconnected','connecting','qr','connected','error']), qr: z.string().nullable(),
@@ -189,6 +190,43 @@ export class WhatsAppAdapter {
       // Do not hold the event lane while a model runs; owner takeover must remain immediate.
       void this.incoming(message).catch(() => { this.status = { ...this.status, error: 'A reply could not be drafted. Review this chat manually.' }; });
     }
+  }
+  mediaCurrent(message:Message):boolean {
+    const saved=this.flow.store.message(this.flow.accountId,message.id);
+    const raw=this.raw(message.conversationId,message.transportId);
+    const normalized=raw ? normalizeWhatsApp(raw,this.flow.accountId,message.conversationId,message.source) : null;
+    return message.accountId===this.flow.accountId && saved?.conversationId===message.conversationId && !!saved.media && !!raw && !isViewOnce(raw) && !!normalized?.media
+      && !saved.media.viewOnce && (saved.media.expiresAt===null || saved.media.expiresAt>Date.now())
+      && (normalized.media.expiresAt===null || normalized.media.expiresAt>Date.now());
+  }
+  async downloadMedia(message:Message):Promise<Buffer> {
+    this.requireReady();
+    if(!this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
+    const raw=this.raw(message.conversationId,message.transportId);
+    if(!raw)throw new DomainError('media_unavailable',404);
+    const content=normalizeMessageContent(raw.message);
+    const attachment=content?.imageMessage ?? content?.stickerMessage ?? (content?.videoMessage?.gifPlayback ? content.videoMessage : undefined);
+    if(!attachment || Number(attachment.fileLength ?? 0)>10*1024*1024)throw new DomainError('media_too_large',413);
+    const signal=AbortSignal.timeout(15000);const socket=this.socket;
+    const kind=content?.imageMessage ? 'image' : content?.stickerMessage ? 'sticker' : 'video';
+    let bytes:Buffer;
+    try{bytes=await downloadAttachment(attachment,kind,signal);}
+    catch(error){
+      if(!(error instanceof DomainError) || ![404,410].includes(error.status) || error.code!=='media_download_failed')throw error;
+      if(!socket || this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
+      const updated=await mediaDeadline(socket.updateMediaMessage(raw),signal);
+      if(this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message) || isViewOnce(updated)
+        || updated.key.id!==raw.key.id || updated.key.remoteJid!==raw.key.remoteJid)throw new DomainError('media_unavailable',404);
+      const fresh=normalizeMessageContent(updated.message);
+      const next=fresh?.imageMessage ?? fresh?.stickerMessage ?? (fresh?.videoMessage?.gifPlayback ? fresh.videoMessage : undefined);
+      if(!next)throw new DomainError('media_unavailable',404);
+      bytes=await downloadAttachment(next,kind,signal);
+      if(this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
+      this.flow.store.saveWaMessage(this.flow.accountId,message.conversationId,message.transportId,
+        JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(updated).finish()).toString('base64')}));
+    }
+    if(!this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
+    return bytes;
   }
   async dispatch(outboxId: string) {
     this.requireReady();

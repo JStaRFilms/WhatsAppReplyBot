@@ -59,16 +59,27 @@ A Needs you card clears after your accepted reply or explicit resumption. Typing
 alone does not clear it. Handled dismisses a card without resuming automation.
 Filter dots show new activity since your last visit. Avatar counters show unread
 messages in Reply without sending WhatsApp read receipts. Recently opened chats
-use cached history; initial draft cards wait for their history to avoid jumps.
+use cached history; initial history waits for bottom positioning. Swipe right to
+quote, or hold to react. The composer emoji button opens a picker. A chat is marked
+viewed only while visible, focused and at its newest messages.
 
 Accepted transport handoff is not a delivery or read receipt. Unknown outcomes
 are not retried. Never-reply contacts cannot be passed to AI. Historical sync
 never triggers replies. The assistant supports review, drafting, contact-mode
 changes and resumption commands; it is not a general-purpose tool planner yet.
 
-Live media understanding is pending. Images, stickers, GIFs and unsupported
-attachments are identified, but remote generation rejects context containing
-media until encoding is implemented. View-once content is not cached.
+Images, stickers and GIFs now have authenticated previews and model image input.
+Animation uses sampled frames, not full-video understanding. View-once, deleted
+and expired media are excluded. Old or expired WhatsApp download links can still
+be unavailable. GIF decoding needs FFmpeg on the Windows PATH.
+
+Contact settings accept a custom reply count, 24/48-hour runs, an exact end date
+or no expiry. Unlimited actions and extended runs require a risk acknowledgment
+and exact confirmation. Reactions still consume units. You can pause at any time.
+
+OpenRouter attribution defaults to JStar Reply Bot with a local app URL and a
+hidden-visibility request. Set OPENROUTER_APP_NAME and OPENROUTER_APP_URL in the
+backend environment to change attribution. This does not publish the app.
 
 ## Offline preview
 
@@ -84,10 +95,12 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-39 focused safety tests, strict typechecks and web export pass. Browser checks
+49 focused safety tests, strict typechecks and web export pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
-no page errors. The live backend is ready on the LAN. Owner pairing and a paid synthetic model response are verified. Real-device
-sends and reply quality on actual conversations still need owner verification.
+no page errors. Owner pairing, synthetic text generation and a paid synthetic
+image-recognition request are verified. Browser checks cover live-preview
+rendering and custom/unlimited/date-based grant confirmation. Real-device
+gestures, image downloads and reply quality still need owner verification.
 
 See `docs/features/Live_Integration.md` for implementation and review evidence.
 Runtime data, WhatsApp credentials, tokens and `.env` remain ignored.

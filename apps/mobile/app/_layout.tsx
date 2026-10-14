@@ -8,6 +8,8 @@ import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { AppProvider, useApp } from '../lib/app-state';
 import { LocalDraftProvider } from '../lib/local-drafts';
 import { fonts } from '../lib/theme';
+export const unstable_settings = { initialRouteName: '(tabs)' };
+
 function Navigation() {
   const { palette, dark } = useApp();
   return <><StatusBar style={dark ? 'light' : 'dark'}/><Stack screenOptions={{

@@ -6,17 +6,18 @@ import { Conversation } from '@replybot/core/contracts';
 import { ClientSnapshot } from '@replybot/core/api';
 import { ApiClient } from './api';
 import { HistoryCache } from './history-cache';
+import { ClientClock } from './client-clock';
 import { readSetting, saveSetting, getClientId } from './storage';
 import { palettes, type Palette, type ThemeChoice } from './theme';
 
 interface Controller {
   snapshot: ClientSnapshot | null; status: 'offline' | 'connecting' | 'online'; error: string | null;
-  palette: Palette; dark: boolean; themeChoice: ThemeChoice; baseUrl: string; client: ApiClient; history: HistoryCache;
+  palette: Palette; dark: boolean; themeChoice: ThemeChoice; baseUrl: string; client: ApiClient; history: HistoryCache; clock: ClientClock;
   refresh: () => Promise<void>; clearError: () => void; reportError: (message: string) => void;
   connect: (url: string, token?: string) => Promise<void>;
   setTheme: (choice: ThemeChoice) => void;
   composer: (id: string,hasText: boolean) => Promise<void>;
-  viewed: (id:string,watermark:number,version:number) => Promise<void>;
+  viewed: (id:string,watermark:number) => Promise<void>;
   perform: <T>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>) => Promise<T | undefined>;
 }
 const Context = createContext<Controller | null>(null);
@@ -34,6 +35,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const client = useMemo(() => new ApiClient(baseUrl, token), [baseUrl, token]);
   const composerQueue = useMemo(()=>new Map<string,Promise<void>>(),[client]);
   const history = useMemo(() => new HistoryCache(client),[client]);
+  const clock = useMemo(() => new ClientClock(), [client]);
+  useEffect(() => { clock.calibrate(snapshot?.serverTime ?? 0); }, [clock]);
+  const snapshotRequest = useRef(0);
+  const acceptedSnapshot = useRef(0);
   const activeClient=useRef(client);activeClient.current=client;
   const sessionEpoch=useRef(0);
   const dark = themeChoice === 'dark' || (themeChoice === 'system' && system === 'dark');
@@ -52,9 +57,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!token) return;
     const epoch=sessionEpoch.current;
-    try { const data=await client.request('/v1/snapshot',ClientSnapshot);if(activeClient.current===client&&sessionEpoch.current===epoch){setSnapshot(data);setStatus('online');} }
-    catch (e) { if(activeClient.current===client&&sessionEpoch.current===epoch){setStatus('offline');setError(e instanceof Error ? e.message : 'Service unavailable.');} }
-  }, [client, token]);
+    const request = ++snapshotRequest.current;
+    try {
+      const data=await client.request('/v1/snapshot',ClientSnapshot);
+      if(activeClient.current!==client||sessionEpoch.current!==epoch||request<acceptedSnapshot.current)return;
+      acceptedSnapshot.current=request;
+      clock.calibrate(data.serverTime);
+      setSnapshot(current => {
+        if (!current || current.accountId !== data.accountId) return data;
+        const savedConversations=new Map(current.conversations.map(c=>[c.id,c]));
+        return {...data, conversations:data.conversations.map(incoming => {
+          const saved=savedConversations.get(incoming.id);
+          return saved && saved.workflowVersion>incoming.workflowVersion ? saved : incoming;
+        })};
+      });
+      setStatus('online');
+    }
+    catch (e) { if(activeClient.current===client&&sessionEpoch.current===epoch&&request>=acceptedSnapshot.current){setStatus('offline');setError(e instanceof Error ? e.message : 'Service unavailable.');} }
+  }, [client, token, clock]);
   useEffect(() => {
     if (!token) return;
     void refresh();
@@ -82,23 +102,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
       const result=await client.request('/v1/conversations/'+encodeURIComponent(id)+'/composer',z.object({acknowledged:z.boolean(),conversation:Conversation}),{hasText,clientId:await getClientId()});
       if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
-      setSnapshot(current=>current ? {...current,conversations:current.conversations.map(c=>c.id===id?result.conversation:c)}:current);
+      setSnapshot(current=>current ? {...current,conversations:current.conversations.map(c=>c.id===id&&c.accountId===result.conversation.accountId&&result.conversation.workflowVersion>=c.workflowVersion?result.conversation:c)}:current);
     }).finally(()=>{if(composerQueue.get(id)===task)composerQueue.delete(id);});
     composerQueue.set(id,task);return task;
   },[client,composerQueue]);
-  const viewed=useCallback(async(id:string,watermark:number,version:number)=>{
+  const viewed=useCallback(async(id:string,watermark:number)=>{
     const epoch=sessionEpoch.current;
     await client.request('/v1/conversations/'+encodeURIComponent(id)+'/viewed',z.object({viewed:z.boolean()}),{watermark});
     if(activeClient.current!==client||sessionEpoch.current!==epoch)return;
-    setSnapshot(current=>current&&(current.historyVersions[id] ?? 0)===version ? {...current,unreadCounts:{...current.unreadCounts,[id]:0}} : current);
-  },[client]);
+    // The server knows whether newer messages arrived beyond this watermark.
+    await refresh();
+  },[client,refresh]);
   const perform = async <T,>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>): Promise<T | undefined> => {
     setError(null);
     try { const result = await client.request(path, schema, payload); await refresh(); return result; }
     catch (e) { setError(e instanceof Error ? e.message : 'Action failed.'); return undefined; }
   };
   return <Context value={{ snapshot, status, error, palette: dark ? palettes.dark : palettes.light, dark,
-    themeChoice, baseUrl, client, history, refresh, connect, perform, composer, viewed, clearError: () => setError(null), reportError: setError,
+    themeChoice, baseUrl, client, history, clock, refresh, connect, perform, composer, viewed, clearError: () => setError(null), reportError: setError,
     setTheme: choice => { setThemeChoice(choice); void saveSetting('replybot-theme', choice).catch(() => setError('Theme preference could not be saved.')); } }}>
     {children}
   </Context>;

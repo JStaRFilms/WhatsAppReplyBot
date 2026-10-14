@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Snapshot, Message, Proposal } from './contracts.ts';
 export const ClientSnapshot = Snapshot.extend({
+  serverTime:z.number().default(0),
   lastMessages: z.array(Message), latestTenIds: z.array(z.string()), modelConsent: z.boolean(), unreadCounts: z.record(z.string(),z.number().int().nonnegative()).default({}),
   historyVersions:z.record(z.string(),z.number().int().nonnegative()).default({}),
 });

@@ -13,10 +13,10 @@ export function PauseControls({ conversation:c }: { conversation:Conversation })
     finally{setBusy(false);}
   };
   if(c.kind!=='direct'||c.excluded||c.mode==='never_reply')return null;
-  return <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
+  return <View style={{flexDirection:'row',alignItems:'center',gap:8,flexShrink:0}}>
     {c.control==='manual'&&<Pressable accessibilityRole="button" accessibilityLabel="Resume now" disabled={busy||status!=='online'||c.pause?.composing}
-      onPress={()=>{void apply('resume');}}><Text style={{fontFamily:fonts.medium,fontSize:12,color:palette.accent}}>{busy?'Applying…':'Resume now'}</Text></Pressable>}
-    <Pressable accessibilityRole="button" accessibilityLabel="Pause options" onPress={()=>setMenu(true)} style={{padding:5}}><MoreHorizontal size={18} color={palette.muted}/></Pressable>
+      onPress={()=>{void apply('resume');}} style={{justifyContent:'center',minHeight:28}}><Text numberOfLines={1} style={{fontFamily:fonts.medium,fontSize:12,lineHeight:18,color:palette.accent}}>{busy?'Applying…':'Resume now'}</Text></Pressable>}
+    <Pressable accessibilityRole="button" accessibilityLabel="Pause options" onPress={()=>setMenu(true)} style={{padding:5,justifyContent:'center',height:28}}><MoreHorizontal size={18} color={palette.muted}/></Pressable>
     <Modal visible={menu} transparent animationType="fade" onRequestClose={()=>setMenu(false)}>
       <View style={{flex:1,justifyContent:'flex-end',backgroundColor:'#00000088'}}>
         <Pressable style={{flex:1}} onPress={()=>setMenu(false)}/>

@@ -56,8 +56,8 @@ export const Draft = z.object({
 });
 export type Draft = z.infer<typeof Draft>;
 export const Grant = z.object({
-  id: z.string(), accountId: z.string(), conversationId: z.string(), expiresAt: z.number(),
-  maxUnits: z.number().int().min(1).max(20), successfulUnits: z.number().int().nonnegative(),
+  id: z.string(), accountId: z.string(), conversationId: z.string(), expiresAt: z.number().positive().nullable(),
+  maxUnits: z.number().int().positive().nullable(), successfulUnits: z.number().int().nonnegative(),
   reservedUnits: z.number().int().nonnegative(), state: z.enum(['active', 'revoked', 'ended']),
 });
 export type Grant = z.infer<typeof Grant>;
@@ -81,7 +81,8 @@ export type Outbox = z.infer<typeof Outbox>;
 export const Proposal = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(),
   kind: z.enum(['change_mode', 'resume', 'delegate', 'configure']), mode: Mode.nullable(),
-  maxUnits: z.number().int().min(1).max(20).nullable(), expiresAt: z.number().nullable(),
+  maxUnits: z.number().int().positive().nullable(), expiresAt: z.number().positive().nullable(),
+  riskAccepted:z.boolean().default(false),
   workflowVersion: z.number(), policyVersion: z.number(), confirmBy: z.number(), consumed: z.boolean(),
   payloadHash: z.string().length(64),
 });

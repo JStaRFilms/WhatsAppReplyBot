@@ -24,9 +24,10 @@ const addresses = Object.entries(networkInterfaces()).flatMap(([name, entries]) 
   (entries ?? []).filter(i => !i.internal && i.family === 'IPv4' && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address)).map(i => ({ name, address: i.address })));
 const app = createApp({ store, token, allowedOrigins: lan ? addresses.map(i => 'http://'+i.address+':8081') : [],
   ...(live ? { whatsapp: { authDir: join(runtime,'whatsapp-auth') } } : {}),
-  ...(remote ? { remoteModel: { generate: context => new OpenRouterClient({
+  ...(remote ? { remoteModel: { generate: (context,visuals) => new OpenRouterClient({
     apiKey, allowRemote: true, ownerConsent: store.modelConsent(accountId),
-  }).generate(context) } } : {}),
+    appName:process.env.OPENROUTER_APP_NAME || 'JStar Reply Bot',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
+  }).generate(context,visuals) } } : {}),
 });
 await app.listen({ host: lan ? '0.0.0.0' : '127.0.0.1', port: 3210 });
 console.info((live ? 'Live' : 'Demo')+' backend ready. WhatsApp pairing starts only from Settings.');

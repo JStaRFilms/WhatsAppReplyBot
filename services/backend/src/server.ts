@@ -8,6 +8,7 @@ import { assistantTurn, attention } from './assistant.ts';
 import { draftGenerator, type RemoteModel } from './draft-model.ts';
 import { WhatsAppAdapter } from './whatsapp.ts';
 import { DEMO_ACCOUNT, seedDemo } from './seed.ts';
+import { MediaService } from './media.ts';
 
 const Request = z.object({ requestId: z.string().min(1).max(96) });
 const Id = z.object({ id: z.string().min(1).max(128) });
@@ -19,7 +20,6 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   const flow = new Workflow(options.store, accountId, now);
   if (!options.whatsapp && options.seed !== false) seedDemo(options.store, now());
   flow.recover();
-  const generateDraft = draftGenerator(flow, options.remoteModel);
   const allowedOrigin = (origin: string) => localOrigin(origin) || (options.allowedOrigins ?? []).includes(origin);
   const whatsapp = options.whatsapp ? new WhatsAppAdapter(flow, options.whatsapp.authDir, async message => {
     if (!options.remoteModel || !options.store.modelConsent(accountId)) return;
@@ -30,6 +30,8 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     const draft = await generateDraft(c.id,'wa-draft-'+message.id);
     if (decision === 'auto' && draft.state === 'pending') await whatsapp?.dispatch(flow.autoSend(draft.id,'wa-auto-'+draft.id).id);
   }) : undefined;
+  const media=whatsapp ? new MediaService(m=>whatsapp.downloadMedia(m),m=>whatsapp.mediaCurrent(m),now) : undefined;
+  const generateDraft=draftGenerator(flow,options.remoteModel,media);
   app.register(cors, { origin: (origin, callback) => callback(null, !origin || allowedOrigin(origin)) });
   app.addHook('onRequest', async (request, reply) => {
     const ip = request.ip.replace(/^::ffff:/,'');
@@ -48,7 +50,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     if (error instanceof z.ZodError) return reply.code(422).send({ error: 'invalid_request' });
     return reply.code(500).send({ error: 'service_error' });
   });
-  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
+  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
     modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
     lastMessages: options.store.lastMessages(accountId),
     latestTenIds: latestTen(options.store.conversations(accountId), accountId, now()) });
@@ -83,6 +85,13 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     const {id}=Id.parse(request.params);flow.conversation(id);
     const messages=options.store.recentMessages(accountId,id);
     return{messages,watermark:options.store.historyWatermark(accountId,id,messages.map(m=>m.id))};
+  });
+  app.get('/v1/conversations/:id/media/:messageId',async(request,reply)=>{
+    const {id,messageId}=Id.extend({messageId:z.string().min(1).max(256)}).parse(request.params);flow.conversation(id);
+    const message=options.store.message(accountId,messageId);
+    if(!message || message.conversationId!==id || !media)throw new DomainError('media_unavailable',404);
+    const preview=await media.preview(message);
+    return reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').type(preview.mime).send(preview.bytes);
   });
   app.post('/v1/conversations/:id/viewed',async request=>{
     const {id}=Id.parse(request.params);flow.conversation(id);
@@ -131,9 +140,9 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     const { id } = Id.parse(request.params);
     const body = z.discriminatedUnion('kind', [
       Request.extend({ kind: z.literal('change_mode'), mode: z.enum(['never_reply','draft_only','auto_reply']) }).strict(),
-      Request.extend({ kind: z.literal('delegate'), maxUnits: z.number().int().min(1).max(20), expiresAt: z.number() }).strict(),
+      Request.extend({ kind: z.literal('delegate'), maxUnits: z.number().int().positive().nullable(), expiresAt: z.number().positive().nullable(), acknowledgeRisk:z.boolean().optional() }).strict(),
       Request.extend({ kind: z.literal('resume') }).strict(),
-      Request.extend({ kind: z.literal('configure'), mode: z.enum(['never_reply','draft_only','auto_reply']), maxUnits: z.number().int().min(1).max(20).optional(), expiresAt: z.number().optional() }).strict(),
+      Request.extend({ kind: z.literal('configure'), mode: z.enum(['never_reply','draft_only','auto_reply']), maxUnits: z.number().int().positive().nullable().optional(), expiresAt: z.number().positive().nullable().optional(), acknowledgeRisk:z.boolean().optional() }).strict(),
     ]).parse(request.body);
     const { requestId, ...input } = body;
     return flow.propose(id, input, requestId);

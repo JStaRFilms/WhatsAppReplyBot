@@ -145,6 +145,7 @@ export class SqliteStore {
   }
   conversations(accountId: string): Conversation[] { return this.list('conversations', accountId, Conversation); }
   saveConversation(record: Conversation): void { this.put('conversations', Conversation.parse(record)); }
+  message(accountId:string,id:string):Message | undefined { return this.read('messages',accountId,id,Message); }
   messages(accountId: string, conversationId: string): Message[] { return this.list('messages', accountId, Message, conversationId); }
   recentMessages(accountId: string, conversationId: string, limit = 100): Message[] {
     return this.db.prepare("SELECT payload FROM messages WHERE account_id=? AND conversation_id=? ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT ?")

@@ -22,7 +22,8 @@ const labels: Record<string, string> = {
   confirmation_expired: 'This confirmation expired. Open a new proposal.',
   model_consent_required: 'Allow OpenRouter text drafts in Settings first.',
   model_consent_revoked: 'OpenRouter consent was disabled. This draft was discarded.',
-  live_media_encoding_unverified: 'Live media encoding is not ready. This chat needs your reply.',
+  media_unavailable: 'This attachment is unavailable.',
+  media_encoder_unavailable: 'Install FFmpeg on the Windows service to display media.',
   model_request_failed: 'The model request failed. No draft was approved or sent.',
   invalid_model_response: 'The model returned an invalid action. Nothing was sent.',
   local_browser_provision_only: 'Enter the service token from your computer to connect this phone.',
@@ -46,6 +47,17 @@ export class ApiClient {
       throw new Error(labels[code] ?? code.replaceAll('_',' '));
     }
     return schema.parse(json);
+  }
+  async media(conversationId:string,messageId:string,signal:AbortSignal):Promise<string> {
+    const response=await fetch(this.baseUrl.replace(/\/$/,'')+'/v1/conversations/'+encodeURIComponent(conversationId)+'/media/'+encodeURIComponent(messageId),
+      {headers:{Authorization:'Bearer '+this.token},signal});
+    if(!response.ok)throw new Error('Media unavailable');
+    const mime=response.headers.get('Content-Type')?.split(';')[0];
+    if(mime!=='image/png' && mime!=='image/gif')throw new Error('Unsupported media');
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    if(bytes.length>4*1024*1024)throw new Error('Media too large');
+    let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+    return 'data:'+mime+';base64,'+btoa(binary);
   }
   static async provision(baseUrl: string): Promise<string> {
     const response = await fetch(baseUrl.replace(/\/$/,'')+'/v1/local-provision', {

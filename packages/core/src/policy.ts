@@ -32,8 +32,8 @@ export function automaticDecision(
     || conversation.control === 'manual' || !inPermittedHours(conversation, now)) return 'none';
   if (conversation.mode === 'auto_reply') {
     return grant?.accountId === accountId && grant.conversationId === conversation.id
-      && grant.state === 'active' && grant.expiresAt > now
-      && grant.successfulUnits + grant.reservedUnits < grant.maxUnits ? 'auto' : 'draft';
+      && grant.state === 'active' && (grant.expiresAt===null || grant.expiresAt > now)
+      && (grant.maxUnits===null || grant.successfulUnits + grant.reservedUnits < grant.maxUnits) ? 'auto' : 'draft';
   }
   return conversation.mode === 'draft_only'
     || latestTen(conversations, accountId, now).includes(conversation.id) ? 'draft' : 'none';

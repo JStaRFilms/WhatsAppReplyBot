@@ -24,9 +24,9 @@ export function normalizeWhatsApp(raw: WAMessage, accountId: string, chat: strin
   const sticker = content.stickerMessage;
   const video = content.videoMessage;
   const extended = content.extendedTextMessage;
-  const media = photo ? { kind: 'image' as const, access: 'missing' as const }
-    : sticker ? { kind: sticker.isAnimated ? 'animated_sticker' as const : 'sticker' as const, access: 'missing' as const }
-    : video ? { kind: video.gifPlayback ? 'gif' as const : 'video' as const, access: 'unsupported' as const }
+  const media = photo ? { kind: 'image' as const, access: 'available' as const }
+    : sticker ? { kind: sticker.isAnimated ? 'animated_sticker' as const : 'sticker' as const, access: 'available' as const }
+    : video ? video.gifPlayback ? { kind:'gif' as const,access:'available' as const } : {kind:'video' as const,access:'unsupported' as const}
     : content.audioMessage ? { kind: 'audio' as const, access: 'unsupported' as const }
     : content.documentMessage ? { kind: 'document' as const, access: 'unsupported' as const } : null;
   const context = extended?.contextInfo ?? photo?.contextInfo ?? sticker?.contextInfo ?? video?.contextInfo;
@@ -42,6 +42,7 @@ export function normalizeWhatsApp(raw: WAMessage, accountId: string, chat: strin
     text: viewOnce ? '' : (content.conversation ?? extended?.text ?? photo?.caption ?? video?.caption ?? (unsupported ? '[Unsupported attachment]' : '')),
     occurredAt: seconds*1000, source, quotedMessageId: quoted,
     statusReply: context?.remoteJid === 'status@broadcast', statusContext: null, reaction: null,
-    media: media ? { ...media, fixture: null, description: 'WhatsApp '+media.kind, viewOnce, expiresAt: null } : null,
+    media: media ? { ...media, fixture: null, description: 'WhatsApp '+media.kind, viewOnce,
+      expiresAt: context?.expiration && context.expiration > 0 ? (seconds+context.expiration)*1000 : null } : null,
   };
 }

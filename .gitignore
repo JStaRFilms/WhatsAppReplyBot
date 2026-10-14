@@ -8,6 +8,9 @@ Thumbs.db
 *_old
 *_backup
 
+# --- Local orchestration state ---
+.pi/takomi/
+
 # --- Python / AI ---
 __pycache__/
 *.py[cod]

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { randomUUID } from 'expo-crypto';
+import { randomUUID } from './uuid';
 import { Conversation, Draft, Outbox, Message } from '@replybot/core/contracts';
 export const PauseResult = z.object({ acknowledged: z.literal(true), conversation: Conversation });
 export const DecisionResult = z.object({ draft: Draft.nullable().optional(), outbox: Outbox.nullable().optional(), simulated: z.boolean().optional() });

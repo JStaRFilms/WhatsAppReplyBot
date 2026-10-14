@@ -1,4 +1,4 @@
-import { randomUUID } from 'expo-crypto';
+import { randomUUID } from './uuid';
 import * as SecureStore from 'expo-secure-store';
 let clientIdentity: Promise<string> | undefined;
 export function getClientId(): Promise<string> {

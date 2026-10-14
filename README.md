@@ -100,7 +100,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-49 focused safety tests, strict typechecks and web export pass. Browser checks
+51 focused safety tests, strict typechecks and web export pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
 image-recognition request are verified. Browser checks cover live-preview

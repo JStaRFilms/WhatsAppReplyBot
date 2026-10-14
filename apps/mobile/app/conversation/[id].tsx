@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { ChevronLeft, Send, SlidersHorizontal, Smile, X } from 'lucide-react-native';
-import { randomUUID } from 'expo-crypto';
+import { randomUUID } from '../../lib/uuid';
 import { Draft, type Message, type Action } from '@replybot/core/contracts';
 import { Page, Button } from '../../components/ui';
 import { ChatBadge } from '../../components/chat-badge';

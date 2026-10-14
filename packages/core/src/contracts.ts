@@ -45,8 +45,8 @@ export type Action = z.infer<typeof Action>;
 export const Draft = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), triggerMessageId: z.string(),
   workflowVersion: z.number(), policyVersion: z.number(), revision: z.number().int().positive(),
-  action: Action, state: z.enum(['pending', 'needs_owner', 'approved', 'dismissed', 'stale']),
-  createdAt: z.number(), edited: z.boolean(),
+  action: Action, state: z.enum(['pending', 'needs_owner', 'approved', 'dismissed', 'stale', 'resolved']),
+  createdAt: z.number(), handoverAt: z.number().nullable().optional(), edited: z.boolean(),
 });
 export type Draft = z.infer<typeof Draft>;
 export const Grant = z.object({

@@ -79,6 +79,11 @@ export class Workflow {
     }
     return next;
   }
+  private resolveHandovers(conversationId: string, answeredAt?: number): void {
+    for (const d of this.store.drafts(this.accountId, conversationId)) {
+      if (d.state === 'needs_owner' && (answeredAt === undefined || answeredAt >= (d.handoverAt ?? d.createdAt))) this.store.saveDraft({ ...d, state: 'resolved' });
+    }
+  }
   private takeOver(c: Conversation): Conversation { return this.invalidate({ ...c, control: 'manual' }, true); }
   pause(conversationId: string, requestId: string): Conversation {
     return this.request(requestId, { operation: 'pause', conversationId }, Conversation,
@@ -94,7 +99,10 @@ export class Workflow {
       if (message.direction === 'outbound' && echo) return false;
       if (message.direction === 'outbound') {
         message.authorship = verifiedOwner ? 'owner_written' : 'unknown';
-        if (message.source === 'live') c = this.takeOver(c);
+        if (message.source === 'live') {
+          c = this.takeOver(c);
+          if (verifiedOwner && message.text.trim()) this.resolveHandovers(c.id,message.occurredAt);
+        }
       } else c = this.invalidate(c, false);
       this.store.saveMessage(message);
       if (message.direction === 'inbound' || verifiedOwner) this.store.saveConversation({ ...c,
@@ -125,7 +133,7 @@ export class Workflow {
       const draft = Draft.parse({ id: randomUUID(), accountId: this.accountId, conversationId, triggerMessageId: trigger.id,
         workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, revision: 1, action,
         state: action.kind === 'handover' ? 'needs_owner' : action.kind === 'silence' ? 'dismissed' : 'pending',
-        createdAt: this.clock(), edited: false });
+        createdAt: this.clock(), handoverAt: action.kind === 'handover' ? this.clock() : null, edited: false });
       this.store.saveDraft(draft); return draft;
     });
   }
@@ -139,7 +147,7 @@ export class Workflow {
       if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion) throw new DomainError('stale_draft');
       this.targets(c, action);
       if (action.kind === 'handover') c = this.takeOver(c);
-      const next: Draft = { ...draft, action, workflowVersion: c.workflowVersion, revision: revision + 1, edited: true,
+      const next: Draft = { ...draft, action, workflowVersion: c.workflowVersion, revision: revision + 1, edited: true, handoverAt: action.kind === 'handover' ? this.clock() : null,
         state: action.kind === 'handover' ? 'needs_owner' : action.kind === 'silence' ? 'dismissed' : 'pending' };
       this.store.saveDraft(next); return next;
     });
@@ -198,6 +206,7 @@ export class Workflow {
         if (p.mode === 'auto_reply' && p.expiresAt && p.maxUnits) this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
           expiresAt: p.expiresAt, maxUnits: p.maxUnits, successfulUnits: 0, reservedUnits: 0, state: 'active' });
       }
+      if (p.kind === 'resume' || p.kind === 'configure' || p.kind === 'change_mode') this.resolveHandovers(c.id);
       this.store.saveProposal({ ...p, consumed: true }); return c;
     });
   }
@@ -311,13 +320,25 @@ export class Workflow {
       const outbox = this.store.outbox(this.accountId, id);
       if (!outbox) throw new DomainError('outbox_not_found', 404);
       const c = this.conversation(outbox.conversationId);
-      if (outbox.state === 'accepted' && outbox.origin === 'owner_manual') this.store.saveConversation({ ...c, lastHumanActivityAt: Math.max(c.lastHumanActivityAt, outbox.createdAt) });
+      if (outbox.state === 'accepted' && outbox.origin === 'owner_manual') {
+        this.store.saveConversation({ ...c, lastHumanActivityAt: Math.max(c.lastHumanActivityAt, outbox.createdAt) });
+        if (outbox.components.some(p => p.kind === 'text' && p.state === 'accepted')) this.resolveHandovers(c.id,outbox.createdAt);
+      }
       if (outbox.components.some(p => p.state === 'accepted') && outbox.origin !== 'owner_manual' && c.workflowVersion === outbox.workflowVersion) this.invalidate(c, false);
       return outbox;
     });
   }
   recover(): void {
     this.store.transaction(() => {
+      const handedOver = new Set(this.store.drafts(this.accountId).filter(d => d.state === 'needs_owner').map(d => d.conversationId));
+      for (const id of handedOver) {
+        const c = this.conversation(id);
+        if (c.control === 'assistant_allowed') this.resolveHandovers(c.id);
+        else {
+          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && m.text.trim()).sort((a,b) => b.occurredAt-a.occurredAt)[0];
+          if (ownerReply) this.resolveHandovers(c.id,ownerReply.occurredAt);
+        }
+      }
       for (const outbox of this.store.outboxes(this.accountId)) {
         for (const component of outbox.components) if (component.state === 'dispatching') component.state = 'unknown';
         outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);

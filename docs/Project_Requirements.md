@@ -35,7 +35,7 @@ in those issues share the contracts in
 | FR-003 | Explicit modes and latest-ten automatic drafts | [FR-003](issues/FR-003.md) |
 | FR-004 | Approval workflow and fresh authorization | [FR-004](issues/FR-004.md) |
 | FR-005 | Bounded autonomous replies and reactions | [FR-005](issues/FR-005.md) |
-| FR-006 | Durable manual takeover and explicit resumption | [FR-006](issues/FR-006.md) |
+| FR-006 | Durable owner takeover, cooldown and resumption | [FR-006](issues/FR-006.md) |
 | FR-007 | Durable outbox and uncertain delivery recovery | [FR-007](issues/FR-007.md) |
 | FR-008 | Live-event processing, replay isolation and attention review | [FR-008](issues/FR-008.md) |
 | FR-009 | Account/contact-scoped memory, style and bounded context | [FR-009](issues/FR-009.md) |
@@ -63,7 +63,11 @@ in those issues share the contracts in
 - Quiet hours and manual pause block automatic generation and automated
   delivery. Owner-initiated drafts may run during quiet hours, but automated
   sends wait for permitted hours and fresh validation. Invalid timezone or
-  missing permission data denies automation. No timer resumes manual control.
+  missing permission data denies automation. The approved owner-control update
+  allows a five-minute post-send cooldown and a ten-second empty-composer hold.
+  Unanswered backlog gets a draft only at expiry. Explicit indefinite pause and
+  unresolved handover require owner intervention. See
+  [owner controls](features/Owner_Control_and_Local_Drafts.md).
 - A reply action may contain text, a reaction, or both. Each successful outbound
   component consumes a reply unit. A twenty-unit ceiling covers reactions and
   split bubbles; expiry and early completion stop the grant sooner.

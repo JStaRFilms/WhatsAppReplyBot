@@ -49,8 +49,8 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     return reply.code(500).send({ error: 'service_error' });
   });
   const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
-    modelConsent: options.store.modelConsent(accountId),
-    lastMessages: options.store.conversations(accountId).map(c => options.store.messages(accountId, c.id).sort((a,b) => a.occurredAt-b.occurredAt).at(-1)).filter(m => m !== undefined),
+    modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
+    lastMessages: options.store.lastMessages(accountId),
     latestTenIds: latestTen(options.store.conversations(accountId), accountId, now()) });
   const dispatch = (id: string) => whatsapp ? whatsapp.dispatch(id) : flow.dispatch(id, async () => ({ state: 'accepted', transportId: 'demo-'+randomUUID() }));
   const ready = () => whatsapp?.requireReady();
@@ -77,11 +77,31 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   app.get('/v1/conversations/:id/messages', async request => {
     const { id } = Id.parse(request.params); flow.conversation(id);
-    return options.store.messages(accountId, id).sort((a,b) => a.occurredAt-b.occurredAt).slice(-100);
+    return options.store.recentMessages(accountId,id);
+  });
+  app.get('/v1/conversations/:id/history',async request=>{
+    const {id}=Id.parse(request.params);flow.conversation(id);
+    const messages=options.store.recentMessages(accountId,id);
+    return{messages,watermark:options.store.historyWatermark(accountId,id,messages.map(m=>m.id))};
+  });
+  app.post('/v1/conversations/:id/viewed',async request=>{
+    const {id}=Id.parse(request.params);flow.conversation(id);
+    const body=Request.extend({watermark:z.number().int().nonnegative()}).strict().parse(request.body);
+    options.store.markViewedPosition(accountId,id,body.watermark);return{viewed:true};
   });
   app.post('/v1/conversations/:id/pause', async request => {
     const { id } = Id.parse(request.params); const body = Request.strict().parse(request.body);
     return { acknowledged: true, conversation: flow.pause(id, body.requestId) };
+  });
+  app.post('/v1/conversations/:id/composer', async request => {
+    const { id } = Id.parse(request.params);
+    const body = Request.extend({ hasText:z.boolean(),clientId:z.string().uuid() }).strict().parse(request.body);
+    return { acknowledged:true, conversation:flow.composer(id,body.hasText,body.requestId,body.clientId) };
+  });
+  app.post('/v1/conversations/:id/control', async request => {
+    const { id } = Id.parse(request.params);
+    const body = Request.extend({ action:z.enum(['resume','extend','indefinite']) }).strict().parse(request.body);
+    return flow.quickControl(id,body.action,body.requestId);
   });
   app.post('/v1/conversations/:id/manual-send', async request => {
     const { id } = Id.parse(request.params);
@@ -156,6 +176,22 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     }
     return snapshot();
   });
-  app.addHook('onClose', async () => { await whatsapp?.stop(); options.store.close(); });
+  const catchUps = new Map<string,Promise<void>>();
+  const timer = setInterval(() => {
+    for (const job of flow.expirePauses()) {
+      if (catchUps.size >= 4 || catchUps.has(job.conversationId)) continue;
+      if (whatsapp && (!options.remoteModel || !options.store.modelConsent(accountId))) continue;
+      const candidate = flow.conversation(job.conversationId);
+      if (candidate.mode === null && !latestTen(options.store.conversations(accountId),accountId,now()).includes(candidate.id)) { flow.finishCatchUp(candidate.id,job.messageId); continue; }
+      const current = options.store.recentMessages(accountId,job.conversationId).at(-1);
+      if (current?.id !== job.messageId || current.direction !== 'inbound') { flow.finishCatchUp(job.conversationId,job.messageId); continue; }
+      const task = generateDraft(job.conversationId,'cooldown-'+job.messageId+':'+job.workflowVersion).then(() => {}).catch(() => {
+        // A catch-up attempt never sends. The owner can request a new draft explicitly.
+      }).finally(() => { flow.finishCatchUp(job.conversationId,job.messageId); catchUps.delete(job.conversationId); });
+      catchUps.set(job.conversationId,task);
+    }
+  },1000);
+  timer.unref();
+  app.addHook('onClose', async () => { clearInterval(timer); await Promise.allSettled(catchUps.values()); await whatsapp?.stop(); options.store.close(); });
   return app;
 }

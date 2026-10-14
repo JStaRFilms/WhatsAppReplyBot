@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, actionUnits } from './contracts.ts';
 import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
+import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
 import { SqliteStore } from './store.ts';
 
 export type TransportResult = { state: 'accepted'; transportId: string } | { state: 'failed' | 'unknown' };
@@ -84,10 +85,84 @@ export class Workflow {
       if (d.state === 'needs_owner' && (answeredAt === undefined || answeredAt >= (d.handoverAt ?? d.createdAt))) this.store.saveDraft({ ...d, state: 'resolved' });
     }
   }
-  private takeOver(c: Conversation): Conversation { return this.invalidate({ ...c, control: 'manual' }, true); }
+  private takeOver(c: Conversation, handover = false): Conversation {
+    const pause = pauseState(c);
+    if (!c.pause && !handover) pause.indefinite = false;
+    if (handover) pause.handover = true; else pause.sending = true;
+    pause.catchUpMessageId = null;
+    return this.invalidate({ ...c, control: 'manual', pause }, false);
+  }
+  private ownerSent(c: Conversation, at: number, text: boolean): void {
+    const pause = pauseState(c);
+    if (!c.pause) pause.indefinite = false;
+    pause.sending = false;
+    pause.until = Math.max(pause.until ?? 0,at+OWNER_COOLDOWN);
+    pause.catchUpMessageId = null;
+    if (text) { pause.handover = false; this.resolveHandovers(c.id,at); }
+    this.store.saveConversation({ ...c, control: 'manual', pause });
+  }
   pause(conversationId: string, requestId: string): Conversation {
     return this.request(requestId, { operation: 'pause', conversationId }, Conversation,
-      () => this.takeOver(this.conversation(conversationId)));
+      () => {
+        const c = this.conversation(conversationId); const pause = pauseState(c);
+        pause.indefinite = true; pause.catchUpMessageId = null;
+        return this.invalidate({ ...c, control: 'manual', pause },true);
+      });
+  }
+  composer(conversationId: string, hasText: boolean, requestId: string, clientId = 'owner-client'): Conversation {
+    return this.request(requestId,{ operation: 'composer',conversationId,hasText,clientId },Conversation,() => {
+      const c = this.conversation(conversationId); const pause = pauseState(c);
+      this.store.setComposer(this.accountId,conversationId,clientId,hasText);
+      const composing = this.store.hasComposer(this.accountId,conversationId);
+      if (pause.composing === composing) return c;
+      pause.composing = composing; pause.typingUntil = composing ? null : this.clock()+10000;
+      pause.catchUpMessageId = null;
+      return this.invalidate({ ...c,control:'manual',pause },false);
+    });
+  }
+  quickControl(conversationId: string, action: 'resume'|'extend'|'indefinite', requestId: string): Conversation {
+    return this.request(requestId,{ operation:'quick-control',conversationId,action },Conversation,() => {
+      const c = this.conversation(conversationId); const pause = pauseState(c);
+      pause.catchUpMessageId = null;
+      if (action === 'resume') {
+        if (!aiAccess(c,this.accountId)) throw new DomainError('ai_access_denied',403);
+        if (pause.composing) throw new DomainError('composer_has_text',409);
+        if (pause.sending || this.store.outboxes(this.accountId,c.id).some(o => o.components.some(p => p.state === 'unknown' || p.state === 'dispatching'))) throw new DomainError('delivery_unknown');
+        pause.indefinite = false; pause.handover = false; pause.until = null; pause.typingUntil = null;
+        this.resolveHandovers(c.id);
+      } else if (action === 'extend') pause.until = Math.max(pause.until ?? 0,this.clock())+OWNER_COOLDOWN;
+      else pause.indefinite = true;
+      const next = this.invalidate({ ...c,control:held(pause,this.clock())?'manual':'assistant_allowed',pause },false);
+      if (next.control === 'assistant_allowed') this.queueCatchUp(next);
+      return this.conversation(c.id);
+    });
+  }
+  private queueCatchUp(c: Conversation): void {
+    const messages = this.store.recentMessages(this.accountId,c.id);
+    const last = messages.at(-1);
+    const pause = pauseState(c);
+    pause.catchUpMessageId = last?.direction === 'inbound' && last.source === 'live' && !this.store.drafts(this.accountId,c.id).some(d => d.triggerMessageId === last.id && d.state === 'pending') ? last.id : null;
+    this.store.saveConversation({ ...c,pause });
+  }
+  expirePauses(): { conversationId: string; messageId: string; workflowVersion:number }[] {
+    return this.store.transaction(() => {
+      for (const c of this.store.duePauses(this.accountId,this.clock())) {
+        const pause = pauseState(c);
+        if (pause.until !== null && pause.until <= this.clock()) pause.until = null;
+        if (pause.typingUntil !== null && pause.typingUntil <= this.clock()) pause.typingUntil = null;
+        if (c.control === 'manual' && !held(pause,this.clock())) {
+          const next = this.invalidate({ ...c,control:'assistant_allowed',pause },false); this.queueCatchUp(next);
+        } else this.store.saveConversation({ ...c,pause });
+      }
+      return this.store.duePauses(this.accountId,this.clock()).flatMap(c => {
+        const messageId = c.pause?.catchUpMessageId;
+        return c.control === 'assistant_allowed' && messageId ? [{ conversationId:c.id,messageId,workflowVersion:c.workflowVersion }] : [];
+      });
+    });
+  }
+  finishCatchUp(conversationId: string, messageId: string): void {
+    const c = this.conversation(conversationId);
+    if (c.pause?.catchUpMessageId === messageId) this.store.saveConversation({ ...c,pause:{ ...c.pause,catchUpMessageId:null } });
   }
   observe(input: Message, verifiedOwner = false): boolean {
     const message = Message.parse(input);
@@ -101,10 +176,11 @@ export class Workflow {
         message.authorship = verifiedOwner ? 'owner_written' : 'unknown';
         if (message.source === 'live') {
           c = this.takeOver(c);
-          if (verifiedOwner && message.text.trim()) this.resolveHandovers(c.id,message.occurredAt);
+          if (verifiedOwner) { this.ownerSent(c,message.occurredAt,!!message.text.trim()); c = this.conversation(c.id); }
         }
       } else c = this.invalidate(c, false);
       this.store.saveMessage(message);
+      if (verifiedOwner && message.direction === 'outbound' && message.source === 'live') this.store.markViewed(this.accountId,c.id,message.id);
       if (message.direction === 'inbound' || verifiedOwner) this.store.saveConversation({ ...c,
         lastHumanActivityAt: Math.max(c.lastHumanActivityAt, message.occurredAt) });
       return true;
@@ -129,7 +205,7 @@ export class Workflow {
       this.targets(c, action);
       const trigger = this.store.messages(this.accountId, c.id).filter(m => m.direction === 'inbound').sort((a,b) => b.occurredAt-a.occurredAt)[0];
       if (!trigger) throw new DomainError('no_inbound_message', 422);
-      if (action.kind === 'handover') c = this.takeOver(c);
+      if (action.kind === 'handover') c = this.takeOver(c,true);
       const draft = Draft.parse({ id: randomUUID(), accountId: this.accountId, conversationId, triggerMessageId: trigger.id,
         workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, revision: 1, action,
         state: action.kind === 'handover' ? 'needs_owner' : action.kind === 'silence' ? 'dismissed' : 'pending',
@@ -146,7 +222,7 @@ export class Workflow {
       if (!aiAccess(c, this.accountId)) throw new DomainError('ai_access_denied', 403);
       if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion) throw new DomainError('stale_draft');
       this.targets(c, action);
-      if (action.kind === 'handover') c = this.takeOver(c);
+      if (action.kind === 'handover') c = this.takeOver(c,true);
       const next: Draft = { ...draft, action, workflowVersion: c.workflowVersion, revision: revision + 1, edited: true, handoverAt: action.kind === 'handover' ? this.clock() : null,
         state: action.kind === 'handover' ? 'needs_owner' : action.kind === 'silence' ? 'dismissed' : 'pending' };
       this.store.saveDraft(next); return next;
@@ -186,7 +262,11 @@ export class Workflow {
       let c = this.conversation(p.conversationId);
       if (c.workflowVersion !== p.workflowVersion || c.policyVersion !== p.policyVersion) throw new DomainError('stale_proposal');
       if (p.kind === 'change_mode') c = this.invalidate({ ...c, mode: p.mode, policyVersion: c.policyVersion+1 }, true);
-      if (p.kind === 'resume') c = this.invalidate({ ...c, control: 'assistant_allowed' }, true);
+      if (p.kind === 'resume') {
+        const pause = pauseState(c);
+        pause.indefinite = false; pause.handover = false; pause.until = null; pause.typingUntil = null;
+        c = this.invalidate({ ...c, pause, control: held(pause,this.clock()) ? 'manual' : 'assistant_allowed' },true);
+      }
       if (p.kind === 'delegate') {
         if (!aiAccess(c, this.accountId) || c.mode !== 'auto_reply' || c.control === 'manual') throw new DomainError('delegation_denied', 403);
         if (!p.expiresAt || p.expiresAt <= this.clock() || !p.maxUnits) throw new DomainError('invalid_delegation', 422);
@@ -202,7 +282,9 @@ export class Workflow {
           if (!p.expiresAt || p.expiresAt <= this.clock() || !p.maxUnits) throw new DomainError('invalid_delegation',422);
           if (this.store.outboxes(this.accountId,c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
         }
-        c = this.invalidate({ ...c, mode: p.mode, control: p.mode === 'never_reply' ? 'manual' : 'assistant_allowed', policyVersion: c.policyVersion+1 },true);
+        const pause = pauseState(c);
+        pause.indefinite = p.mode === 'never_reply'; pause.handover = false; pause.until = null; pause.typingUntil = null; pause.catchUpMessageId = null;
+        c = this.invalidate({ ...c, pause, mode: p.mode, control: held(pause,this.clock()) ? 'manual' : 'assistant_allowed', policyVersion: c.policyVersion+1 },true);
         if (p.mode === 'auto_reply' && p.expiresAt && p.maxUnits) this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
           expiresAt: p.expiresAt, maxUnits: p.maxUnits, successfulUnits: 0, reservedUnits: 0, state: 'active' });
       }
@@ -304,16 +386,19 @@ export class Workflow {
         if (result.state === 'accepted') {
           component.transportId = result.transportId; outbox.transportId ??= result.transportId;
           if (component.kind === 'text' && component.text !== null) {
-            this.store.saveMessage({ id: randomUUID(), accountId: this.accountId, conversationId: outbox.conversationId,
+            const messageId=randomUUID();
+            this.store.saveMessage({ id: messageId, accountId: this.accountId, conversationId: outbox.conversationId,
               transportId: result.transportId, direction: 'outbound', authorship: outbox.authoredAs, text: component.text,
               occurredAt: this.clock(), source: 'live', quotedMessageId: outbox.quotedMessageId,
               statusReply: false, statusContext: null, media: null, reaction: null });
+            if(outbox.origin === 'owner_manual')this.store.markViewed(this.accountId,outbox.conversationId,messageId);
           } else if (component.reaction) {
             const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
             if (target) this.store.saveMessage({ ...target, reaction: component.reaction.emoji });
           }
         } else for (const pending of outbox.components) if (pending.state === 'queued') this.release(outbox, pending, 'cancelled');
         outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
+        if(result.state === 'accepted' && outbox.origin === 'owner_manual')this.ownerSent(this.conversation(outbox.conversationId),this.clock(),component.kind === 'text');
       });
     }
     return this.store.transaction(() => {
@@ -322,7 +407,10 @@ export class Workflow {
       const c = this.conversation(outbox.conversationId);
       if (outbox.state === 'accepted' && outbox.origin === 'owner_manual') {
         this.store.saveConversation({ ...c, lastHumanActivityAt: Math.max(c.lastHumanActivityAt, outbox.createdAt) });
-        if (outbox.components.some(p => p.kind === 'text' && p.state === 'accepted')) this.resolveHandovers(c.id,outbox.createdAt);
+      }
+      if (outbox.state === 'failed' && outbox.origin === 'owner_manual') {
+        const current = this.conversation(c.id); const pause = pauseState(current); pause.sending = false;
+        this.store.saveConversation({ ...current, pause });
       }
       if (outbox.components.some(p => p.state === 'accepted') && outbox.origin !== 'owner_manual' && c.workflowVersion === outbox.workflowVersion) this.invalidate(c, false);
       return outbox;

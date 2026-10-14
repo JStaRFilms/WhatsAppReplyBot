@@ -22,6 +22,9 @@ export class SqliteStore {
         result TEXT NOT NULL, PRIMARY KEY(account_id,request_id));
       CREATE TABLE IF NOT EXISTS account_settings (
         account_id TEXT PRIMARY KEY, model_consent INTEGER NOT NULL DEFAULT 0 CHECK(model_consent IN (0,1)));
+      CREATE TABLE IF NOT EXISTS history_versions (account_id TEXT NOT NULL,conversation_id TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(account_id,conversation_id));
+      CREATE TABLE IF NOT EXISTS conversation_views (account_id TEXT NOT NULL,conversation_id TEXT NOT NULL,last_rowid INTEGER NOT NULL,PRIMARY KEY(account_id,conversation_id));
+      CREATE TABLE IF NOT EXISTS composer_holds (account_id TEXT NOT NULL,conversation_id TEXT NOT NULL,client_id TEXT NOT NULL,has_text INTEGER NOT NULL CHECK(has_text IN (0,1)),PRIMARY KEY(account_id,conversation_id,client_id));
       CREATE TABLE IF NOT EXISTS wa_aliases (account_id TEXT NOT NULL, alias TEXT NOT NULL, canonical TEXT NOT NULL, PRIMARY KEY(account_id,alias));
       CREATE TABLE IF NOT EXISTS wa_messages (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, transport_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(account_id,conversation_id,transport_id));
       CREATE TABLE IF NOT EXISTS assistant_turns (
@@ -34,6 +37,7 @@ export class SqliteStore {
         CREATE INDEX IF NOT EXISTS ${table}_conversation ON ${table}(account_id,conversation_id);`);
     }
     this.db.exec(`
+      CREATE INDEX IF NOT EXISTS message_time ON messages(account_id,conversation_id,json_extract(payload,'$.occurredAt') DESC);
       CREATE UNIQUE INDEX IF NOT EXISTS message_transport_id ON messages(
         account_id,conversation_id,json_extract(payload,'$.transportId'));
       CREATE UNIQUE INDEX IF NOT EXISTS outbox_request_id ON outbox(account_id,json_extract(payload,'$.requestId'));
@@ -41,6 +45,36 @@ export class SqliteStore {
         WHERE json_extract(payload,'$.state')='active';`);
   }
   close(): void { this.db.close(); }
+  unreadCounts(accountId:string): Record<string,number> {
+    const rows=this.db.prepare(`SELECT m.conversation_id,COUNT(*) AS count FROM messages m LEFT JOIN conversation_views v
+      ON v.account_id=m.account_id AND v.conversation_id=m.conversation_id WHERE m.account_id=? AND m.rowid>COALESCE(v.last_rowid,0)
+      AND json_extract(m.payload,'$.direction')='inbound' AND json_extract(m.payload,'$.source')='live' GROUP BY m.conversation_id`).all(accountId);
+    return Object.fromEntries(rows.map(row=>{const r=z.object({conversation_id:z.string(),count:z.number()}).parse(row);return[r.conversation_id,r.count];}));
+  }
+  historyVersions(accountId:string): Record<string,number> {
+    return Object.fromEntries(this.db.prepare('SELECT conversation_id,revision FROM history_versions WHERE account_id=?').all(accountId).map(row=>{const r=z.object({conversation_id:z.string(),revision:z.number()}).parse(row);return[r.conversation_id,r.revision];}));
+  }
+  historyWatermark(accountId:string,conversationId:string,messageIds:string[]): number {
+    const row=this.db.prepare('SELECT COALESCE(MAX(rowid),0) AS position FROM messages WHERE account_id=? AND conversation_id=? AND id IN (SELECT value FROM json_each(?))').get(accountId,conversationId,JSON.stringify(messageIds));
+    return z.object({position:z.number()}).parse(row).position;
+  }
+  markViewedPosition(accountId:string,conversationId:string,position:number): void {
+    const max=this.db.prepare('SELECT COALESCE(MAX(rowid),0) AS position FROM messages WHERE account_id=? AND conversation_id=?').get(accountId,conversationId);
+    if(position>z.object({position:z.number()}).parse(max).position)throw new DomainError('invalid_view_position',422);
+    this.db.prepare('INSERT INTO conversation_views VALUES(?,?,?) ON CONFLICT(account_id,conversation_id) DO UPDATE SET last_rowid=MAX(last_rowid,excluded.last_rowid)').run(accountId,conversationId,position);
+  }
+  markViewed(accountId:string,conversationId:string,messageId:string): void {
+    const row=this.db.prepare('SELECT rowid AS position FROM messages WHERE account_id=? AND conversation_id=? AND id=?').get(accountId,conversationId,messageId);
+    if(!row)throw new DomainError('message_not_found',404);
+    const position=z.object({position:z.number()}).parse(row).position;
+    this.db.prepare('INSERT INTO conversation_views VALUES(?,?,?) ON CONFLICT(account_id,conversation_id) DO UPDATE SET last_rowid=MAX(last_rowid,excluded.last_rowid)').run(accountId,conversationId,position);
+  }
+  setComposer(accountId:string,conversationId:string,clientId:string,hasText:boolean): void {
+    this.db.prepare('INSERT INTO composer_holds VALUES(?,?,?,?) ON CONFLICT(account_id,conversation_id,client_id) DO UPDATE SET has_text=excluded.has_text').run(accountId,conversationId,clientId,hasText?1:0);
+  }
+  hasComposer(accountId:string,conversationId:string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM composer_holds WHERE account_id=? AND conversation_id=? AND has_text=1 LIMIT 1').get(accountId,conversationId);
+  }
   waCanonical(accountId: string, jid: string): string {
     const row = this.db.prepare('SELECT canonical FROM wa_aliases WHERE account_id=? AND alias=?').get(accountId, jid);
     return row ? z.object({ canonical: z.string() }).parse(row).canonical : jid;
@@ -103,10 +137,29 @@ export class SqliteStore {
     if (!changes) throw new DomainError('record_scope_conflict', 403);
   }
   conversation(accountId: string, id: string): Conversation | undefined { return this.read('conversations', accountId, id, Conversation); }
+  duePauses(accountId: string, now: number): Conversation[] {
+    return this.db.prepare(`SELECT payload FROM conversations WHERE account_id=? AND (
+      json_extract(payload,'$.pause.until')<=? OR json_extract(payload,'$.pause.typingUntil')<=?
+      OR json_extract(payload,'$.pause.catchUpMessageId') IS NOT NULL)`)
+      .all(accountId,now,now).map(row => Conversation.parse(JSON.parse(Payload.parse(row).payload)));
+  }
   conversations(accountId: string): Conversation[] { return this.list('conversations', accountId, Conversation); }
   saveConversation(record: Conversation): void { this.put('conversations', Conversation.parse(record)); }
   messages(accountId: string, conversationId: string): Message[] { return this.list('messages', accountId, Message, conversationId); }
-  saveMessage(record: Message): void { this.put('messages', Message.parse(record)); }
+  recentMessages(accountId: string, conversationId: string, limit = 100): Message[] {
+    return this.db.prepare("SELECT payload FROM messages WHERE account_id=? AND conversation_id=? ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT ?")
+      .all(accountId,conversationId,limit).map(row => Message.parse(JSON.parse(Payload.parse(row).payload))).reverse();
+  }
+  lastMessages(accountId: string): Message[] {
+    return this.db.prepare(`SELECT m.payload FROM conversations c JOIN messages m ON m.rowid=(
+      SELECT rowid FROM messages WHERE account_id=c.account_id AND conversation_id=c.id
+      ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT 1) WHERE c.account_id=?`)
+      .all(accountId).map(row => Message.parse(JSON.parse(Payload.parse(row).payload)));
+  }
+  saveMessage(record: Message): void {
+    const message=Message.parse(record);this.put('messages',message);
+    this.db.prepare('INSERT INTO history_versions VALUES(?,?,1) ON CONFLICT(account_id,conversation_id) DO UPDATE SET revision=revision+1').run(message.accountId,message.conversationId);
+  }
   drafts(accountId: string, conversationId?: string): Draft[] { return this.list('drafts', accountId, Draft, conversationId); }
   draft(accountId: string, id: string): Draft | undefined { return this.read('drafts', accountId, id, Draft); }
   saveDraft(record: Draft): void { this.put('drafts', Draft.parse(record)); }

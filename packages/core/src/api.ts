@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { Snapshot, Message, Proposal } from './contracts.ts';
 export const ClientSnapshot = Snapshot.extend({
-  lastMessages: z.array(Message), latestTenIds: z.array(z.string()), modelConsent: z.boolean(),
+  lastMessages: z.array(Message), latestTenIds: z.array(z.string()), modelConsent: z.boolean(), unreadCounts: z.record(z.string(),z.number().int().nonnegative()).default({}),
+  historyVersions:z.record(z.string(),z.number().int().nonnegative()).default({}),
 });
 export type ClientSnapshot = z.infer<typeof ClientSnapshot>;
 export const AssistantResponse = z.object({

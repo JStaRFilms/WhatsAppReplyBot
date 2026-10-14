@@ -6,12 +6,18 @@ export const Hours = z.object({
   start: z.number().int().min(0).max(23),
   end: z.number().int().min(0).max(23),
 }).strict();
+export const PauseState = z.object({
+  until: z.number().nullable(), indefinite: z.boolean(), handover: z.boolean(),
+  composing: z.boolean(), typingUntil: z.number().nullable(), sending: z.boolean(),
+  catchUpMessageId: z.string().nullable(),
+});
+export type PauseState = z.infer<typeof PauseState>;
 export const Conversation = z.object({
   id: z.string().min(1), accountId: z.string().min(1), contactId: z.string().min(1),
   name: z.string(), kind: z.enum(['direct', 'group', 'status_broadcast', 'unknown']),
   mode: Mode.nullable(), excluded: z.boolean(), control: z.enum(['assistant_allowed', 'manual']),
   workflowVersion: z.number().int().positive(), policyVersion: z.number().int().positive(),
-  lastHumanActivityAt: z.number().nonnegative(), hours: Hours.nullable(),
+  lastHumanActivityAt: z.number().nonnegative(), hours: Hours.nullable(), pause: PauseState.nullable().optional(),
 });
 export type Conversation = z.infer<typeof Conversation>;
 export type Mode = z.infer<typeof Mode>;

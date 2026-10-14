@@ -70,8 +70,9 @@ account access, provider requests, real sends and deployment remain gated.
 | 13 | Record, play and transcribe voice notes | coder/reviewer | vibe-build | owner voice approval, task 12 | completed, native teardown fixed; 85 tests, exports and synthetic ASR pass; backend reloaded; phone checks remain owner-tested |
 | 14 | Fix composer keys/mic, Resume and reaction display | coder | vibe-build | task13, owner bug report | completed; combined121tests, exports and focused review fix |
 | 15 | Native reaction sync, emoji, typing and paced replies | coder | vibe-build | task14 shared contract | completed; per-part safety and guarded presence tested; live reloaded |
-| 16 | Signed Android APK and click-to-start Windows launcher | coder | vibe-build | 14/15, owner approval | next; private release key created, APK not built yet |
+| 16 | Signed Android APK and click-to-start Windows launcher | coder | vibe-build | 14/15, owner approval | completed, signed ARM64/x86_64 APK verified,133tests/types and launcher lifecycle pass; physical-phone checks remain |
 | 17 | Otherme UI designer handoff brief | worker | design handoff | owner final name clarification | completed, delivered docs/design/Otherme_UI_Brief.md |
+| 18 | Review daily-use signing and launcher | reviewer | vibe-build | 16 | completed, QR shutdown and checkout/instance blockers fixed with regressions |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

@@ -40,6 +40,15 @@ coverage/
 .npm
 *.log
 
+# --- Local Android release outputs ---
+apps/mobile/android/
+apps/mobile/android-export/
+*.apk
+*.aab
+*.p12
+*.jks
+*.keystore
+
 # --- IDEs ---
 .vscode/
 .idea/

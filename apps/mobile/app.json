@@ -6,7 +6,19 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.jstarstudios.otherme",
+      "versionCode": 1,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW", "android.permission.READ_MEDIA_AUDIO"]
+    },
+    "extra": {
+      "backendUrl": "http://192.168.100.5:3210",
+      "publisher": "JStar Studios",
+      "publisherUrl": "https://jstarstudios.com"
+    },
     "plugins": [
+      "./plugins/with-otherme-release.cjs",
+      ["expo-image-picker", {"photosPermission": "Allow Otherme to select photos you choose to send.", "cameraPermission": "Allow Otherme to take photos you choose to send.", "microphonePermission": "Allow Otherme to record voice notes you choose to send."}],
       "expo-router",
       "expo-secure-store",
       "@react-native-community/datetimepicker",

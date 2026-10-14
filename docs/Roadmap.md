@@ -10,8 +10,9 @@ Personal WhatsApp pairing, authenticated chats, owner text/photo/voice sends,
 draft review, quotes, reactions, bounded automation, contact exclusions, timed
 cooldown, local composer holds, images/stickers/GIF understanding and incoming
 voice transcription are implemented. Voice's baseline is c9b9c86 with 85 tests,
-Android/web exports and synthetic paid ASR verification. These are development
-builds, not yet an installable daily-use release.
+Android/web exports and synthetic paid ASR verification. A dedicated signed Android APK and manual Windows launcher are now built;
+133 tests/types and actual signature/archive checks pass. Installation and native
+hardware behavior still need the owner's phone check.
 
 ## Now
 
@@ -22,7 +23,9 @@ phone reactions, presence visibility and microphone behavior after integration.
 
 ## Next: use it without development tools
 
-Produce an installable Android app with its JS bundle embedded, so the phone no
+The first signed APK and Otherme.cmd are built. The APK has its JS bundle embedded.
+Phone installation and usage testing are the next owner step. The original build
+goal was an installable Android app with its JS bundle embedded, so the phone no
 longer needs Expo Go or Metro. Keep the Windows-hosted service, backend-only key
 and existing pairing/data. Give the owner a single-click start/stop/status entry
 instead of terminal commands. Decide whether startup at Windows sign-in is wanted.

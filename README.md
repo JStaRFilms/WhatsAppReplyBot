@@ -2,7 +2,26 @@
 
 WhatsApp-like Expo client, Windows Node backend, SQLite and OpenRouter GPT-6 Luna.
 
-## Live connection
+## Daily use on this PC and Android
+
+Install `.runtime/releases/Otherme-0.1.0.apk` on your Android phone. Double-click
+`Otherme.cmd` on this PC and keep its status window open. The APK has embedded JS;
+Metro and Expo Go are not needed. The launcher uses this PC's Node24 and existing
+project dependencies, not a portable installer for other computers.
+
+In phone Settings, use the PC Wi-Fi service URL, initially
+`http://192.168.100.5:3210`, and the private token from `.runtime/owner-token.txt`.
+Enter it once and Connect. The standalone app has separate secure storage from
+Expo Go. Type Q in the PC status window to stop its own backend gracefully, or P
+for a private pairing QR. An already-running service must match this account/token
+before the launcher attaches; it will not stop a service it did not start.
+
+The approved release certificate and APK contents are verified. Phone launch,
+microphone/camera/speaker and background behavior still need owner checks.
+Signing secrets stay in ignored `.env` and `.runtime/signing/`; back up both.
+See `docs/features/Daily_Use_Build.md` for build evidence and limitations.
+
+## Development live connection
 
 Use Node 24 and pnpm 10. Keep the PC awake and on the same trusted Wi-Fi as your
 phone. The backend key belongs in the ignored `.env`, not the mobile app.
@@ -123,7 +142,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-121 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
+133 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
 image-recognition request and a synthetic speech-transcription request are verified.

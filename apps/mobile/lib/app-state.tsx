@@ -27,7 +27,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>('system');
   const [baseUrl, setBaseUrl] = useState(() => {
     const host = process.env.EXPO_OS === 'web' ? globalThis.location?.hostname : Constants.expoConfig?.hostUri?.split(':')[0];
-    return 'http://'+(host || '127.0.0.1')+':3210';
+    return process.env.EXPO_PUBLIC_BACKEND_URL || (host ? 'http://'+host+':3210' : Constants.expoConfig?.extra?.backendUrl || '');
   });
   const [token, setToken] = useState('');
   const [snapshot, setSnapshot] = useState<ClientSnapshot | null>(null);

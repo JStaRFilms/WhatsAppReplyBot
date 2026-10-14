@@ -16,7 +16,7 @@ import { registerImageUploads } from './image-uploads.ts';
 const Request = z.object({ requestId: z.string().min(1).max(96) });
 const Id = z.object({ id: z.string().min(1).max(128) });
 const localOrigin = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-export function createApp(options: { store: SqliteStore; token: string; now?: () => number; seed?: boolean; remoteModel?: RemoteModel; whatsapp?: { authDir: string }; allowedOrigins?: string[] }) {
+export function createApp(options: { store: SqliteStore; token: string; now?: () => number; seed?: boolean; remoteModel?: RemoteModel; whatsapp?: { authDir: string }; allowedOrigins?: string[]; launcher?: { rootId:string; instanceId:string } }) {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const now = options.now ?? Date.now;
   const accountId = options.whatsapp ? 'whatsapp-owner' : DEMO_ACCOUNT;
@@ -94,6 +94,12 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   const dispatch = (id: string) => whatsapp ? whatsapp.dispatch(id) : flow.dispatch(id, async () => ({ state: 'accepted', transportId: 'demo-'+randomUUID() }));
   const ready = () => whatsapp?.requireReady();
   app.get('/v1/health', async () => ({ demo: !whatsapp, service: 'ready', whatsapp: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo' }));
+  // Minimal authenticated status for the Windows launcher. Never return chat data or pairing secrets.
+  app.get('/v1/launcher', async () => {
+    if(!options.launcher)throw new DomainError('launcher_identity_unavailable',503);
+    return {service:'otherme-backend',protocol:1,accountId,...options.launcher,
+      demo:!whatsapp,whatsapp:whatsapp?.snapshot().state ?? 'disconnected'};
+  });
   app.post('/v1/local-provision', async request => {
     z.object({ confirmLocalDemo: z.literal(true) }).strict().parse(request.body);
     if (!['127.0.0.1', '::1'].includes(request.ip) || !request.headers.origin || !localOrigin(request.headers.origin))

@@ -6,6 +6,7 @@
   "exports": {
     "./contracts": "./src/contracts.ts",
     "./policy": "./src/policy.ts",
+    "./api": "./src/api.ts",
     ".": "./src/index.ts"
   },
   "scripts": {

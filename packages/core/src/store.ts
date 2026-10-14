@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError } from './contracts.ts';
 
+import { AssistantTurn } from './api.ts';
+
 const Payload = z.object({ payload: z.string() });
 const Cached = z.object({ payload_hash: z.string(), result: z.string() });
 type Table = 'conversations' | 'messages' | 'drafts' | 'delegations' | 'outbox' | 'owner_actions';
@@ -17,7 +19,9 @@ export class SqliteStore {
         UNIQUE(account_id,id));
       CREATE TABLE IF NOT EXISTS api_requests (
         account_id TEXT NOT NULL, request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
-        result TEXT NOT NULL, PRIMARY KEY(account_id,request_id));`);
+        result TEXT NOT NULL, PRIMARY KEY(account_id,request_id));
+      CREATE TABLE IF NOT EXISTS assistant_turns (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));`);
     for (const table of ['messages', 'drafts', 'delegations', 'outbox', 'owner_actions'] as const) {
       this.db.exec(`CREATE TABLE IF NOT EXISTS ${table} (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
@@ -33,6 +37,14 @@ export class SqliteStore {
         WHERE json_extract(payload,'$.state')='active';`);
   }
   close(): void { this.db.close(); }
+  assistantTurns(accountId: string): AssistantTurn[] {
+    return this.db.prepare('SELECT payload FROM assistant_turns WHERE account_id=? ORDER BY rowid DESC LIMIT 100').all(accountId)
+      .map(row => AssistantTurn.parse(JSON.parse(Payload.parse(row).payload))).reverse();
+  }
+  saveAssistantTurn(turn: AssistantTurn): void {
+    this.db.prepare('INSERT INTO assistant_turns(id,account_id,payload) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING')
+      .run(turn.id, turn.accountId, JSON.stringify(AssistantTurn.parse(turn)));
+  }
   transaction<T>(operation: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = operation(); this.db.exec('COMMIT'); return result; }

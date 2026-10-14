@@ -74,7 +74,7 @@ export const Outbox = z.object({
 export type Outbox = z.infer<typeof Outbox>;
 export const Proposal = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(),
-  kind: z.enum(['change_mode', 'resume', 'delegate']), mode: Mode.nullable(),
+  kind: z.enum(['change_mode', 'resume', 'delegate', 'configure']), mode: Mode.nullable(),
   maxUnits: z.number().int().min(1).max(20).nullable(), expiresAt: z.number().nullable(),
   workflowVersion: z.number(), policyVersion: z.number(), confirmBy: z.number(), consumed: z.boolean(),
   payloadHash: z.string().length(64),

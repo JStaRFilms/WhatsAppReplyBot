@@ -5,6 +5,7 @@ import { Send, SlidersHorizontal, Smile, X } from 'lucide-react-native';
 import { randomUUID } from 'expo-crypto';
 import { Draft, type Message, type Action } from '@replybot/core/contracts';
 import { Page, Button } from '../../components/ui';
+import { ChatBadge } from '../../components/chat-badge';
 import { MessageBubble } from '../../components/message-bubble';
 import { DraftCard } from '../../components/draft-card';
 import { PermissionSheet } from '../../components/permission-sheet';
@@ -21,8 +22,15 @@ export default function ConversationScreen() {
   const [sending, setSending] = useState(false); const sendLock = useRef(false);
   const pendingIntent = useRef<{ key: string; requestId: string } | null>(null);
   const scroll = useRef<ScrollView>(null);
+  const nearBottom = useRef(true); const opened = useRef(false); const viewportHeight = useRef(0);
+  const scrollToLatest = () => {
+    if (!opened.current || nearBottom.current) requestAnimationFrame(() => {
+      scroll.current?.scrollToEnd({ animated: false });
+      if (messages.length && viewportHeight.current > 0) opened.current = true;
+    });
+  };
   const c = snapshot?.conversations.find(c => c.id === id);
-  useEffect(() => { setPauseState('idle'); }, [id]);
+  useEffect(() => { setPauseState('idle'); setMessages([]); nearBottom.current = true; opened.current = false; }, [id]);
   useEffect(() => { if (c?.control === 'assistant_allowed') setPauseState('idle'); }, [c?.control]);
   useEffect(() => {
     if (!id || status !== 'online') return;
@@ -44,23 +52,23 @@ export default function ConversationScreen() {
     const result = await perform('/v1/conversations/'+encodeURIComponent(id)+'/manual-send', SendResult,
       { action, quotedMessageId, requestId: pendingIntent.current.requestId });
     if (result && result.outbox.state !== 'accepted') reportError(result.outbox.state === 'unknown' || result.outbox.state === 'partial' ? 'Send outcome is uncertain. Do not resend this message.' : 'The message was not accepted. Check WhatsApp connection.');
-    if (result?.outbox.state === 'accepted') { setText(''); setQuote(null); pendingIntent.current = null; setPauseState('acknowledged'); }
+    if (result?.outbox.state === 'accepted') { nearBottom.current = true; scrollToLatest(); setText(''); setQuote(null); pendingIntent.current = null; setPauseState('acknowledged'); }
     sendLock.current = false; setSending(false);
   };
   if (!c) return <Page><Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Conversation unavailable. Connect to the service first.</Text></Page>;
   const drafts = snapshot?.drafts.filter(d => d.conversationId === id && ['pending','needs_owner','stale'].includes(d.state)) ?? [];
-  const mode = c.kind !== 'direct' ? 'AI off · identity not verified' : c.mode === 'never_reply' || c.excluded ? 'AI off' : c.control === 'manual' ? 'AI paused · you are handling this' : c.mode === 'auto_reply' ? 'Auto reply · requires a current limit' : 'Drafts only';
   return <Page scroll={false}>
     <Stack.Screen options={{ title: c.name, headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)} style={{ padding: 10 }}><SlidersHorizontal color={palette.text} size={21}/></Pressable> }}/>
     <View style={{ paddingHorizontal: 20, paddingBottom: 10, flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ color: palette.accent, fontFamily: fonts.regular, fontSize: 12 }}>{mode}</Text>
+      <ChatBadge conversation={c} pending={drafts.some(d => d.state === 'pending')}/>
       {c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && c.control !== 'manual' && <Pressable accessibilityRole="button" onPress={() => { void perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }}>
         <Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 12 }}>Draft reply</Text>
       </Pressable>}
     </View>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
       <ScrollView ref={scroll} contentInsetAdjustmentBehavior="automatic" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}
-        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
+        style={{ flex: 1 }} onLayout={e => { viewportHeight.current = e.nativeEvent.layout.height; scrollToLatest(); }} onContentSizeChange={scrollToLatest}
+        scrollEventThrottle={100} onScroll={({ nativeEvent: e }) => { nearBottom.current = e.contentSize.height-e.layoutMeasurement.height-e.contentOffset.y < 80; }}>
         {messages.map(m => <MessageBubble key={m.id} message={m} quoted={messages.find(q => q.id === m.quotedMessageId)} onSelect={setSelected}/>)}
         {drafts.map(d => <View key={d.id} style={{ paddingVertical: 8 }}><DraftCard draft={d}/></View>)}
       </ScrollView>

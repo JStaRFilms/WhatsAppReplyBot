@@ -3,6 +3,7 @@ import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { Search } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Page, EmptyConnection } from '../../components/ui';
+import { ChatBadge } from '../../components/chat-badge';
 import { Avatar } from '../../components/avatar';
 import { useApp } from '../../lib/app-state';
 import { fonts } from '../../lib/theme';
@@ -36,19 +37,20 @@ export default function Chats() {
       renderItem={({ item: c }) => {
         const last = snapshot.lastMessages.find(m => m.conversationId === c.id);
         const pending = snapshot.drafts.find(d => d.conversationId === c.id && d.state === 'pending');
-        const grant = snapshot.grants.find(g => g.conversationId === c.id && g.state === 'active' && g.expiresAt > Date.now());
-        const prefix = c.mode === 'never_reply' || c.excluded ? 'AI off' : c.control === 'manual' ? 'You are handling this' : pending ? 'Draft' : c.mode === 'auto_reply' ? grant ? 'Auto · '+(grant.maxUnits-grant.successfulUnits-grant.reservedUnits)+' left' : 'Auto · set a limit' : null;
         return <Pressable accessibilityRole="button" accessibilityLabel={'Open '+c.name} onPress={() => router.push({ pathname: '/conversation/[id]', params: { id: c.id } })}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 14 }}>
           <Avatar name={c.name}/><View style={{ flex: 1, gap: 7 }}>
             <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 17, color: palette.text }}>{c.name}</Text>
             <Text numberOfLines={1} style={{ fontFamily: fonts.regular, fontSize: 14, color: pending ? palette.accent : palette.muted }}>
-              {prefix ? prefix+' · ' : ''}{last?.text || (last?.media ? last.media.kind.toUpperCase() : 'No messages')}
+              {last?.text || (last?.media ? last.media.kind.toUpperCase() : 'No messages')}
             </Text>
           </View>
-          <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: palette.muted, width: 52, textAlign: 'right' }}>
-            {last ? new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'}).format(last.occurredAt) : ''}
-          </Text>
+          <View style={{ alignItems: 'flex-end', gap: 7 }}>
+            <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: palette.muted, textAlign: 'right' }}>
+              {last ? new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'}).format(last.occurredAt) : ''}
+            </Text>
+            <ChatBadge conversation={c} pending={!!pending}/>
+          </View>
         </Pressable>;
       }}/>
   </Page>;

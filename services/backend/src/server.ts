@@ -50,7 +50,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
     modelConsent: options.store.modelConsent(accountId),
-    lastMessages: options.store.conversations(accountId).map(c => options.store.messages(accountId, c.id).at(-1)).filter(m => m !== undefined),
+    lastMessages: options.store.conversations(accountId).map(c => options.store.messages(accountId, c.id).sort((a,b) => a.occurredAt-b.occurredAt).at(-1)).filter(m => m !== undefined),
     latestTenIds: latestTen(options.store.conversations(accountId), accountId, now()) });
   const dispatch = (id: string) => whatsapp ? whatsapp.dispatch(id) : flow.dispatch(id, async () => ({ state: 'accepted', transportId: 'demo-'+randomUUID() }));
   const ready = () => whatsapp?.requireReady();
@@ -77,7 +77,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   app.get('/v1/conversations/:id/messages', async request => {
     const { id } = Id.parse(request.params); flow.conversation(id);
-    return options.store.messages(accountId, id).slice(-100);
+    return options.store.messages(accountId, id).sort((a,b) => a.occurredAt-b.occurredAt).slice(-100);
   });
   app.post('/v1/conversations/:id/pause', async request => {
     const { id } = Id.parse(request.params); const body = Request.strict().parse(request.body);
@@ -113,6 +113,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
       Request.extend({ kind: z.literal('change_mode'), mode: z.enum(['never_reply','draft_only','auto_reply']) }).strict(),
       Request.extend({ kind: z.literal('delegate'), maxUnits: z.number().int().min(1).max(20), expiresAt: z.number() }).strict(),
       Request.extend({ kind: z.literal('resume') }).strict(),
+      Request.extend({ kind: z.literal('configure'), mode: z.enum(['never_reply','draft_only','auto_reply']), maxUnits: z.number().int().min(1).max(20).optional(), expiresAt: z.number().optional() }).strict(),
     ]).parse(request.body);
     const { requestId, ...input } = body;
     return flow.propose(id, input, requestId);

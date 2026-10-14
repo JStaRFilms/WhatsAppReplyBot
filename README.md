@@ -73,10 +73,10 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-28 focused safety tests, strict typechecks and web export pass. Browser checks
+30 focused safety tests, strict typechecks and web export pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
-no page errors. The live backend is ready on the LAN. Actual owner pairing,
-paid-model output and real-device sends still require verification.
+no page errors. The live backend is ready on the LAN. Owner pairing and a paid synthetic model response are verified. Real-device
+sends and reply quality on actual conversations still need owner verification.
 
 See `docs/features/Live_Integration.md` for implementation and review evidence.
 Runtime data, WhatsApp credentials, tokens and `.env` remain ignored.

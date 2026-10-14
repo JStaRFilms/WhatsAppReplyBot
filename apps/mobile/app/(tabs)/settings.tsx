@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { Text, TextInput, View } from 'react-native';
 import { Page, Button } from '../../components/ui';
@@ -7,6 +7,12 @@ import { WhatsAppConnection } from '../../components/whatsapp-connection';
 import { fonts } from '../../lib/theme';
 export default function Settings() {
   const { palette, themeChoice, setTheme, baseUrl, connect, status, snapshot, perform } = useApp();
+  const [modelBusy, setModelBusy] = useState(false); const modelLock = useRef(false);
+  const changeModelConsent = async () => {
+    if (modelLock.current || !snapshot) return; modelLock.current = true; setModelBusy(true);
+    try { await perform('/v1/model-consent', z.object({ consent: z.boolean() }), { consent: !snapshot.modelConsent }); }
+    finally { modelLock.current = false; setModelBusy(false); }
+  };
   const [url, setUrl] = useState(baseUrl); const [token, setToken] = useState('');
   const input = { color: palette.text, fontFamily: fonts.regular, fontSize: 15, backgroundColor: palette.surface,
     borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14 };
@@ -29,7 +35,7 @@ export default function Settings() {
     </Text>
     {snapshot?.model === 'openai/gpt-6-luna' && <>
       <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13, lineHeight: 20 }}>Selected chat context goes to OpenRouter. API charges apply.</Text>
-      <Button label={snapshot.modelConsent ? 'Pause AI' : 'Enable AI'} secondary={snapshot.modelConsent} onPress={() => { void perform('/v1/model-consent', z.object({ consent: z.boolean() }), { consent: !snapshot.modelConsent }); }}/>
+      <Button label={modelBusy ? 'Applying…' : snapshot.modelConsent ? 'Pause AI' : 'Enable AI'} secondary={snapshot.modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
     </>}
     <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Media understanding is not available yet.</Text>
   </Page>;

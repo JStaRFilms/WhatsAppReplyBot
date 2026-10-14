@@ -7,7 +7,7 @@ import { SqliteStore } from './store.ts';
 
 export type TransportResult = { state: 'accepted'; transportId: string } | { state: 'failed' | 'unknown' };
 export interface ProposalInput {
-  kind: 'change_mode' | 'resume' | 'delegate'; mode?: Conversation['mode']; maxUnits?: number; expiresAt?: number;
+  kind: 'change_mode' | 'resume' | 'delegate' | 'configure'; mode?: Conversation['mode']; maxUnits?: number | undefined; expiresAt?: number | undefined;
 }
 function hash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function outboxState(components: Component[]): Outbox['state'] {
@@ -44,6 +44,7 @@ export class Workflow {
   }
   setModelConsent(consent: boolean, requestId: string): { consent: boolean } {
     return this.request(requestId, { operation: 'model-consent', consent }, z.object({ consent: z.boolean() }), () => {
+      if (this.store.modelConsent(this.accountId) === consent) return { consent };
       this.store.saveModelConsent(this.accountId, consent);
       for (const c of this.store.conversations(this.accountId)) this.invalidate(c, true);
       return { consent };
@@ -153,13 +154,16 @@ export class Workflow {
   propose(conversationId: string, input: ProposalInput, requestId: string): Proposal {
     return this.request(requestId, { operation: 'propose', conversationId, input }, Proposal, () => {
       const c = this.conversation(conversationId);
-      if (input.kind === 'change_mode' && !input.mode) throw new DomainError('mode_required', 422);
-      if (input.kind === 'delegate' && (c.mode !== 'auto_reply' || !input.maxUnits || !input.expiresAt
-        || input.expiresAt <= this.clock() || input.expiresAt > this.clock() + 24*60*60*1000)) throw new DomainError('invalid_delegation', 422);
+      if ((input.kind === 'change_mode' || input.kind === 'configure') && !input.mode) throw new DomainError('mode_required', 422);
+      if (input.kind === 'delegate' && c.mode !== 'auto_reply') throw new DomainError('invalid_delegation',422);
+      const configured = input.kind === 'configure';
+      const delegated = input.kind === 'delegate' || configured && input.mode === 'auto_reply';
+      if (configured && input.mode !== 'never_reply' && (c.excluded || c.kind !== 'direct')) throw new DomainError('ai_access_denied',403);
+      if (delegated && (!input.maxUnits || !input.expiresAt || input.expiresAt <= this.clock() || input.expiresAt > this.clock()+24*60*60*1000)) throw new DomainError('invalid_delegation',422);
       const fields = { id: randomUUID(), accountId: this.accountId, conversationId, kind: input.kind,
-        mode: input.kind === 'change_mode' ? input.mode : null,
-        maxUnits: input.kind === 'delegate' ? input.maxUnits : null,
-        expiresAt: input.kind === 'delegate' ? input.expiresAt : null,
+        mode: input.kind === 'change_mode' || configured ? input.mode : null,
+        maxUnits: delegated ? input.maxUnits : null,
+        expiresAt: delegated ? input.expiresAt : null,
         workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, confirmBy: this.clock()+300000, consumed: false };
       const proposal = Proposal.parse({ ...fields, payloadHash: hash(fields) });
       this.store.saveProposal(proposal); return proposal;
@@ -181,6 +185,17 @@ export class Workflow {
         if (this.store.outboxes(this.accountId, c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
         c = this.invalidate(c, true);
         this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
+          expiresAt: p.expiresAt, maxUnits: p.maxUnits, successfulUnits: 0, reservedUnits: 0, state: 'active' });
+      }
+      if (p.kind === 'configure') {
+        if (!p.mode) throw new DomainError('mode_required',422);
+        if (p.mode !== 'never_reply' && (c.excluded || c.kind !== 'direct')) throw new DomainError('ai_access_denied',403);
+        if (p.mode === 'auto_reply') {
+          if (!p.expiresAt || p.expiresAt <= this.clock() || !p.maxUnits) throw new DomainError('invalid_delegation',422);
+          if (this.store.outboxes(this.accountId,c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
+        }
+        c = this.invalidate({ ...c, mode: p.mode, control: p.mode === 'never_reply' ? 'manual' : 'assistant_allowed', policyVersion: c.policyVersion+1 },true);
+        if (p.mode === 'auto_reply' && p.expiresAt && p.maxUnits) this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
           expiresAt: p.expiresAt, maxUnits: p.maxUnits, successfulUnits: 0, reservedUnits: 0, state: 'active' });
       }
       this.store.saveProposal({ ...p, consumed: true }); return c;

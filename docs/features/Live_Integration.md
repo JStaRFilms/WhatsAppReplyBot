@@ -33,8 +33,10 @@ remain in ignored .runtime/ and are never committed or logged.
 verified authenticated live Settings and QR rendering without page errors. The
 live backend is running on Wi-Fi at http://192.168.100.65:3210. The key was stored
 privately in the ignored .env. No key or WhatsApp QR was copied into chat or logs.
-No paid generation or live send ran. The owner still needs to scan the QR and
-verify physical-phone connectivity.
+The owner linked WhatsApp successfully. A paid synthetic GPT-6 Luna response
+validated after correcting the provider schema to an object/anyOf envelope.
+No real send was initiated by the agent. Physical-phone behavior still needs
+owner verification.
 
 A read-only Takomi reviewer found five blockers before pairing: revocation
 updates, alias restriction carryover, nested view-once, library retransmissions
@@ -42,6 +44,17 @@ and unverified-owner ingestion. Each was fixed. Deleted messages retain raw
 tombstones, alias reconciliation pauses both identities and retains restrictions,
 view-once wrapper detection blocks caching, outgoing retransmission is disabled,
 and queued data requires the current verified owner socket.
+
+## Contact controls and conversation UX
+
+Mode, resumption and an optional bounded auto grant are staged together under a
+configure proposal. One exact-payload confirmation applies them atomically.
+Global remote-context consent remains separate. Repeating an unchanged consent
+value no longer invalidates all chats or revokes existing limits.
+
+History and previews use message timestamps, not history-sync insertion order.
+Chats open at the newest message. Scrolling upward keeps the reader in place.
+Manual, draft and auto limits use colored badges, leaving previews unobstructed.
 
 ## Limits
 

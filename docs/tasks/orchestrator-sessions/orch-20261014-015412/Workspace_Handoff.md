@@ -23,7 +23,7 @@ not rewrite history or include the four unrelated egg-info modifications.
 ## Preserved work
 
 The architect delivered 17 uncommitted foundation documents under
-`docs/whatsapp-assistant/`. They moved with this existing session. The approved
+`docs/`. They moved with this existing session. The approved
 brief is committed separately from those pending-review documents.
 
 Task 01 is complete as an authoring task. Its structural checks passed. Task 02

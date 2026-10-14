@@ -7,19 +7,21 @@
 - Checkout: C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot
 - Mission: build reliable owner-controlled messaging assistance without changing
   the old app or the existing CreativeOS application.
-- Current phase: Genesis. UI/UX Design is explicitly gated by the user.
+- Current phase: UI/UX Design, second mobile direction. The owner approved
+  Paper design and continued offline implementation without further questions.
 
 ## Context Intake
 
-The source of truth is `docs/whatsapp-assistant/Approved_Brief.md` and the
+The source of truth is `docs/Approved_Brief.md` and the
 user's approvals in this T3 thread. The owner wants Expo, Windows-hosted Node,
 SQLite, OpenRouter GPT-6 Luna, selected-contact automation, latest-ten drafts,
 media-aware conversation, reactions and an assistant command conversation.
 
 All work stays within this independent project checkout. Do not edit the old
 JStarReplyBot or the parent CreativeOS repository. Its four unrelated egg-info
-changes remain untouched. Preserve the project's existing Genesis placeholders.
-Product docs belong in `docs/whatsapp-assistant/`; an isolated engineering
+changes remain untouched. The owner requested direct docs/ organization; the
+three unchanged Genesis placeholders were replaced by authored foundation docs.
+Product docs belong in `docs/`; an isolated engineering
 spike belongs in `prototypes/whatsapp-assistant/`. These paths avoid mixing two
 products in one dependency graph.
 
@@ -42,24 +44,30 @@ mapping, verification planning and controlled technical feasibility checks.
 The engineering spike is not a product implementation pass. It may create
 offline tests and an opt-in read-only adapter probe, but no UI or live automation.
 
-Design means UI/UX. Stop and notify the owner before any design task, mockup,
-visual direction, screen layout or Expo UI. Build of the production application
-follows approved design. Review is a focused acceptance pass, not an endless
-cleanup loop.
+Design means UI/UX. The owner has now approved Paper design and offline
+implementation. The first three mobile screens are complete; add a WhatsApp-like
+second direction beneath them without modifying the originals. Follow the latest
+palette clarification: familiar interaction and density, not copied green branding.
+Review remains a focused acceptance pass, not an endless cleanup loop. Live
+account access, provider requests, real sends and deployment remain gated.
 
 ## Task Table
 
 | Task | Subtask | Role | Workflow | Dependency | Status |
 | --- | --- | --- | --- | --- | --- |
 | 01 | Author the scoped foundation and FR issue pack | architect | vibe-genesis | approved brief | completed |
-| 02 | Review foundation against approved scope | reviewer | Genesis acceptance | 01 | pending |
+| 02 | Review foundation against approved scope | reviewer | Genesis acceptance | 01 | completed, direct parent review |
 | 03 | Validate durable permission and cancellation behavior offline | coder | Genesis technical feasibility | accepted foundation | planned |
 | 04 | Validate WhatsApp normalization and prepare a read-only probe | coder | Genesis technical feasibility | accepted spike contracts | planned |
 | 05 | Review prototype, record evidence and hand off | reviewer/orchestrator | Genesis acceptance | 03, 04 | planned |
-| Gate | Request owner approval for UI/UX Design | orchestrator | Design gate | verified Genesis work | blocked until handoff |
+| D01 | Author Paper mobile direction and exact exports | designer | vibe-design | accepted foundation | completed |
+| D02 | Add WhatsApp-like second direction below originals | designer | vibe-design | D01, user reference | in-progress |
+| Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
-Task 01 delivered the foundation. Task 02 is a read-only acceptance review.
-Later feasibility packets will be authored with concrete scope and acceptance
+Task 01 delivered the foundation. Task 02 was accepted after a focused direct
+review and removal of the never-reply AI exception. The T3 thread still inherits
+the parent root, so direct single-writer execution is used in this exact project
+instead of launching a child in the wrong checkout. Later packets have scope and acceptance
 before registration or launch. Tasks run sequentially when
 they write to this checkout. Read-only review may run while the parent inspects,
 but only one writer owns a file at a time.
@@ -71,12 +79,14 @@ but only one writer owns a file at a time.
 - [x] Identify unrelated modified files and exclude them from commits.
 - [x] Author requirements, architecture, schemas and APIs.
 - [x] Verify 12 MUS requirements and matching issues align one-to-one.
-- [ ] Complete a focused foundation review.
-- [ ] Commit reviewed foundation as a scoped batch.
+- [x] Complete a focused foundation review.
+- [x] Commit reviewed foundation as b158cdc.
+- [x] Author and visually review three Paper mobile screens.
+- [ ] Complete and review the second WhatsApp-like design direction.
 - [ ] Prove local permission, cancellation and replay invariants offline.
 - [ ] Document actual adapter capabilities and untested live behavior.
 - [ ] Commit verified prototype changes in separate reviewable batches.
-- [ ] Notify the user that UI design is next; wait for approval.
+- [x] Receive explicit owner approval for Paper design and offline build.
 
 ## Notes
 

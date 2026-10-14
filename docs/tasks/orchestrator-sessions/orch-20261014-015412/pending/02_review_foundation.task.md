@@ -9,13 +9,13 @@ Read-only task with requiredCapabilities=[].
 
 ### Prime Agent Context
 
-1. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Approved_Brief.md`
-2. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Project_Requirements.md`
-3. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/features/Assistant_Architecture.md`
-4. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Verification_Plan.md`
-5. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Coding_Guidelines.md`
-6. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Builder_Prompt.md`
-7. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/issues/FR-001.md` through FR-012.md.
+1. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/Approved_Brief.md`
+2. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/Project_Requirements.md`
+3. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/features/Assistant_Architecture.md`
+4. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/Verification_Plan.md`
+5. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/Coding_Guidelines.md`
+6. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/Builder_Prompt.md`
+7. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/issues/FR-001.md` through FR-012.md.
 8. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/tasks/orchestrator-sessions/orch-20261014-015412/master_plan.md`
 
 ### Optional Skill / Context Overlays

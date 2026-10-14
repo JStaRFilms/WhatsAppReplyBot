@@ -51,11 +51,11 @@ bundle. Live connection controls remain unavailable in this offline build.
 ## Evidence and limitations
 
 Paper nodes, Inter availability, JSX exports and computed styles were checked.
-Mandatory screenshot checkpoints were attempted repeatedly. The adapter first
-returned black frames, then frames containing only the status bar, despite
-source nodes and styles being present. Do not claim pixel-level Paper acceptance.
-Verify final legibility, alignment and interaction in the implemented Expo web
-client; native-phone and Paper desktop visual checks remain outstanding.
+Early screenshot checkpoints returned black or incomplete frames while rendering
+caught up. The final captures rendered all three screens successfully. Review
+passed for spacing, readable type, contrast, consistent row lanes, artboard fit
+and restrained repetition. Native-phone and executable interaction checks still
+need separate evidence; a design screenshot is not a working app.
 
 All example people, messages and media are synthetic. No generated-image quota
 was used. Status/media missing-context states must remain honest rather than

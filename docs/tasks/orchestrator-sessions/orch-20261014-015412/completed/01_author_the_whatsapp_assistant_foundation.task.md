@@ -9,7 +9,7 @@ planning only. Do not design UI or implement product code.
 
 ### Prime Agent Context
 
-1. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/whatsapp-assistant/Approved_Brief.md`
+1. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/Approved_Brief.md`
 2. `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot/docs/tasks/orchestrator-sessions/orch-20261014-015412/master_plan.md`
 3. the injected engineering instructions and scoped conventional-commit discipline
 4. Global engineering instructions already injected by the harness.
@@ -32,7 +32,7 @@ spike and preserve the UI approval gate.
 
 ## Scope
 
-Write only within `docs/whatsapp-assistant/`, except the Approved_Brief.md is
+Write only within `docs/`, except the Approved_Brief.md is
 parent-owned and must not be changed. Create Project_Requirements.md,
 Coding_Guidelines.md, Builder_Prompt.md, features/Assistant_Architecture.md,
 issues/FR-XXX.md for every MUS requirement, and Verification_Plan.md.
@@ -80,7 +80,7 @@ when a claim needs verification. Do not fetch private data or secrets.
 
 ## Expected Artifacts
 
-The named markdown files and MUS issues under docs/whatsapp-assistant/, plus a
+The named markdown files and MUS issues under docs/, plus a
 short final report with FR counts, coverage, design-gate status and unresolved
 capability questions.
 

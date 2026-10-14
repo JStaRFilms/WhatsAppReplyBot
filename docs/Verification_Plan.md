@@ -25,7 +25,7 @@ review below.
 python - <<'PY'
 from pathlib import Path
 import re
-root = Path('docs/whatsapp-assistant')
+root = Path('docs')
 prd = (root / 'Project_Requirements.md').read_text(encoding='utf-8')
 ids = re.findall(r'^\| (FR-\d{3}) \|', prd, re.M)
 files = sorted(p.stem for p in (root / 'issues').glob('FR-*.md'))
@@ -61,7 +61,7 @@ Task 01 ran the exact Python block above from `C:/CreativeOS/01_Projects/Code/Pe
 `git diff --check` passed. The following check passed with no changes:
 
 ```bash
-git diff --exit-code -- docs/whatsapp-assistant/Approved_Brief.md
+git diff --exit-code -- docs/Approved_Brief.md
 ```
  Git status
 showed only the new product docs in addition to the existing egg-info and

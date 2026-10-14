@@ -15,8 +15,9 @@ provide API keys or run device tests tonight. Keep all live connections, private
 data, real sends, paid model requests and deployment disabled.
 
 This product is independent of the existing CreativeOS Python application.
-Use `docs/whatsapp-assistant/` for its foundation rather than overwriting the
-project's existing Genesis placeholder documents. Use
+The owner requested all foundation files directly under `docs/`, without a
+product-name wrapper. The three unchanged Genesis placeholders were replaced
+with the authored requirements, guidelines and builder handoff. Use
 `prototypes/whatsapp-assistant/` for a self-contained technical spike. Do not add
 this product's dependencies to CreativeOS's application or virtual environments.
 

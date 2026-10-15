@@ -59,6 +59,18 @@ test('426 and pre-profile service 404 give upgrade guidance; scope rejection nev
   }
 });
 
+test('foreground aborts prior reads before media recovery starts current metadata',async()=>{
+  let recovery;
+  const f=providerFixture({mediaForeground:(client,visible)=>{if(visible)recovery=client.request('/v1/synthetic-media-source',z.object({available:z.boolean()})).catch(error=>error);}});
+  await f.connect();f.render();f.h.flush();
+  const held=deferred();let currentSignal;
+  f.respond(async call=>{if(call.path==='/v1/synthetic-media-source'){currentSignal=call.signal;return held.promise;}
+    return json(call.path==='/v1/session'?descriptor(scope()):snapshot(scope()));});
+  f.foreground('background');f.foreground('active');await settle();
+  const aborted=currentSignal.aborted;held.resolve(json({available:true}));const result=await recovery;
+  assert.equal(aborted,false,'Foreground must not abort the metadata it just started');assert.equal(result.available,true);
+});
+
 test('discovery precedes all account data; Continue acknowledges only the descriptor displayed',async()=>{
   const f=providerFixture(),a=scope(),b=scope('second',1);let visible=a;
   f.respond(async call=>json(call.path==='/v1/session'?descriptor(visible):snapshot(visible)));

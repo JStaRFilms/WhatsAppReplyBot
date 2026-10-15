@@ -39,6 +39,43 @@ test('leave/reopen, foreground and process-style index reopen revalidate metadat
   f.close();const reopened=fixture(f.saved);handle=await reopened.cache.acquire(reference(),'preview','thumbnail');assert.equal(reopened.calls.filter(call=>call[0]==='binary').length,0);handle.release();
   const photo=await reopened.cache.acquire(reference(),'image','viewer');assert.equal(reopened.calls.filter(call=>call[0]==='binary').length,1);photo.release();reopened.close();
 });
+test('foreground metadata starts a current read; old completion cannot delete its coalescing entry or refetch cached bytes',async()=>{
+  const f=fixture();const initial=await f.cache.acquire(reference(),'preview','thumbnail');initial.release();
+  const source=f.client.mediaSource.bind(f.client),gates=[];
+  f.client.mediaSource=async(...args)=>{const value=await source(...args),gate=deferred();gates.push(gate);await gate.promise;return value;};
+  const old=f.cache.acquire(reference(),'preview','thumbnail').catch(error=>error);await settle();
+  f.cache.setForeground(false);f.cache.setForeground(true);
+  const current=f.cache.acquire(reference(),'preview','thumbnail');await settle();
+  assert.equal(gates.length,2,'Current foreground must not join old activity metadata');
+  gates[0].resolve();assert.ok(await old instanceof Error);
+  const joined=f.cache.acquire(reference(),'preview','thumbnail');await settle();
+  assert.equal(gates.length,2,'Old finally must not delete the current pending metadata');
+  gates[1].resolve();const handles=await Promise.all([current,joined]);assert.ok(handles.every(handle=>handle.getSnapshot()));
+  assert.equal(f.calls.filter(call=>call[0]==='binary').length,1);handles.forEach(handle=>handle.release());f.close();
+});
+
+test('a canceled old metadata denial cannot revoke a current foreground handle',async()=>{
+  const f=fixture(),source=f.client.mediaSource.bind(f.client),oldGate=deferred();let count=0;
+  const initial=await f.cache.acquire(reference(),'preview','thumbnail');initial.release();
+  f.client.mediaSource=async(...args)=>{if(++count===1)await oldGate.promise;return source(...args);};
+  const old=f.cache.acquire(reference(),'preview','thumbnail').catch(error=>error);await settle();
+  f.cache.setForeground(false);f.cache.setForeground(true);
+  const current=await f.cache.acquire(reference(),'preview','thumbnail');
+  oldGate.reject(new api.ApiError('media_unavailable'));await old;await settle();assert.equal(current.getSnapshot(),true);
+  assert.equal(f.calls.filter(call=>call[0]==='binary').length,1);current.release();f.close();
+});
+
+test('a canceled last download waiter cannot poison or delete a new current shared download',async()=>{
+  const f=fixture(),gates=[],content=f.client.mediaContent.bind(f.client);
+  f.client.mediaContent=async(...args)=>{const gate=deferred();gates.push(gate);await gate.promise;return content(...args);};
+  const abort=new AbortController(),old=f.cache.acquire(reference(),'preview','thumbnail',abort.signal).catch(error=>error);await settle();abort.abort();
+  const current=f.cache.acquire(reference(),'preview','thumbnail');await settle();
+  assert.equal(gates.length,2,'A new visible consumer must not join an aborted download');
+  gates[0].resolve();assert.ok(await old instanceof Error);
+  const joined=f.cache.acquire(reference(),'preview','thumbnail');await settle();assert.equal(gates.length,2);
+  gates[1].resolve();const handles=await Promise.all([current,joined]);assert.ok(handles.every(handle=>handle.getSnapshot()));handles.forEach(handle=>handle.release());f.close();
+});
+
 test('same source requests coalesce metadata/content; cancellation of one consumer does not revoke another lease',async()=>{
   const f=fixture(),held=f.hold(),abort=new AbortController();const a=f.cache.acquire(reference(),'preview','thumbnail',abort.signal),b=f.cache.acquire(reference(),'preview','thumbnail');
   await settle();abort.abort();held.resolve();await assert.rejects(a);const handle=await b;

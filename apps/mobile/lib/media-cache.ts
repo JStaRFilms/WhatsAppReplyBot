@@ -45,7 +45,7 @@ export class MediaCache {
   private readonly validations=new Map<string,Validation>();
   private readonly sourceEpochs=new Map<string,number>();
   private sourceEpoch(reference:MediaReference){return this.sourceEpochs.get(JSON.stringify([reference.conversationId,reference.id])) ?? 0;}
-  private readonly metadata=new Map<string,{reference:MediaReference;task:Promise<Validation>}>();
+  private readonly metadata=new Map<string,{reference:MediaReference;task:Promise<Validation>;abort:AbortController}>();
   private readonly downloads=new Map<string,{reference:MediaReference;task:Promise<Live>;abort:AbortController;waiters:number}>();
   private readonly controllers=new Set<AbortController>();
   private readonly listeners=new Set<()=>void>();
@@ -125,10 +125,10 @@ export class MediaCache {
   }
   private async validate(reference:MediaReference,variant:MediaVariant):Promise<Validation>{
     this.check();if(reference.accountId!==this.client.scope?.accountId)throw new Error('Media belongs to another account.');
-    const id=this.sourceKey(reference,variant),pending=this.metadata.get(id);if(pending)return pending.task;
+    const id=this.sourceKey(reference,variant),pending=this.metadata.get(id);if(pending && !pending.abort.signal.aborted)return pending.task;
     const abort=new AbortController(),activity=this.activity;this.controllers.add(abort);
     const task=this.client.mediaSource(reference.conversationId,reference.id,variant,abort.signal).then(source=>{
-      this.check();if(activity!==this.activity)throw new Error('Media activity changed.');
+      this.check();if(abort.signal.aborted || activity!==this.activity)throw new Error('Media activity changed.');
       if(source.variant!==variant || source.conversationId!==reference.conversationId || source.messageId!==reference.id){this.revokeSource(reference);throw new Error('Media source identity changed.');}
       this.acceptNamespace(source.cacheNamespace,abort);
       if(source.state!=='available' || !source.mime){this.revokeSource(reference);throw new Error('Media is '+source.state.replaceAll('_',' ')+'.');}
@@ -144,10 +144,10 @@ export class MediaCache {
       for(const live of this.live.values())if(JSON.stringify(live.record.key)===JSON.stringify(this.key(reference,source))){live.validation=value;for(const state of live.handles)if(state.valid){if(state.deadline<=this.monotonic()){state.valid=false;for(const listener of state.listeners)listener();}else state.deadline=value.deadline;}}
       this.scheduleExpiry();return value;
     }).catch(error=>{
-      if(error instanceof ApiError && ['media_source_changed','media_unavailable','owner_auth_required','profile_scope_changed'].includes(error.code))this.revokeSource(reference);
+      if(!abort.signal.aborted && activity===this.activity && error instanceof ApiError && ['media_source_changed','media_unavailable','owner_auth_required','profile_scope_changed'].includes(error.code))this.revokeSource(reference);
       throw error;
-    }).finally(()=>{this.controllers.delete(abort);this.metadata.delete(id);});
-    this.metadata.set(id,{reference,task});return task;
+    }).finally(()=>{this.controllers.delete(abort);if(this.metadata.get(id)?.task===task)this.metadata.delete(id);});
+    this.metadata.set(id,{reference,task,abort});return task;
   }
   async revalidate(){if(!this.active || !this.foreground)return;this.expire();
     const sources=new Map<string,Validation>();for(const live of this.live.values())if([...live.handles].some(state=>state.valid))sources.set(this.sourceKey(live.validation.reference,live.validation.source.variant),live.validation);
@@ -168,8 +168,17 @@ export class MediaCache {
   private startTimer(){if(this.timer)return;this.lastValidation=this.monotonic();this.timer=setInterval(()=>{this.expire();if(this.monotonic()-this.lastValidation>=15000){this.lastValidation=this.monotonic();void this.revalidate();}},250);}
   private lastValidation=0;
   setViewerOpen(open:boolean){this.covered=open;if(open)for(const live of this.live.values())for(const state of live.handles)if(state.role==='thumbnail' && state.valid){state.valid=false;for(const listener of state.listeners)listener();}}
-  setForeground(value:boolean){this.activity++;this.foreground=value;if(!value){this.validations.clear();for(const abort of this.controllers)abort.abort();for(const live of this.live.values())this.invalidateLive(live);}
-    else {void this.sweep();void this.revalidate();}}
+  setForeground(value:boolean){
+    if(value===this.foreground)return;
+    this.activity++;this.foreground=value;
+    // New activity cannot coalesce with canceled work. Its late finally must
+    // leave the current activity's entries intact.
+    for(const abort of this.controllers)abort.abort();
+    for(const download of this.downloads.values())download.abort.abort();
+    this.metadata.clear();this.downloads.clear();
+    if(!value){this.validations.clear();for(const live of this.live.values())this.invalidateLive(live);}
+    else {void this.sweep();void this.revalidate();}
+  }
   dispose(purge=true){if(!this.active)return;this.active=false;this.foreground=false;this.activity++;clearTimeout(this.expiryTimer);clearInterval(this.timer);this.timer=undefined;
     for(const abort of this.controllers)abort.abort();for(const download of this.downloads.values())download.abort.abort();
     this.validations.clear();this.sourceEpochs.clear();for(const live of this.live.values())this.invalidateLive(live);
@@ -216,7 +225,7 @@ export class MediaCache {
         setTimeout(()=>{if(!value.handles.size && this.live.get(id)===value){this.live.delete(id);value.resource.release();unpin();if(pendingPurge.has(id))void this.sweep();}},0);
         return value;
       });
-    }catch(error){if(error instanceof ApiError && ['media_source_changed','media_unavailable'].includes(error.code))this.revokeSource(reference);throw error;}
+    }catch(error){if(!abort.signal.aborted && activity===this.activity && error instanceof ApiError && ['media_source_changed','media_unavailable'].includes(error.code))this.revokeSource(reference);throw error;}
     finally {if(!retained){resource.value?.release();unpin();}}
   }
   async acquire(reference:MediaReference,variant:MediaVariant,role:'thumbnail'|'viewer',signal?:AbortSignal):Promise<MediaHandle>{
@@ -230,8 +239,8 @@ export class MediaCache {
       const key=this.key(reference,validation.source),id=JSON.stringify(key);let live=this.live.get(id);
       if(live && [...live.handles].some(state=>!state.valid))live=undefined;
       if(!live){let pending=this.downloads.get(id);
-        if(!pending){const abort=new AbortController();const task=this.load(reference,validation,abort);pending={reference,task,abort,waiters:0};this.downloads.set(id,pending);
-          void task.finally(()=>{this.downloads.delete(id);}).catch(()=>{});}
+        if(!pending || pending.abort.signal.aborted){const abort=new AbortController();const task=this.load(reference,validation,abort);pending={reference,task,abort,waiters:0};this.downloads.set(id,pending);
+          void task.finally(()=>{if(this.downloads.get(id)?.task===task)this.downloads.delete(id);}).catch(()=>{});}
         const shared=pending;shared.waiters++;let waiting=true;
         const releaseWaiter=()=>{if(!waiting)return;waiting=false;if(--shared.waiters===0)shared.abort.abort();};
         signal?.addEventListener('abort',releaseWaiter,{once:true});

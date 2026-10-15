@@ -278,8 +278,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if(visible===foreground.current)return;
       foreground.current=visible;
       active.current.intents.setForeground(visible);
-      active.current.mediaCache.setForeground(visible);
       readRun.current?.abort.abort();active.current.client.abortReads();
+      active.current.mediaCache.setForeground(visible);
       setSnapshotFresh(false);
       if(visible && credentials.current) {
         setStatus('connecting');setPcStatus('connecting');pollBudget.current=30;setPolling(true);

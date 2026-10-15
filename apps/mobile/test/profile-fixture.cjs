@@ -12,7 +12,7 @@ function snapshot(value,version=1){return {profileScope:value,accountId:value.ac
 function json(data,status=200,headers={}){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json',...headers}});}
 function apiFixture(fetch,globals={}){return load('lib/api.ts',{'zod':require('zod'),'./uuid':{randomUUID:()=> 'synthetic-request'},'@replybot/core/contracts':contracts,'@replybot/core/api':core},
   {fetch,AbortController,Uint8Array,ArrayBuffer,atob,btoa,Set,Map,setTimeout,clearTimeout,...globals});}
-function providerFixture({saved=null,save=async()=>{},apiGlobals={},appGlobals={}}={}){
+function providerFixture({saved=null,save=async()=>{},apiGlobals={},appGlobals={},mediaForeground=()=>{}}={}){
   const h=hooks(),calls=[],timers=[],listeners=new Set();let handle,playbackStops=0;
   const appState={currentState:'active',addEventListener:(_event,fn)=>{listeners.add(fn);return{remove:()=>listeners.delete(fn)};}};
   const api=apiFixture((url,init)=>{const call={url,path:new URL(url).pathname,...init};calls.push(call);return handle(call);},apiGlobals);
@@ -20,7 +20,7 @@ function providerFixture({saved=null,save=async()=>{},apiGlobals={},appGlobals={
   const pending=pendingModule(api,memoryStorage());
   const cache=load('lib/history-cache.ts',{'./api':api,'@replybot/core/api':core},{Map,Set});
   const component=load('lib/app-state.tsx',{'react':h.react,'react-native':{useColorScheme:()=> 'light',AppState:appState},'expo-constants':{},'zod':require('zod'),
-    '@replybot/core/contracts':contracts,'@replybot/core/api':core,'./api':api,'./history-cache':cache,'./media-cache':{MediaCache:class{dispose(){}setForeground(){}}},'./pending-intents':pending,
+    '@replybot/core/contracts':contracts,'@replybot/core/api':core,'./api':api,'./history-cache':cache,'./media-cache':{MediaCache:class{constructor(client){this.client=client;}dispose(){}setForeground(visible){mediaForeground(this.client,visible);}}},'./pending-intents':pending,
     './client-clock':{ClientClock:class{calibrate(){}}},'./audio-lane':{stopPlayback:()=>playbackStops++},
     './storage':{readSetting:async key=>key==='replybot-session'?saved:null,saveSetting:save,getClientId:async()=> 'synthetic'},'./theme':{palettes:{dark:{},light:{}}}},
     {URL,Map,AbortController,setTimeout,clearTimeout,setInterval:fn=>{timers.push(fn);return timers.length;},clearInterval(){},...appGlobals});

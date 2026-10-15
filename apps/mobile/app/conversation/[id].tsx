@@ -313,6 +313,7 @@ export default function ConversationScreen() {
   const turnIds=[...messages.map(message=>message.id),...[...turnDrafts].filter(([source,draft])=>displayedDraftIds.has(draft.id) && !messages.some(message=>message.id===source)).map(([source])=>source)];
   function finishLocation(source:string,measured=false){
     const target=pendingLocation.current;if(!currentScreen() || target?.source!==source || scrolling.hasCurrentGeometry?.()===false)return;
+    if(target.bodyLocated && scrolling.position.editor!==null){pendingLocation.current=null;return;}
     const actual=history.get(id)?.messages.some(message=>message.id===source);
     if(target.bodyLocated && (!actual || !target.contextArrived))return;
     if(target.bodyLocated && actual && !measured){requestAnimationFrame(()=>{if(pendingLocation.current===target)finishLocation(source,true);});return;}
@@ -376,12 +377,13 @@ export default function ConversationScreen() {
       {(historyError || cached?.stale || cached?.notice) && <View style={{padding:10,gap:6}}><Text accessibilityRole="alert" style={{color:palette.muted}}>{historyError ?? cached?.notice ?? 'Showing stale cached text. Visibility is not acknowledged.'}</Text><Button label="Refresh history" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('refresh');}}/></View>}
       {!discovery?.capabilities?.historyPaging && <Text style={{color:palette.muted,paddingHorizontal:12,fontSize:12}}>Latest message window only. Update the Windows service for older history.</Text>}
       <View style={{ flex: 1, minHeight: 0 }}>
-      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="none" keyboardShouldPersistTaps="always" contentContainerStyle={{ width: '100%', maxWidth: 784, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 12, gap: 4 }}
+      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="none" keyboardShouldPersistTaps="always"
         accessibilityLabel="Conversation history" scrollEnabled style={{ flex: 1 }}
         onLayout={scrolling.onLayout} onContentSizeChange={scrolling.onContentSizeChange}
         onScrollBeginDrag={()=>{pendingLocation.current=null;scrolling.onScrollBeginDrag();}} onScrollEndDrag={scrolling.onScrollEndDrag}
         onMomentumScrollBegin={()=>{pendingLocation.current=null;scrolling.onMomentumScrollBegin();}} onMomentumScrollEnd={scrolling.onMomentumScrollEnd}
         scrollEventThrottle={16} onScroll={scrolling.onScroll}>
+        <View ref={scrolling.content} collapsable={false} testID="history-content" style={{ width: '100%', maxWidth: 784, alignSelf: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 12+scrolling.editorSpace, gap: 4 }}>
         {!cached && <View style={{ padding: 24, alignItems: 'center' }}>{historyError ? <Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Could not load messages.</Text> : <ActivityIndicator color={palette.accent}/>}</View>}
         {cached?.hasOlder && <Button label="Load older" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('older');}}/>}
         {turnIds.map(source=>{
@@ -415,6 +417,7 @@ export default function ConversationScreen() {
         </View>)}
         {(snapshot?.outbox ?? []).filter(box=>memberIds.includes(box.conversationId) && ['unknown','partial','queued','dispatching'].includes(box.state)
           && !pending.some(row=>row.outbox?.id===box.id && intentVisible(row,messages))).map(box=><View key={box.id} style={{padding:10,gap:4}}><OutboxStatus outbox={box} simulated={snapshot?.demo}/></View>)}
+        </View>
       </ScrollView>
       {(scrolling.showLatest || cached?.hasNewer) && <Pressable accessibilityRole="button" accessibilityLabel="Jump to latest message" onPress={()=>{void pageHistory('latest');}}
         style={{ position: 'absolute', right: 16, bottom: 12, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10,

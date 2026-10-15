@@ -71,6 +71,29 @@ synthetic artifacts to read. Do not inspect any other private runtime, auth, SQL
 token, .env or signing files. Final production export and signed APK do not exist
 for this batch yet; release metadata remains0.1.2 and is parent-owned after review.
 
+## Review result and parent response
+
+Review32 completed with one confirmed P2 and withheld source acceptance. A
+background-cancelled Assistant history read was reported as a persistent action
+error. Successful session/snapshot/history recovery therefore left obsolete
+"Could not refresh" feedback visible. The reviewer ran71 focused tests and diff
+checks; its additional synthetic reproduction demonstrated the defect. No files
+or live data were changed by the reviewer.
+
+Parent reproduced it in a new regression using the actual provider/API and the
+Assistant screen with dependency-cleanup-aware hooks. The pre-fix test failed.
+Assistant history now keeps its own read feedback, clears it on successful history
+reload and ignores superseded/unmounted reads. A local read-only retry does not
+clear global action, domain or unknown-send failures. No controller-wide error
+clearing or mutation replay was added.
+
+All93 mobile tests and mobile typecheck pass after the fix. The new coverage
+includes background/foreground cancellation with no action error, an unknown-send
+error and a domain error, plus local read retry without clearing those warnings.
+This records the narrow response, not a second reviewer acceptance. The combined
+extension review must include this change and the original findings. Final build
+remains held for34 and the owner-added requirements.
+
 ## Dependencies and execution
 
 Running as the first focused T3-owned read-only review, Sol High.

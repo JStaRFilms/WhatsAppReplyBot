@@ -10,14 +10,24 @@ import { useApp } from '../../lib/app-state';
 import { fonts } from '../../lib/theme';
 const Turns = z.array(AssistantTurn);
 export default function Assistant() {
-  const { snapshot, palette, client, perform, status, reportError } = useApp(); const router = useRouter();
+  const { snapshot, palette, client, perform, status } = useApp(); const router = useRouter();
   const [turns, setTurns] = useState<AssistantTurn[]>([]); const [text, setText] = useState('');
   const [busy, setBusy] = useState(false); const [confirmed, setConfirmed] = useState<string[]>([]);
-  const scroll = useRef<ScrollView>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRead = useRef(0); const scroll = useRef<ScrollView>(null);
   const load = useCallback(async () => {
-    try { setTurns(await client.request('/v1/assistant/turns', Turns)); } catch (e) { reportError(e instanceof Error ? e.message : 'Could not load assistant conversation.'); }
+    const version = ++historyRead.current;
+    try {
+      const data = await client.request('/v1/assistant/turns', Turns);
+      if (version === historyRead.current) { setTurns(data); setHistoryError(null); }
+    } catch (reason) {
+      if (version === historyRead.current) setHistoryError(reason instanceof Error ? reason.message : 'Could not load assistant conversation.');
+    }
   }, [client]);
-  useEffect(() => { if (status === 'online') void load(); }, [status, load]);
+  useEffect(() => {
+    if (status === 'online') void load();
+    return () => { historyRead.current++; };
+  }, [status, load]);
   const send = async (instruction = text) => {
     if (!instruction.trim() || busy) return; setBusy(true);
     const result = await perform('/v1/assistant/turns', AssistantResponse, { text: instruction.trim() });
@@ -27,6 +37,10 @@ export default function Assistant() {
   return <Page title="Assistant" scroll={false}>
     <View style={{ flex: 1, minHeight: 0 }}>
       <Text style={{ paddingHorizontal: 16, paddingVertical: 8, color: palette.muted, fontFamily: fonts.regular, fontSize: 12 }}>Owner conversation · Actions need your confirmation</Text>
+      {historyError && <View style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}>
+        <Text accessibilityRole="alert" style={{ color: palette.danger, fontFamily: fonts.regular, fontSize: 14 }}>{historyError}</Text>
+        <Button label="Retry Assistant history" secondary disabled={status !== 'online'} onPress={() => { void load(); }}/>
+      </View>}
       <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1 }} contentContainerStyle={{ width: '100%', maxWidth: 784, alignSelf: 'center', padding: 12, gap: 10 }}
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
         {!turns.length && <View style={{ gap: 14, paddingVertical: 12 }}>

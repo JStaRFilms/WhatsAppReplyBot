@@ -86,8 +86,9 @@ account access, provider requests, real sends and deployment remain gated.
 | 29 | Launcher lifecycle, explicit PC QR and browser host | coder | vibe-build | approved contract | Source accepted, parent70 backend/29 packaging tests/types pass; encoded-API auth regression fixed |
 | 30 | Foreground sync and profile/service UX | coder | vibe-build | approved contract, optional29 fields | Source handoff accepted; parent87 mobile/60 core tests/types pass; capability opt-in integrated |
 | 31 | Approved native/browser visual integration | coder | vibe-build | 28/30 functional handoff | Source accepted; parent250 workspace tests/types and132 synthetic browser checks pass |
-| 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Ready after integrated source validation; known findings/responses in32 packet |
-| 33 | Built desktop assets and signed Android update | worker | vibe-build | 32/source freeze | Planned after acceptance |
+| 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Running read-only against74f26af; excludes later owner extension |
+| 33 | Built desktop assets and signed Android update | worker | vibe-build | 32/34 and added implementation/review | Held for owner-added release gate; no final build yet |
+| 34 | Plan added send/receipt/contact gate | architect | vibe-build | owner contact/dependency choice | Pending; see Release_Gate_Extension.md |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

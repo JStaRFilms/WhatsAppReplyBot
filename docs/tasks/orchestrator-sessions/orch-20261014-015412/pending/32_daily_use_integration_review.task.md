@@ -55,8 +55,31 @@ These findings are responses for this first integrated review, not invitations t
 expand scope. No unresolved source blocker is known at this handoff. Native device,
 Windows viewer and original intermittent startup incident remain acceptance limits.
 
+## Accepted source baseline and parent checks
+
+Review implementation diff b317fb4..74f26af, scoped to the approved project.
+Functional commits are dd49d77,9da586d,6abca8b; UI is74f26af. Read the authored
+contract and completed28/29/30/31 packets. The working tree was clean after source
+integration. No other code writer is active during this review.
+
+Parent ran `pnpm test`, passing250 tests, and `pnpm typecheck` for all workspaces.
+Breakdown:60 core,70 backend,91 mobile,29 packaging. Parent also reran the isolated
+`.runtime/ui-task31/verify.cjs`:132 checks,122 synthetic screenshots, zero page
+errors. Parent inspected representative phone/wide dark and light Settings images.
+The handoff, results and screenshots in `.runtime/ui-task31/` are explicitly safe
+synthetic artifacts to read. Do not inspect any other private runtime, auth, SQLite,
+token, .env or signing files. Final production export and signed APK do not exist
+for this batch yet; release metadata remains0.1.2 and is parent-owned after review.
+
 ## Dependencies and execution
 
-28–31 integrated and source diff available; parent provides exact baselines,
-prior findings/responses and unresolved objections in each delegated round. Use a
-new review task ID per T3 round. Not launched yet.
+Running as the first focused T3-owned read-only review, Sol High.
+Task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-integrated-review-batch1-20261015-r1`.
+Client request ID: otherme-integrated-review-batch1-20261015-r1.
+Owner expanded the release gate after launch. This review remains scoped to its
+original74f26af baseline; see Release_Gate_Extension.md and34 for the additions. Parent provides
+this original brief, prior findings/responses and remaining physical acceptance
+limits. Use a new task ID for any later review round; do not use the backing child
+thread to continue review. Return confirmed blockers with precise paths, scenarios
+and evidence, or accept the source with its stated limitations. No style cleanup,
+speculative redesign, Batch2 implementation, edits/builds or live operations.

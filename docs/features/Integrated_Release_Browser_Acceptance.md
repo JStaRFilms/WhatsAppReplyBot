@@ -82,6 +82,19 @@ honest unsupported feedback in Edge. Busy/preparing recorder handles are stubs,
 not real mic operations. Selected320/360/390/1280 dark/light and1.25 text layouts
 keep one composer/history with no horizontal overflow or clipped controls.
 
+## Final freeze after review responses
+
+The two confirmed38 findings are resolved inf32808b. The parent inspected both
+responses and reran unchanged red reproductions successfully. Final metadata and
+artifact verifier freeze is645f5699477328a0abe5520f6f8a428d4c9b68b5,0.1.3/code4.
+A fresh fix50/web export and independent parent full91+17 replay pass on that exact
+candidate. All16 actual viewed sets match, all ordinary anchor deltas are0px and
+there are no unexpected/browser/device errors. Current tests total464, all types
+pass. See Release_0.1.3_Freeze.md for exact new output attribution and frozen inputs.
+The earlier2453912 results above remain unchanged and attributed to their own source.
+Combined38 is closed by focused parent response verification; artifact33 is now
+running in the approved existing copy. Actual signed/native proof is still pending.
+
 ## Attribution and limits
 
 Original r3 remains partial, including its recorded Retry failures. The later

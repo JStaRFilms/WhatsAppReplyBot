@@ -87,12 +87,12 @@ account access, provider requests, real sends and deployment remain gated.
 | 30 | Foreground sync and profile/service UX | coder | vibe-build | approved contract, optional29 fields | Source handoff accepted; parent87 mobile/60 core tests/types pass; capability opt-in integrated |
 | 31 | Approved native/browser visual integration | coder | vibe-build | 28/30 functional handoff | Source accepted; parent250 workspace tests/types and132 synthetic browser checks pass |
 | 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Review returned P2 Assistant read feedback; parent reproduced/fixed,93 mobile tests/types pass; extension review still required |
-| 33 | Built desktop assets and signed Android update | worker | vibe-build | 36/37/38 and source freeze | Held for extension plus40 history/media work and combined review; approved C:/Otherme-build only |
+| 33 | Build desktop assets and signed Android update | worker | vibe-build |38/50 resolved,645f569 frozen | Running Luna High,0.1.3/code4;184 source/84 Android inputs, approved existing C:/Otherme-build only |
 | 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Accepted docs; single atomic name import and approved build target clarified |
 | 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Investigation complete; owner approved all three history fixes, now scoped by40 |
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |
 | 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Complete69f01fd;39 baseline and accepted44 final browser evidence; source38/hardware separate |
-| 38 | Review combined extended release | reviewer | vibe-build |36/37/41–50 integrated and44 accepted | Blocked on two confirmed P2 findings, parent reproduced;50 scoped correction, no second generic audit |
+| 38 | Review combined extended release | reviewer | vibe-build |36/37/41–50 integrated and44 accepted | Complete, parent verified both50 responses;464 tests/types and fresh108 browser checks, no generic second audit |
 | 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Complete; parent36 checks/18 screenshots pass after fixture wait correction;69f01fd baseline only |
 | 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Complete; parent accepted with cached-first/policy/manual-work/JPEG corrections in30f4f15 |
 | 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Complete, source32fe269; parent22 focused/342 workspace tests and all types pass |
@@ -104,7 +104,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 47 | Correct bounded actual row visibility after history reflow | coder | vibe-build |44 R1 confirmed blocker | Complete eb8a242, source440 tests/types pass; r2 exposes additional warm/resize/editor failures assigned48 |
 | 48 | Correct warm geometry, focused editor anchors and foreground photo recovery | coder | vibe-build |47 plus44 r2 confirmed failures | Complete35cba0c; parent449 tests/types and27 isolated browser checks pass |
 | 49 | Diagnose and correct thumbnail cancellation availability | coder | vibe-build |48 plus44 r3 recorded failures | Complete2453912, deterministic purge/ownership red-green; parent452 tests/types and full browser acceptance |
-| 50 | Correct two confirmed review38 blockers | coder | vibe-build |38 r1 confirmed findings,49 accepted | Running Sol High, viewer uncommitted lease and paired contact-only no-chat; no expanded scope |
+| 50 | Correct two confirmed review38 blockers | coder | vibe-build |38 r1 confirmed findings,49 accepted | Completef32808b, parent red-green reproductions and full tests; final metadata645f569 accepted |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

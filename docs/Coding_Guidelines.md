@@ -21,6 +21,20 @@ CreativeOS Python setup does not apply to this independent TypeScript product. D
 switch branches, stage, commit or push from delegated work. The parent owns
 scoped commits. No root dependency installation is needed for documentation.
 
+## Owner-delegated implementation decisions
+
+The owner explicitly requests no routine approval questions. Within the approved
+feature scope, make necessary implementation, compatible dependency, testing and
+UI-detail decisions and keep moving. Verify compatibility/privacy/license and
+report the resulting changes; do not ask whether a required ordinary library may
+be used. Expo Video57.0.5 already has exact approval. Preserve file ownership and
+single-writer sequencing, rather than installing into another active task's files.
+
+This is not permission to expand the product scope or override explicit private-
+data/live-account, destructive-operation, deployment, paid-quota or resource
+exclusions. Those operational boundaries remain. Prefer safe synthetic checks and
+existing tools; raise only genuine access/safety blockers, not routine choices.
+
 ## TypeScript and contracts for later work
 
 Use strict TypeScript, precise discriminated unions and runtime validation at

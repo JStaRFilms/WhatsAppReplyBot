@@ -72,6 +72,19 @@ bounded46 handoff with files/tests/schema/privacy if needed, but write no packet
 or product/docs file. Parent owns authored scope, review, registration and commits.
 Current41 interfaces may change; explicitly list what must be rebased after handoff.
 
+## Result and parent decision
+
+Completed read-only. Exact OpenRouter transcription catalog and provider endpoint
+rates verified, same existing key supports openai/whisper-large-v3-turbo through
+/audio/transcriptions. Parent independently rechecked public catalog/endpoints.
+Seven explicit-Node frozen fake assertions passed, including repeated requests
+after TTL/eviction/restart/unknown failure. No actual billed repetition/count or
+quality proof. One shared ASR selection call site, not separate assistant path.
+Parent selected Turbo and authored46 for STT adapter plus bounded durable source-
+linked reuse/unknown-attempt protection, sequenced after accepted41. Report and
+policy are in docs/features/ASR_Cost_Review.md. No source/live change yet.
+T3 task ID node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-asr-cost-research-20261015-r1.
+
 ## Constraints
 
 No real runtime/.env/auth/token/signing/book/message/media/log/billing data, private

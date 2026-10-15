@@ -98,7 +98,8 @@ account access, provider requests, real sends and deployment remain gated.
 | 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Running Sol High, sole core/backend writer |
 | 42 | Paged/cache-first chats, private media reuse and photo viewer | coder | vibe-build |41 accepted contracts | Pending; includes later cached-first existing draft requirement |
 | 43 | Foreground video player and disabled-background/PiP config | coder | vibe-build |42 accepted, exact module approval | Pending; no Expo Video install yet |
-| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43 frozen source | Pending, new isolated ui-task44 artifacts, not39 baseline |
+| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43 plus accepted ASR fix frozen | Pending, new isolated ui-task44 artifacts, not39 baseline |
+| 45 | Audit ASR prices/routes and repeat paid work | architect | vibe-build | read-only frozen69f01fd, parallel41 | Running Sol Medium; no paid/private operations; ASR implementation follows41 |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

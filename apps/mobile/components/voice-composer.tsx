@@ -33,10 +33,10 @@ export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled
     if(disabled || viewerBlocked.current || !activeRef.current || canSend || clip || lock.current || recorder.recording)return;
     const current=++operation.current;
     const isCurrent=()=>alive.current && activeRef.current && !viewerBlocked.current && operation.current===current;
-    lock.current=true;cancellation.current=null;setRecordingError(null);setWorking(true);
+    lock.current=true;stopPlayback();cancellation.current=null;setRecordingError(null);setWorking(true);
     let stage='composer hold';let failed=false;
     try {
-      await beforePick();if(!isCurrent())return;stopPlayback();
+      await beforePick();if(!isCurrent())return;
       if(file){
         stage='audio picker';
         const selected=await DocumentPicker.getDocumentAsync({type:'audio/*',multiple:false,copyToCacheDirectory:true,base64:false});

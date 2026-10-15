@@ -232,6 +232,20 @@ test('explicit quote after manual keyboard hide can focus again instead of hitti
   assert.equal(f.counts().focuses,2);assert.ok(label(f.render(),'Remove quote'));f.h.unmount();
 });
 
+test('video open/play use synchronous actual recorder guards without treating the viewer block as recording',()=>{
+  const f=screenFixture('Retain this text'),events=[];let busy=true,viewerBlocked=false;
+  f.app.discovery={capabilities:{privateMediaCache:true}};f.app.clock={now:()=>100};
+  f.app.mediaCache={setViewerOpen:value=>events.push(value),revalidate:async()=>{},invalidate:()=>events.push('invalidated')};
+  const source={id:'message',conversationId:'chat',transportId:'synthetic',text:'Synthetic',media:{kind:'video',access:'unsupported',viewOnce:false,expiresAt:null}};
+  f.app.history.get=()=>({messages:[source]});let tree=f.render();
+  const voice=nodes(tree).find(node=>node.type==='voice');voice.props.ref.current={isBusy:()=>busy,setViewerBlocked:value=>{if(value && busy)return false;viewerBlocked=value;return true;}};
+  const open=()=>nodes(f.render()).find(node=>node.type==='bubble').props.onOpenMedia(source);
+  open();assert.equal(nodes(f.render()).some(node=>node.type==='viewer'),false);
+  busy=false;open();tree=f.render();let viewer=nodes(tree).find(node=>node.type==='viewer');assert.ok(viewer);assert.equal(viewerBlocked,true);assert.equal(viewer.props.canPlay(),true);
+  busy=true;assert.equal(viewer.props.canPlay(),false);busy=false;
+  assert.equal(label(tree,'Message').props.value,'Retain this text');viewer.props.onClose();tree=f.render();assert.equal(viewerBlocked,false);assert.equal(nodes(tree).some(node=>node.type==='viewer'),false);
+  assert.equal(f.sends.length,0);assert.equal(label(tree,'Message').props.value,'Retain this text');f.h.unmount();
+});
 test('real focus effect cleanup is isolated from hold/snapshot rerenders and status refresh',async()=>{
   const f=screenFixture('');let tree=f.render();const before=f.counts();
   const voice=()=>nodes(tree).find(node=>node.type==='voice');assert.equal(voice().props.active,true);

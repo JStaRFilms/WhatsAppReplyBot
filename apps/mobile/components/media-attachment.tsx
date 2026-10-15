@@ -20,7 +20,7 @@ export function MediaAttachment({message,visible=false,onOpen}:{message:Message;
   const valid=useSyncExternalStore(handle?.subscribe ?? idle,handle?.getSnapshot ?? invalid,invalid);
   const [legacy,setLegacy]=useState<{client:typeof client;identity:string;uri:string} | null>(null);
   const [failed,setFailed]=useState(false),[attempt,setAttempt]=useState(0),[expired,setExpired]=useState(false);
-  const supported=!!media && ['image','sticker','animated_sticker','gif'].includes(media.kind);
+  const supported=!!media && ['image','sticker','animated_sticker','gif','video'].includes(media.kind);
   const allowed=supported && !media?.viewOnce && media?.access!=='expired' && !expired
     && (media?.expiresAt===null || (media?.expiresAt ?? 0)>clock.now());
   const privateCache=discovery?.capabilities?.privateMediaCache===true;
@@ -29,7 +29,7 @@ export function MediaAttachment({message,visible=false,onOpen}:{message:Message;
   useEffect(()=>{
     setLease(null);setLegacy(null);setFailed(false);
     if(!allowed){if(media && privateCache && (media.viewOnce || media.access==='expired' || expired || media.expiresAt!==null && media.expiresAt<=clock.now()))mediaCache.invalidate(message);return;}
-    if(!visible || media?.fixture)return;
+    if(!visible || media?.fixture || media?.kind==='video')return;
     const controller=new AbortController();let active=true;
     if(privateCache){
       void mediaCache.acquire(message,'preview','thumbnail',controller.signal).then(handle=>{
@@ -37,7 +37,7 @@ export function MediaAttachment({message,visible=false,onOpen}:{message:Message;
       }).catch(()=>{if(active)setFailed(true);});
     }else void client.media(message.conversationId,message.id,controller.signal).then(uri=>{if(active)setLegacy({client,identity,uri});}).catch(()=>{if(active)setFailed(true);});
     return()=>{active=false;controller.abort();};
-  },[client,mediaCache,identity,media?.viewOnce,media?.access,media?.fixture,media?.expiresAt,attempt,visible,privateCache,allowed]);
+  },[client,mediaCache,identity,media?.kind,media?.viewOnce,media?.access,media?.fixture,media?.expiresAt,attempt,visible,privateCache,allowed]);
   useEffect(()=>{
     setExpired(false);if(media?.expiresAt===null || media?.expiresAt===undefined)return;
     const expiresAt=media.expiresAt;let timer:ReturnType<typeof setTimeout> | undefined;
@@ -47,6 +47,9 @@ export function MediaAttachment({message,visible=false,onOpen}:{message:Message;
   },[clock,mediaCache,media?.expiresAt,message.id,privateCache]);
   if(!media)return null;
   if(!allowed)return <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:13,marginBottom:6}}>{media.viewOnce ? 'View-once media is not retained' : !supported ? media.kind+' attachment. Viewing unavailable.' : 'Media unavailable'}</Text>;
+  if(media.kind==='video')return privateCache ? <Pressable accessibilityRole="button" accessibilityLabel="Open video" onPress={()=>onOpen?.(message)}
+    style={{minHeight:48,paddingVertical:10,paddingHorizontal:12,marginBottom:6}}><Text style={{color:palette.accent,fontFamily:fonts.semibold}}>Open video</Text></Pressable>
+    : <Text style={{color:palette.muted}}>Video viewing unavailable.</Text>;
   const fixture=media.fixture ? fixtures[media.fixture] : undefined;
   const uri=visible && valid ? handle?.uri : visible && legacy?.client===client && legacy.identity===identity ? legacy.uri : undefined;
   return <View style={{width:220,height:160,marginBottom:6,justifyContent:'center',alignItems:'center'}}>

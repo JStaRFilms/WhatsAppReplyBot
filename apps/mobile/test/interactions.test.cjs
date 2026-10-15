@@ -9,14 +9,14 @@ const coreRequire=createRequire(path.resolve(__dirname,'../../../packages/core/p
 const contracts=load('../../packages/core/src/contracts.ts',{'zod':require('zod'),'emoji-regex':coreRequire('emoji-regex')});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function voiceFixture(pickerResult) {
-  const h=hooks();const acknowledgment=deferred(),errors=[];let starts=0,stops=0,picks=0,sends=0,clips=0,released=0;
+  const h=hooks();const acknowledgment=deferred(),errors=[];let starts=0,stops=0,picks=0,sends=0,clips=0,released=0,playbackStops=0;
   const recorder={recording:false,canRecord:true,seconds:1,start:async()=>{starts++;recorder.recording=true;},stop:async()=>{stops++;recorder.recording=false;}};
   const component=load('components/voice-composer.tsx',{'react':h.react,'react-native':native,'lucide-react-native':icons,
     'expo-document-picker':{getDocumentAsync:async()=>{picks++;return pickerResult ? pickerResult.promise : {assets:[{}]};}},'../lib/audio-clip':{clipFromAsset:()=>({release(){released++;}})},
-    '../lib/audio-lane':{stopPlayback(){}},'../lib/voice-recorder':{useVoiceRecorder:()=>recorder},
+    '../lib/audio-lane':{stopPlayback(){playbackStops++;}},'../lib/voice-recorder':{useVoiceRecorder:()=>recorder},
     '../lib/app-state':{useApp:()=>({palette:{},reportError:message=>errors.push(message)})},'./audio-playback':{AudioPlayback:'playback',audioTime:()=> '0:01'},'../lib/theme':{fonts:{}}});
   const props={ref:{current:null},children:null,clip:null,disabled:false,active:true,canSend:false,sending:false,beforePick:()=>acknowledgment.promise,onSend:()=>sends++,onClip:()=>clips++,onBusyChange(){}};
-  return{props,h,recorder,acknowledgment,errors,render:()=>h.render(()=>component.VoiceComposer(props)),counts:()=>({starts,stops,picks,sends,clips,released})};
+  return{props,h,recorder,acknowledgment,errors,render:()=>h.render(()=>component.VoiceComposer(props)),counts:()=>({starts,stops,picks,sends,clips,released,playbackStops})};
 }
 test('empty composer uses the Send slot for mic, text/photo/clip use Send, recording uses Stop and keeps local preview',async()=>{
   const f=voiceFixture();let tree=f.render();f.h.flush();
@@ -32,6 +32,12 @@ test('empty composer uses the Send slot for mic, text/photo/clip use Send, recor
   assert.equal(f.counts().sends,3);assert.equal(f.counts().picks,0);
   assert.ok(nodes(tree).some(n=>n.type==='playback'));
   label(tree,'Delete voice note').props.onPress();assert.equal(f.counts().clips,1);
+});
+test('recording/picker startup synchronously stops the playback lane before waiting for its hold',()=>{
+  for(const file of [false,true]){const f=voiceFixture();const tree=f.render();const cleanup=f.h.flush();
+    if(file)f.props.ref.current.pickAudio();else label(tree,'Record voice note').props.onPress();
+    assert.equal(f.counts().playbackStops,1);assert.equal(f.counts().starts,0);assert.equal(f.counts().picks,0);cleanup.forEach(fn=>fn());
+  }
 });
 test('microphone preparation and startup errors are visible beside the composer; retry clears error and never sends',async()=>{
   const f=voiceFixture();let tree=f.render();f.h.flush();const start=f.recorder.start;

@@ -19,6 +19,43 @@ test('native foreground uses AppState even when window exists without DOM event 
   appState.currentState='background';listener();assert.equal(state,false);
   appState.currentState='active';listener();assert.equal(state,true);cleanup();assert.equal(removed,true);
 });
+test('video plugin disables both PiP activities in memory, rejects background config and preserves release/Contacts constraints',async()=>{
+  const {createRequire}=require('node:module');
+  const mobileRequire=createRequire(path.resolve(__dirname,'../package.json'));
+  const {expo}=mobileRequire('./app.json');
+  const {AndroidConfig}=mobileRequire('expo/config-plugins');
+  const withVideo=mobileRequire('expo-video/app.plugin.js').default;
+  const withContacts=mobileRequire('expo-contacts/app.plugin.js').default;
+  const withRelease=mobileRequire('./plugins/with-otherme-release.cjs');
+  assert.equal(mobileRequire('expo-video/package.json').version,'57.0.5');
+  assert.equal(mobileRequire('./package.json').dependencies['expo-video'],'57.0.5');
+  const options=expo.plugins.find(plugin=>Array.isArray(plugin) && plugin[0]==='expo-video')[1];
+  assert.deepEqual(options,{supportsBackgroundPlayback:false,supportsPictureInPicture:false});
+  assert.equal(expo.version,'0.1.2');assert.equal(expo.android.versionCode,3);assert.equal(expo.android.package,'com.jstarstudios.otherme');
+  for(const permission of ['WRITE_CONTACTS','SYSTEM_ALERT_WINDOW','READ_MEDIA_AUDIO','FOREGROUND_SERVICE','FOREGROUND_SERVICE_MEDIA_PLAYBACK'])assert.ok(expo.android.blockedPermissions.includes('android.permission.'+permission));
+  function config(){
+    let result=withRelease({...expo});result=withVideo(result,options);result=withContacts(result,{});
+    return AndroidConfig.Permissions.withBlockedPermissions(result,expo.android.blockedPermissions);
+  }
+  const manifest=()=>({manifest:{$:{'xmlns:android':'http://schemas.android.com/apk/res/android'},application:[{$:{},activity:[{$:{'android:name':'.MainActivity','android:supportsPictureInPicture':'true','tools:replace':'android:theme'}}]}]}});
+  const run=async value=>{const configured=config();return(await configured.mods.android.manifest({...configured,modResults:value,modRequest:{platform:'android',modName:'manifest',projectRoot:path.resolve(__dirname,'..'),introspect:true}})).modResults;};
+  const result=await run(manifest()),app=result.manifest.application[0];
+  for(const name of ['.MainActivity','expo.modules.video.FullscreenPlayerActivity']){
+    const activity=app.activity.find(activity=>activity.$['android:name']===name);
+    assert.equal(activity.$['android:supportsPictureInPicture'],'false');assert.ok(activity.$['tools:replace'].split(',').includes('android:supportsPictureInPicture'));
+  }
+  assert.ok(app.activity[0].$['tools:replace'].includes('android:theme'));assert.equal(result.manifest.$['xmlns:tools'],'http://schemas.android.com/tools');
+  assert.equal(app.$['android:allowBackup'],'false');assert.equal(app.$['android:usesCleartextTraffic'],'true');
+  assert.equal(app.service?.some(service=>service.$['android:name'].includes('ExpoVideoPlaybackService')) ?? false,false);
+  const permissions=result.manifest['uses-permission'] ?? [];
+  assert.ok(permissions.some(permission=>permission.$['android:name']==='android.permission.READ_CONTACTS' && permission.$['tools:node']!=='remove'));
+  for(const name of ['WRITE_CONTACTS','FOREGROUND_SERVICE','FOREGROUND_SERVICE_MEDIA_PLAYBACK'])assert.ok(!permissions.some(permission=>permission.$['android:name']==='android.permission.'+name && permission.$['tools:node']!=='remove'));
+  assert.deepEqual(await run(result),result,'manifest override is idempotent');
+  const contaminated=manifest();contaminated.manifest.application[0].service=[{$:{'android:name':'expo.modules.video.playbackService.ExpoVideoPlaybackService'}}];
+  await assert.rejects(run(contaminated),/background service/);
+  const plist=await config().mods.ios.infoPlist({modResults:{UIBackgroundModes:['audio','unrelated']},modRequest:{platform:'ios',modName:'infoPlist',introspect:true}});
+  assert.deepEqual(plist.modResults.UIBackgroundModes,['unrelated']);
+});
 test('request IDs are valid unique UUIDv4 values without crypto.randomUUID',()=>{
   let calls=0;
   const crypto={getRandomValues:bytes=>{calls++;return webcrypto.getRandomValues(bytes);}};

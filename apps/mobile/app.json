@@ -10,7 +10,7 @@
       "package": "com.jstarstudios.otherme",
       "versionCode": 3,
       "softwareKeyboardLayoutMode": "resize",
-      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW", "android.permission.READ_MEDIA_AUDIO", "android.permission.WRITE_CONTACTS"]
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW", "android.permission.READ_MEDIA_AUDIO", "android.permission.WRITE_CONTACTS", "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"]
     },
     "extra": {
       "backendUrl": "http://192.168.100.5:3210",
@@ -19,6 +19,7 @@
     },
     "plugins": [
       "./plugins/with-otherme-release.cjs",
+      ["expo-video", {"supportsBackgroundPlayback": false, "supportsPictureInPicture": false}],
       ["expo-image-picker", {"photosPermission": "Allow Otherme to select photos you choose to send.", "cameraPermission": "Allow Otherme to take photos you choose to send.", "microphonePermission": "Allow Otherme to record voice notes you choose to send."}],
       ["expo-contacts", {"contactsPermission": "Allow Otherme to match names for existing chats when you choose Sync matched names."}],
       "expo-router",

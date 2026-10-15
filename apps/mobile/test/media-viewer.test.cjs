@@ -11,11 +11,11 @@ function fixture(kind='viewer'){
   const app={client:{},palette:{},clock:{now:()=>100},discovery:{capabilities:{privateMediaCache:true}},
     mediaCache:{acquire:(...args)=>{requests.push(args);return response.promise;},subscribe:()=>()=>{},getNotice:()=>null,invalidate(){valid=false;events.push({kind:'invalidate'});}}};
   const native={Modal:'modal',View:'view',Text:'text',Pressable:'pressable',ActivityIndicator:'spinner',PanResponder:{create:handlers=>({panHandlers:handlers})}};
-  const modules={react:h.react,'react-native':native,'expo-image':{Image:'image'},'../lib/app-state':{useApp:()=>app},'../lib/theme':{fonts:{}},
+  const modules={react:h.react,'./video-playback':{VideoPlayback:'video'},'react-native':native,'expo-image':{Image:'image'},'../lib/app-state':{useApp:()=>app},'../lib/theme':{fonts:{}},
     'react-native-safe-area-context':{useSafeAreaInsets:()=>({top:11,bottom:22,left:3,right:4})},'../assets/demo-image.png':1,'../assets/demo-sticker.webp':2,'../assets/demo-clock.gif':3};
   const component=load(kind==='viewer'?'components/media-viewer.tsx':'components/media-attachment.tsx',modules,{AbortController,setTimeout:()=>1,clearTimeout(){},
     window:{addEventListener:(key,fn)=>keys.set(key,fn),removeEventListener:key=>keys.delete(key)}});
-  const props={message:photo,visible:kind!=='thumbnail',onClose:()=>events.push({kind:'close'}),onOpen:message=>events.push({kind:'open',id:message.id})};
+  const props={message:photo,canPlay:()=>true,visible:kind!=='thumbnail',onClose:()=>events.push({kind:'close'}),onOpen:message=>events.push({kind:'open',id:message.id})};
   const render=()=>h.commit(()=>tree=kind==='viewer'?component.MediaViewer(props):component.MediaAttachment(props));
   return {h,app,props,requests,response,events,handle,keys,render,invalidate:()=>{valid=false;return render();}};
 }
@@ -50,6 +50,18 @@ test('only measured visible thumbnails acquire handles; offscreen, covered and n
   f.response.resolve(f.handle);await settle();let tree=f.render();label(tree,'Open image').props.onPress();assert.equal(f.events.find(event=>event.kind==='open').id,photo.id);
   f.props.visible=false;tree=f.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);assert.equal(f.events.find(event=>event.kind==='release').images,0);f.h.unmount();
   const changed=fixture('thumbnail');changed.props.visible=true;changed.render();changed.response.resolve(changed.handle);await settle();changed.render();changed.app.client={};tree=changed.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);changed.h.unmount();
+});
+test('video offers explicit Open without metadata, binary, thumbnail or legacy-AI-access prefetch',()=>{
+  const f=fixture('thumbnail');f.props.visible=true;f.props.message={...photo,media:{...photo.media,kind:'video',access:'unsupported'}};
+  const tree=f.render();assert.equal(f.requests.length,0);assert.equal(nodes(tree).some(node=>node.type==='image'),false);
+  label(tree,'Open video').props.onPress();assert.equal(f.events.find(event=>event.kind==='open').id,photo.id);f.h.unmount();
+});
+test('video reuses the existing modal with video Close/back/Escape and no photo acquisition or zoom',()=>{
+  const f=fixture();f.props.message={...photo,media:{...photo.media,kind:'video',access:'unsupported'}};
+  const tree=f.render();assert.equal(f.requests.length,0);assert.equal(nodes(tree).filter(node=>node.type==='video').length,1);
+  assert.equal(nodes(tree).some(node=>node.props?.accessibilityLabel==='Zoom in'),false);
+  label(tree,'Close video').props.onPress();tree.props.onRequestClose();f.keys.get('keydown')({key:'Escape',preventDefault(){}});
+  assert.equal(f.events.filter(event=>event.kind==='close').length,3);f.h.unmount();
 });
 test('known view-once/expiry unmounts a thumbnail and requests invalidation without reading binary again',async()=>{
   const f=fixture('thumbnail');f.props.visible=true;f.render();f.response.resolve(f.handle);await settle();f.render();

@@ -75,6 +75,24 @@ subprojects { p ->
     // Personal-use authenticated HTTP on trusted Wi-Fi, not an internet deployment.
     application['android:usesCleartextTraffic'] = 'true';
     application['android:allowBackup'] = 'false';
+    const manifest = mod.modResults.manifest;
+    manifest.$['xmlns:tools'] = 'http://schemas.android.com/tools';
+    const app = manifest.application[0];
+    const main = app.activity.find(activity => activity.$['android:name'] === '.MainActivity');
+    if (!main) throw new Error('MainActivity missing. Cannot disable video PiP.');
+    const videoActivity = 'expo.modules.video.FullscreenPlayerActivity';
+    let fullscreen = app.activity.find(activity => activity.$['android:name'] === videoActivity);
+    if (!fullscreen) { fullscreen = { $: { 'android:name': videoActivity } }; app.activity.push(fullscreen); }
+    for (const activity of [main, fullscreen]) {
+      activity.$['android:supportsPictureInPicture'] = 'false';
+      const replace = new Set((activity.$['tools:replace'] || '').split(',').map(value => value.trim()).filter(Boolean));
+      replace.add('android:supportsPictureInPicture');
+      activity.$['tools:replace'] = [...replace].join(',');
+    }
+    if (app.service?.some(service => service.$['android:name'] === 'expo.modules.video.playbackService.ExpoVideoPlaybackService')
+      || manifest['uses-permission']?.some(permission => ['android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'].includes(permission.$['android:name']) && permission.$['tools:node'] !== 'remove')) {
+      throw new Error('Video background service or foreground permissions are forbidden.');
+    }
     return mod;
   });
 };

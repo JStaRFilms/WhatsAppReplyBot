@@ -35,7 +35,7 @@ export default function ConversationScreen() {
   const router = useRouter();
   const foreground = useForeground();
   const localDraftIds=useLocalDraftIds();
-  const { snapshot, palette, mutate, intents, refresh, history, status, reportError, composer, viewedMessages, client, discovery, mediaCache } = useApp();
+  const { snapshot, palette, mutate, intents, refresh, history, status, reportError, composer, viewedMessages, client, discovery, mediaCache, clock } = useApp();
   const pending = useSyncExternalStore(intents.subscribe, intents.get, intents.get);
   const [composerIdentity] = useState(randomUUID);
   const turns = useRef(new Map<string, number>());
@@ -185,13 +185,21 @@ export default function ConversationScreen() {
   };
   const openViewer=(message:Message)=>{
     if(!currentScreen() || !discovery?.capabilities?.privateMediaCache || viewerOpen.current)return;
-    if(pickerBusy.current || voice.current?.isBusy() || voice.current?.setViewerBlocked(true)===false){setHistoryError('Close the picker or finish microphone preparation, recording or audio stop before opening a photo.');return;}
+    if(pickerBusy.current || voice.current?.isBusy() || voice.current?.setViewerBlocked(true)===false){setHistoryError('Close the picker or finish microphone preparation, recording or audio stop before opening media.');return;}
     viewerOpen.current=true;cancelViewed();scrolling.preserve?.();pendingLocation.current=null;pagingRead.current++;history.cancelPageReads?.(id);setPaging(false);mediaCache.setViewerOpen(true);setViewer(message);
   };
   useLayoutEffect(()=>{if(viewer && (!focused || !foreground))closeViewer();},[viewer,focused,foreground]);
   useEffect(()=>{if(viewer){const current=messages.find(message=>message.id===viewer.id);
-    if(cached?.unavailableSourceIds?.includes(viewer.id) || current && (!current.media || current.media.viewOnce || current.media.access==='expired')){mediaCache.invalidate(viewer);closeViewer();}
-  }},[cached,viewer,mediaCache]);
+    const revoke=()=>{mediaCache.invalidate(viewer);closeViewer();};
+    if(cached?.unavailableSourceIds?.includes(viewer.id) || current && (!current.media || current.media.viewOnce || current.media.access==='expired')){revoke();return;}
+    if(viewer.media?.kind==='video'){
+      const expiresAt=current?.media?.expiresAt ?? viewer.media.expiresAt;
+      if(expiresAt!==null){let timer:ReturnType<typeof setTimeout>;
+        const check=()=>{const remaining=expiresAt-clock.now();if(remaining<=0)revoke();else timer=setTimeout(check,Math.min(remaining,2147483647));};
+        check();return()=>clearTimeout(timer);
+      }
+    }
+  }},[cached,viewer,mediaCache,clock]);
   useEffect(()=>{if(focused && foreground)void mediaCache?.revalidate();},[mediaCache,historyVersion,focused,foreground]);
   const requestDraft = async () => {
     if (!id || readOnly || draftRequest.current || status !== 'online') return;
@@ -448,7 +456,13 @@ export default function ConversationScreen() {
         {pauseState === 'pending' ? 'Pause requested…' : pauseState === 'failed' ? 'Pause was not acknowledged' : 'Pause acknowledged'}
       </Text>}
     </View>
-    {viewer && focused && foreground && <MediaViewer key={viewer.id} message={viewer} onClose={closeViewer}/>}
+    {viewer && focused && foreground && <MediaViewer key={viewer.id} message={viewer} onClose={closeViewer}
+      canPlay={()=>{
+        const current=messages.find(message=>message.id===viewer.id);
+        return currentScreen() && viewerOpen.current && focusedRef.current && isForeground() && !pickerBusy.current && !voice.current?.isBusy()
+          && !cached?.unavailableSourceIds?.includes(viewer.id) && (!current || !!current.media && !current.media.viewOnce && current.media.access!=='expired'
+            && (current.media.expiresAt===null || current.media.expiresAt>clock.now()));
+      }}/>}
     <PermissionSheet conversation={c} visible={permissions} onClose={() => setPermissions(false)}/>
     <Modal transparent visible={selected !== null} animationType="fade" onRequestClose={() => setSelected(null)}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000088' }}>

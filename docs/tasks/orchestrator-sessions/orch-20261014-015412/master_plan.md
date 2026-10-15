@@ -88,7 +88,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 31 | Approved native/browser visual integration | coder | vibe-build | 28/30 functional handoff | Source accepted; parent250 workspace tests/types and132 synthetic browser checks pass |
 | 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Review returned P2 Assistant read feedback; parent reproduced/fixed,93 mobile tests/types pass; extension review still required |
 | 33 | Built desktop assets and signed Android update | worker | vibe-build | 32/34 and added implementation/review | Held for owner-added release gate; no final build yet |
-| 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Ready; includes AI punctuation and one owner instructions field |
+| 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Running docs-only Sol Medium; includes AI punctuation and simple per-profile owner instructions |
 | 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Pending investigation only; no live diagnostics or automatic release scope |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 

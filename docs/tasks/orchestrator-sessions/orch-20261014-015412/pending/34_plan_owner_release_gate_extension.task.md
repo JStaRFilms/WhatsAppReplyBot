@@ -68,5 +68,9 @@ as an unproven ingestion issue, not permission to run live diagnostics or repair
 
 ## Execution
 
-Ready to launch. Scope and contact/AI choices are now recorded. Parent owns source,
-master plan, board, task status and commits. This architect writes docs only.
+Running docs-only with Takomi openai-codex/gpt-6.1-sol, thinking medium.
+T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-release-extension-plan-20261015-r1`.
+Client request ID: otherme-release-extension-plan-20261015-r1.
+Scope and contact/AI choices are recorded. Parent owns source, master plan, board,
+task status and commits. Architect authors the bounded implementation plan and
+new36+ packets only.35 remains the separate pending ingestion investigation.

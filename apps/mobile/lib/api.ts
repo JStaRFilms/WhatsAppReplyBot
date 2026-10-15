@@ -45,6 +45,9 @@ export function sameScope(a: ProfileScope | null | undefined, b: ProfileScope | 
   return !!a && !!b && a.profileId === b.profileId && a.accountId === b.accountId && a.revision === b.revision;
 }
 export class ReadError extends Error {}
+export class UnconfirmedMutationError extends Error {
+  constructor(connectionChanged = false) { super((connectionChanged ? 'Connection changed. ' : '') + 'The Windows service did not acknowledge this request. Its outcome is unconfirmed. No action was retried.'); }
+}
 export class ApiClient {
   readonly scope: ProfileScope | undefined;
   private revoked = false;
@@ -84,7 +87,7 @@ export class ApiClient {
     const timeout = setTimeout(()=>abort.abort(),10000);
     const interrupted = () => readOnly
       ? new ReadError('Could not refresh from the Windows service. Showing cached data, if available.')
-      : new Error('The Windows service did not acknowledge this request. No action was retried.');
+      : new UnconfirmedMutationError();
     const check = () => {
       this.assertActive();
       if (abort.signal.aborted) throw interrupted();
@@ -125,9 +128,9 @@ export class ApiClient {
       return result;
     } catch (error) {
       if (error instanceof ApiError) throw error;
+      if (!readOnly) throw new UnconfirmedMutationError(this.revoked);
       check();
-      if (readOnly) throw new ReadError('Could not reach the Windows service to refresh. Showing cached data, if available.');
-      throw new Error('The Windows service is unreachable. No action was acknowledged.');
+      throw new ReadError('Could not reach the Windows service to refresh. Showing cached data, if available.');
     } finally {
       clearTimeout(timeout);
       if(rejectAbort)abort.signal.removeEventListener('abort',rejectAbort);
@@ -142,8 +145,13 @@ export class ApiClient {
       ...(payload === undefined ? {signal} : {}),
       ...(payload === undefined ? {} : {body:JSON.stringify({requestId:randomUUID(),...payload})}),
     },'json');
-    this.assertActive();
-    return schema.parse(result);
+    try {
+      this.assertActive();
+      return schema.parse(result);
+    } catch (error) {
+      if (payload !== undefined) throw new UnconfirmedMutationError(this.revoked);
+      throw error;
+    }
   }
   async session(signal?: AbortSignal): Promise<SessionDiscovery> {
     const result = await this.fetchResponse('/v1/session?capabilities=1',{headers:this.headers(),signal},'json');

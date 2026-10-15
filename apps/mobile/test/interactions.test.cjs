@@ -103,13 +103,14 @@ function screenFixture(initialText='') {
   const message={id:'message',text:'Synthetic',conversationId:'chat'};
   const history={subscribe(){},get:()=>({messages:[message]}),load:async()=>{}};
   const app={snapshot:{conversations:[conversation],lastMessages:[],historyVersions:{},drafts:[]},palette:{},history,status:'online',reportError:message=>sends.push({error:message}),composer:async()=>{},viewed:async()=>{},client:{},perform:async(_path,_schema,payload)=>{sends.push(payload.action);}};
+  app.intents={subscribe(){},get:()=>[],enqueue:async(capture,clear)=>{sends.push(capture.action ?? {kind:'text',text:capture.text});clear();}};
   const scrolling=load('lib/conversation-scroll.ts',{'react':h.react,'react-native':native},{WeakMap,Map,...animation});
   const component=load('app/conversation/[id].tsx',{'react':h.react,'react-native':native,'expo-router':{Stack:{Screen:'stack'},useLocalSearchParams:()=>({id:'chat'}),useFocusEffect(){},useRouter:()=>({})},'lucide-react-native':icons,
     '../../lib/uuid':{randomUUID:()=> 'synthetic-request'},'@replybot/core/contracts':contracts,'expo-image':{Image:'image'},
     '../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
     '../../components/avatar':{Avatar:'avatar'},'../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
-    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{SendResult:{}},'../../lib/local-drafts':{useLocalDraft:()=>({text:initialText,setText(){},ready:true})},
+    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{ApiError:class extends Error{}},'../../lib/pending-intents':{intentVisible:()=>true},'../../lib/media-lease':{releaseImage(){},releaseMedia(){}},'../../components/outgoing-status':{OutboxStatus:'outbox-status'},'../../lib/local-drafts':{useLocalDraft:()=>({text:initialText,setText(){},ready:true})},
     '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,
     '../../lib/composer-focus':load('lib/composer-focus.ts',{react:h.react,'react-native':native,'./foreground':{isForeground:()=>true}},animation),'../../lib/foreground':{isForeground:()=>true,useForeground:()=>true}}, {WeakMap,Map,clearTimeout,...animation});
   return{render:()=>h.render(component.default),sends,message,app,h,frame:()=>{const next=[...frames.values()];frames.clear();next.forEach(fn=>fn());}};
@@ -159,7 +160,7 @@ test('actor reactions group compactly, owner and AI share one slot, removals do 
 });
 test('sequence preview stays ordered and editing explicitly flattens into one owner text action',async()=>{
   const h=hooks();let sent;
-  const component=load('components/draft-card.tsx',{'react':h.react,'react-native':native,'@replybot/core/contracts':contracts,'../lib/app-state':{useApp:()=>({palette:{},status:'online',perform:async(_path,_schema,payload)=>{sent=payload;return{};}})},'../lib/api':{DecisionResult:{}},'../lib/theme':{fonts:{}},'./ui':{Button:'button'}});
+  const component=load('components/draft-card.tsx',{'react':h.react,'react-native':native,'@replybot/core/contracts':contracts,'../lib/app-state':{useApp:()=>({palette:{},status:'online',mutate:async(_path,_schema,payload)=>{sent=payload;return{};}})},'../lib/api':{DecisionResult:{}},'../lib/theme':{fonts:{}},'./outgoing-status':{OutboxStatus:'outbox-status'},'./ui':{Button:'button'}});
   const draft={id:'draft',revision:2,state:'pending',action:{kind:'text_sequence',messages:[{text:'First',quotedMessageId:'quoted'},{text:'Second'}],reason:'Synthetic'}};
   const render=()=>h.render(()=>component.DraftCard({draft}));let tree=render();
   const sequence=label(tree,'Ordered reply sequence');assert.equal(sequence.props.children[0].props.children[1].props.children,'First');assert.equal(sequence.props.children[1].props.children[1].props.children,'Second');

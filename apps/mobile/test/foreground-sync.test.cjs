@@ -98,7 +98,7 @@ test('background does not cancel or replay mutations and uncertain mutation erro
   post.reject(new Error('synthetic lost response'));await pending;
   f.foreground('active');await settle();
   assert.equal(f.calls.filter(call=>call.method==='POST').length,1);
-  assert.match(f.render().error,/No action was acknowledged/);
+  assert.match(f.render().error,/outcome is unconfirmed/);
 });
 
 test('read cancellation handles late response bodies without accepting obsolete data',async()=>{

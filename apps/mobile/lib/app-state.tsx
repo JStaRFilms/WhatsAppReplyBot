@@ -6,6 +6,7 @@ import { Conversation } from '@replybot/core/contracts';
 import { ClientSnapshot, ProfileScope, ProfileOperation, SessionDiscovery, ProfileTransitionInput, ProfileTransitionResult } from '@replybot/core/api';
 import { ApiClient, ApiError, ReadError, sameScope } from './api';
 import { HistoryCache } from './history-cache';
+import { PendingIntents } from './pending-intents';
 import { ClientClock } from './client-clock';
 import { stopPlayback } from './audio-lane';
 import { readSetting, saveSetting, getClientId } from './storage';
@@ -24,13 +25,15 @@ interface Controller {
   composer: (id: string,hasText: boolean) => Promise<void>;
   viewed: (id:string,watermark:number) => Promise<void>;
   control: (id:string,action:'resume'|'extend'|'indefinite') => Promise<Conversation | undefined>;
+  intents: PendingIntents;
+  mutate: <T>(path: string, schema: z.ZodType<T>, payload: Record<string, unknown>) => Promise<T>;
   perform: <T>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>) => Promise<T | undefined>;
 }
 const Context = createContext<Controller | null>(null);
 const SavedSession = z.object({url:z.string().url(),token:z.string(),scope:ProfileScope.optional()});
 type Credentials = z.infer<typeof SavedSession>;
 function sessionState(client: ApiClient, epoch: number) {
-  return { client, epoch, history:new HistoryCache(client), clock:new ClientClock(), composerQueue:new Map<string,Promise<void>>(), request:0, acceptedRequest:0 };
+  return { client, epoch, history:new HistoryCache(client), clock:new ClientClock(), intents:new PendingIntents(client,client.scope,epoch), composerQueue:new Map<string,Promise<void>>(), request:0, acceptedRequest:0 };
 }
 type SessionState = ReturnType<typeof sessionState>;
 type OwnTransition = {input:ProfileTransitionInput;source:ProfileScope};
@@ -84,6 +87,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Revoke synchronously, before React commits the new subtree. Old handlers cannot
   // submit work in the gap between discovering a revision and unmounting screens.
   const replaceBinding = (scope: ProfileScope | null): SessionState => {
+    active.current.intents.stop();
     active.current.client.revoke();
     stopPlayback();
     const epoch = active.current.epoch+1;
@@ -128,6 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     session.acceptedRequest=request;
+    session.intents.reconcile(data.outbox);
     session.clock.calibrate(data.serverTime);
     setSnapshot(previous=>{
       if (signal.aborted || !current(session) || request < session.acceptedRequest) return previous;
@@ -265,6 +270,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const visible=state==='active';
       if(visible===foreground.current)return;
       foreground.current=visible;
+      active.current.intents.setForeground(visible);
       readRun.current?.abort.abort();active.current.client.abortReads();
       setSnapshotFresh(false);
       if(visible && credentials.current) {
@@ -274,7 +280,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setStatus('offline');setPcStatus('offline');
       }
     });
-    return()=>{subscription.remove();readRun.current?.abort.abort();active.current.client.revoke();stopPlayback();};
+    return()=>{subscription.remove();readRun.current?.abort.abort();active.current.intents.stop();active.current.client.revoke();stopPlayback();};
   },[refresh]);
   const connect = async (url: string, enteredToken?: string) => {
     const previous=credentials.current;
@@ -337,7 +343,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if(connectionEpoch.current===epoch){transitionLock.current=false;pollBudget.current=30;setPolling(true);}
     }
   };
-  const {client,history,clock,composerQueue}=binding;
+  const {client,history,clock,composerQueue,intents}=binding;
+  useEffect(()=>{intents.setForeground(foreground.current);void intents.load();},[intents]);
+  intents.onMutation=()=>{if(current(binding))void refresh();};
   const composer = useCallback((id:string,hasText:boolean):Promise<void> => {
     const previous=composerQueue.get(id) ?? Promise.resolve();
     const task=previous.catch(()=>{}).then(async()=>{
@@ -365,18 +373,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void refresh();return conversation;
     }catch(reason){if(current(binding))setError(reason instanceof Error ? reason.message : 'Action failed.');return undefined;}
   },[binding,refresh]);
+  const mutate = async <T,>(path: string, schema: z.ZodType<T>, payload: Record<string, unknown>): Promise<T> => {
+    if(!current(binding))throw new Error('The active account changed. No action was submitted.');
+    const result=await client.request(path,schema,payload);
+    if(!current(binding))throw new Error('The active account changed. The request outcome is unconfirmed.');
+    void refresh();
+    return result;
+  };
   const perform = async <T,>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>): Promise<T | undefined> => {
     if(!current(binding))return undefined;
-    setError(null);
     try {
-      const result=await client.request(path,schema,payload);
-      if(!current(binding))return undefined;
-      await refresh();return current(binding) ? result : undefined;
+      if(payload !== undefined)return await mutate(path,schema,payload);
+      const result=await client.request(path,schema);
+      return current(binding) ? result : undefined;
     } catch(reason){if(current(binding))setError(reason instanceof Error ? reason.message : 'Action failed.');return undefined;}
   };
   return <Context value={{snapshot,status,error:error ?? readError,pcStatus,snapshotFresh,hasSavedCredential,palette:dark?palettes.dark:palettes.light,dark,themeChoice,baseUrl,client,history,clock,
     acceptedScope:client.scope ?? null,sessionKey:String(binding.epoch)+':'+JSON.stringify(client.scope ?? null),discovery,operation,profileBusy,profileNotice,
-    refresh,connect,continueProfile,transitionProfile,perform,composer,viewed,control,
+    refresh,connect,continueProfile,transitionProfile,perform,mutate,intents,composer,viewed,control,
     clearError:()=>{setError(null);setReadError(null);},reportError:message=>{if(current(binding))setError(message);},
     setTheme:choice=>{setThemeChoice(choice);void saveSetting('replybot-theme',choice).catch(()=>setError('Theme preference could not be saved.'));}}}>
     {children}

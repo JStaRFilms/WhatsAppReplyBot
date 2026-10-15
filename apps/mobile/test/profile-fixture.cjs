@@ -16,9 +16,11 @@ function providerFixture({saved=null,save=async()=>{},apiGlobals={},appGlobals={
   const h=hooks(),calls=[],timers=[],listeners=new Set();let handle,playbackStops=0;
   const appState={currentState:'active',addEventListener:(_event,fn)=>{listeners.add(fn);return{remove:()=>listeners.delete(fn)};}};
   const api=apiFixture((url,init)=>{const call={url,path:new URL(url).pathname,...init};calls.push(call);return handle(call);},apiGlobals);
+  const {pendingModule,memoryStorage}=require('./pending-fixture.cjs');
+  const pending=pendingModule(api,memoryStorage());
   const cache=load('lib/history-cache.ts',{'./api':api},{Map,Set});
   const component=load('lib/app-state.tsx',{'react':h.react,'react-native':{useColorScheme:()=> 'light',AppState:appState},'expo-constants':{},'zod':require('zod'),
-    '@replybot/core/contracts':contracts,'@replybot/core/api':core,'./api':api,'./history-cache':cache,
+    '@replybot/core/contracts':contracts,'@replybot/core/api':core,'./api':api,'./history-cache':cache,'./pending-intents':pending,
     './client-clock':{ClientClock:class{calibrate(){}}},'./audio-lane':{stopPlayback:()=>playbackStops++},
     './storage':{readSetting:async key=>key==='replybot-session'?saved:null,saveSetting:save,getClientId:async()=> 'synthetic'},'./theme':{palettes:{dark:{},light:{}}}},
     {URL,Map,AbortController,setTimeout,clearTimeout,setInterval:fn=>{timers.push(fn);return timers.length;},clearInterval(){},...appGlobals});

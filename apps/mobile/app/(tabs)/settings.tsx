@@ -5,13 +5,21 @@ import { Page, Button } from '../../components/ui';
 import { useApp } from '../../lib/app-state';
 import { WhatsAppConnection } from '../../components/whatsapp-connection';
 import { ProfileControls } from '../../components/profile-controls';
+import { ReleaseSettings } from '../../components/release-settings';
 import { fonts } from '../../lib/theme';
 export default function Settings() {
-  const { palette, themeChoice, setTheme, baseUrl, connect, status, pcStatus, hasSavedCredential, snapshot, perform } = useApp();
+  const { palette, themeChoice, setTheme, baseUrl, connect, status, pcStatus, hasSavedCredential, snapshot, perform, sessionKey, client } = useApp();
   const [modelBusy, setModelBusy] = useState(false); const modelLock = useRef(false);
+  const [consentResult,setConsentResult]=useState<{client:typeof client;consent:boolean} | null>(null);
+  const currentClient=useRef(client);currentClient.current=client;
+  const modelConsent=consentResult && consentResult.client===client ? consentResult.consent : snapshot?.modelConsent;
+  useEffect(()=>{if(consentResult && consentResult.client===client && snapshot?.modelConsent===consentResult.consent)setConsentResult(null);},[snapshot?.modelConsent,client,consentResult]);
   const changeModelConsent = async () => {
     if (modelLock.current || !snapshot) return; modelLock.current = true; setModelBusy(true);
-    try { await perform('/v1/model-consent', z.object({ consent: z.boolean() }), { consent: !snapshot.modelConsent }); }
+    try {
+      const result=await perform('/v1/model-consent', z.object({ consent: z.boolean() }), { consent: !modelConsent });
+      if(result && currentClient.current===client)setConsentResult({client,consent:result.consent});
+    }
     finally { modelLock.current = false; setModelBusy(false); }
   };
   const [url, setUrl] = useState(baseUrl); const [token, setToken] = useState('');
@@ -39,10 +47,11 @@ export default function Settings() {
     </Text>
     {snapshot?.model === 'openai/gpt-6-luna' && <>
       <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13, lineHeight: 20 }}>Selected chat text, supported images and eligible incoming voice notes go to OpenRouter. Gemini transcribes audio; GPT-6 Luna drafts text. GIFs use sampled frames. API charges apply.</Text>
-      <Button label={modelBusy ? 'Applying…' : snapshot.modelConsent ? 'Pause AI' : 'Enable AI'} secondary={snapshot.modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
+      <Button label={modelBusy ? 'Applying…' : modelConsent ? 'Pause AI' : 'Enable AI'} secondary={modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
     </>}
     <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Images, stickers, GIFs and voice notes are supported. View-once, deleted and expired media stay private.</Text>
     </View>
+    <ReleaseSettings key={sessionKey}/>
     <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Appearance</Text>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{(['system','light','dark'] as const).map(choice =>
       <Button key={choice} label={choice.charAt(0).toUpperCase()+choice.slice(1)} secondary={themeChoice !== choice} onPress={() => setTheme(choice)}/>)}</View></View>

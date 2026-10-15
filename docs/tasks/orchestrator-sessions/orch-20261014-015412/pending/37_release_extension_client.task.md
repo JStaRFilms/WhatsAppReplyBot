@@ -152,6 +152,23 @@ Scope includes the subsequent explicit Draft reply feedback request. Exact nativ
 install target/command and no-WRITE permission constraint above are authorized.
 No final build until38/parent source freeze; no actual contacts/device access.
 
+## Implementation handoff and parent checks
+
+The implementation task returned. Parent independently ran `pnpm test`, passing
+all320 tests:78 core,82 backend,131 mobile and29 packaging. `pnpm typecheck` passes
+all workspaces. Root lockfile diff adds only exact expo-contacts57.0.7; existing
+pinned versions remain unchanged. app.json preserves version0.1.2/code3 and blocks
+WRITE_CONTACTS alongside the existing restrictions. No real contact permission,
+book, message, model, phone, build copy or service was used.
+
+Source includes immutable gesture intents, scoped bounded storage and per-chat
+lanes, mutation-before-refresh returns, visible Draft request outcomes/View,
+receipt evidence displays and profile instructions/name controls. Parent source
+inspection is not final acceptance. Task39 now supplies preview/browser geometry
+and interaction evidence before38. The native manifest test is in-memory only;
+33 must still verify actual merged/signed READ_CONTACTS without WRITE_CONTACTS.
+No final desktop/APK export or hardware success is claimed.
+
 ## Limits
 
 No .env/token/auth/signing/actual SQLite/runtime reads, live backend/WhatsApp/profile/model action, phone/device input, actual recording/contact read, service control, OS viewers, quota, final builds, SDK/toolchain/license install, outside-project writes or Git stage/commit/push. Dependency installation is only the conditional Expo Contacts step after explicit version/target confirmation. Synthetic disposable ports/stores only, not3210/8081/8083. Only documented `.runtime/ui-task31` synthetic artifacts may be inspected. Preserve previous authored context/style prompt; no Batch2 implementation or unrelated ingestion repair.

@@ -90,7 +90,7 @@ test('authenticated PC button stays connected before Continue and while WhatsApp
     connect:async(...args)=>calls.push(args)};
   const component=load('app/(tabs)/settings.tsx',{'react':h.react,'react-native':{Text:'text',TextInput:'input',View:'view'},'zod':{z},
     '../../components/ui':{Page:'page',Button:'button'},'../../lib/app-state':{useApp:()=>app},'../../components/whatsapp-connection':{WhatsAppConnection:'whatsapp'},
-    '../../components/profile-controls':{ProfileControls:'profiles'},'../../lib/theme':{fonts:{}}});
+    '../../components/release-settings':{ReleaseSettings:'release-settings'},'../../components/profile-controls':{ProfileControls:'profiles'},'../../lib/theme':{fonts:{}}});
   const render=()=>h.render(component.default);
   let tree=render();assert.equal(button(tree,'Connected to PC').props.disabled,true);
   assert.equal(label(tree,'Service token').props.value,'');assert.equal(label(tree,'Service token').props.secureTextEntry,true);

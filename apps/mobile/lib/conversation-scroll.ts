@@ -88,6 +88,11 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
     update();
   };
   return { scroll, position, positioned, atBottom, showLatest, latest, editorFocus,
+    locate: (offset: number) => {
+      if(current.current!==position)return;
+      cancelFrames();cancelViewed();position.editor=null;position.dragging=false;position.following=false;
+      position.target=offset;scroll.current?.scrollTo({y:offset,animated:false});
+    },
     onLayout: (event: LayoutChangeEvent) => { position.height = event.nativeEvent.layout.height; follow(); },
     onContentSizeChange: (_width: number, height: number) => {
       cancelViewed(); position.atBottom = false; setAtBottom(false);

@@ -8,7 +8,7 @@ function load(file,modules={},globals={}) {
   const source=fs.readFileSync(path.resolve(__dirname,'..',file),'utf8');
   const {outputText}=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}});
   const exports={};
-  vm.runInNewContext(outputText,{exports,Error,process:{env:{EXPO_OS:'web'}},require:name=>{
+  vm.runInNewContext(outputText,{exports,Error,TextEncoder,process:{env:{EXPO_OS:'web'}},require:name=>{
     if(name==='react/jsx-runtime')return{jsx,jsxs:jsx,Fragment:'fragment'};
     assert.ok(name in modules,'Unexpected module '+name);return modules[name];
   },...globals});

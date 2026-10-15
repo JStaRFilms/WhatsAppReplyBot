@@ -6,6 +6,7 @@ import { fonts } from '../lib/theme';
 import { AudioPlayback } from './audio-playback';
 import { MediaAttachment } from './media-attachment';
 import { groupMessageReactions } from '../lib/message-reactions';
+import { OutgoingStatus } from './outgoing-status';
 const webSwipeStyle: { touchAction?: 'pan-y' } = Platform.OS === 'web' ? { touchAction: 'pan-y' } : {};
 const time = new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'});
 export const MessageBubble = memo(function MessageBubble({ message, quoted, onSelect, onQuote, active=true }: { message: Message; active?:boolean; quoted?: Message; onSelect: (message: Message) => void; onQuote: (message: Message) => void }) {
@@ -47,6 +48,7 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
         {owner ? message.authorship === 'assistant_written' ? snapshot?.demo ? 'AI · simulated ' : 'AI · ' : message.authorship === 'owner_edited_assistant' ? snapshot?.demo ? 'Edited by you · simulated ' : 'Edited by you · ' : 'You · ' : ''}
         {time.format(message.occurredAt)}
       </Text>
+      {owner && <OutgoingStatus receipt={message.outgoingReceipt} simulated={snapshot?.demo}/>}
     </Pressable>
     </Animated.View>
     {reactions.length>0 && <View style={{flexDirection:'row',flexWrap:'wrap',gap:4}}>

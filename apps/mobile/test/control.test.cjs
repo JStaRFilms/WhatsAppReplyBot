@@ -19,7 +19,7 @@ function providerFixture() {
     request(path,schema,payload){calls.push({client:this,path,payload});return Promise.resolve(handle(this,path,payload)).then(data=>schema.parse ? schema.parse(data) : data);}
   }
   const component=load('lib/app-state.tsx',{'react':h.react,'react-native':{useColorScheme:()=> 'light',AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},'expo-constants':{},'zod':require('zod'),
-    '@replybot/core/contracts':{Conversation},'@replybot/core/api':{...core,ClientSnapshot:{}},'./api':{ApiClient,ApiError,ReadError,sameScope},'./history-cache':{HistoryCache:class{}},'./audio-lane':{stopPlayback(){}},
+    '@replybot/core/contracts':{Conversation},'@replybot/core/api':{...core,ClientSnapshot:{}},'./api':{ApiClient,ApiError,ReadError,sameScope},'./history-cache':{HistoryCache:class{}},'./pending-intents':require('./pending-fixture.cjs').pendingModule({ApiError},require('./pending-fixture.cjs').memoryStorage()),'./audio-lane':{stopPlayback(){}},
     './client-clock':{ClientClock:class{calibrate(){}}},'./storage':{readSetting:async()=>null,saveSetting:async()=>{},getClientId:async()=> 'synthetic'},'./theme':{palettes:{dark:{},light:{}}}}, {URL,Map,AbortController,setTimeout,clearTimeout,setInterval:()=>0,clearInterval(){}});
   const render=()=>h.render(()=>component.AppProvider({children:null})).props.value;
   return{calls,render,respond:fn=>{handle=fn;},connect:async(c,url='http://synthetic.local')=>{

@@ -2,6 +2,9 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {load,nodes,label,deferred}=require('./render-harness.cjs');
 const {lifecycleHooks}=require('./lifecycle-harness.cjs');
+const {pendingModule,memoryStorage,scope,outbox,lease}=require('./pending-fixture.cjs');
+const {apiFixture}=require('./profile-fixture.cjs');
+const pendingApi=apiFixture(()=>assert.fail('No network'));
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const native={View:'view',Text:'text',Pressable:'pressable',TextInput:'input',ScrollView:'scroll',Modal:'modal',ActivityIndicator:'spinner'};
 
@@ -104,9 +107,18 @@ function screenFixture(initialText='Original') {
   const messages=[{id:'message',conversationId:'chat',text:'Synthetic'}];
   const history={subscribe(){},get:()=>({messages}),load:async()=>{}};
   const sends=[],holds=[];
-  const app={snapshot:{conversations:['chat','other'].map(id=>({id,kind:'direct',control:'assistant_allowed',mode:'draft_only'})),lastMessages:[],drafts:[],historyVersions:{}},
+  const app={snapshot:{accountId:scope().accountId,outbox:[],conversations:['chat','other'].map(id=>({id,kind:'direct',control:'assistant_allowed',mode:'draft_only'})),lastMessages:[],drafts:[],historyVersions:{}},
     status:'online',palette:{},history,client:{uploadImage:()=>uploads.promise,uploadAudio:()=>uploads.promise},reportError(){},
-    composer:async(...args)=>{holds.push(args);},viewed:async()=>{},perform:async(_path,_schema,payload)=>{sends.push(payload);return sendResult.promise;}};
+    composer:async(...args)=>{holds.push(args);},viewed:async()=>{},mutate:async(_path,_schema,payload)=>{sends.push(payload);return sendResult.promise;}};
+  const newIntents=()=>{
+    const client=app.client;
+    client.baseUrl='http://synthetic.local';client.scope=scope();client.request=async(_path,_schema,payload)=>{
+      sends.push(payload);const result=await sendResult.promise;
+      return{simulated:false,outbox:{...outbox(payload.requestId,result.outbox.state),action:payload.action}};
+    };
+    return new (pendingModule(pendingApi,memoryStorage()).PendingIntents)(client,scope(),1);
+  };
+  app.intents=newIntents();
   const keyboard={dismiss(){dismisses++;},addListener:(event,fn)=>{listeners.set(event,fn);return{remove:()=>listeners.delete(event)};}};
   const rn={...native,Keyboard:keyboard};
   const animation={requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial;},cancelAnimationFrame:key=>frames.delete(key)};
@@ -118,7 +130,7 @@ function screenFixture(initialText='Original') {
     '../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
     '../../components/avatar':{Avatar:'avatar'},'../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
-    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{SendResult:{}},'../../lib/local-drafts':{useLocalDraft:()=>({text,setText:value=>{text=value;},ready:true})},
+    '../../lib/app-state':{useApp:()=>app},'../../lib/api':pendingApi,'../../lib/pending-intents':pendingModule(pendingApi,memoryStorage()),'../../lib/media-lease':lease,'../../components/outgoing-status':{OutboxStatus:'outbox-status'},'../../lib/local-drafts':{useLocalDraft:()=>({text,setText:value=>{text=value;},ready:true})},
     '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,'../../lib/composer-focus':focus,
     '../../lib/foreground':{isForeground:()=>foreground,useForeground:()=>foreground}},
     {...animation,setTimeout:()=>1,clearTimeout(){}});
@@ -133,7 +145,7 @@ function screenFixture(initialText='Original') {
     focus:()=>input.focus(),hide:()=>listeners.get('keyboardDidHide')(),counts:()=>({focuses,blurs,dismisses}),
     background:()=>{foreground=false;return render();},foreground:()=>{foreground=true;return render();},
     route:(value,nextId=id)=>{routeFocused=value;id=nextId;return render();},
-    replaceClient:()=>{app.client={};app.history={...history};return render();},
+    replaceClient:()=>{app.intents.stop();app.client={};app.intents=newIntents();app.history={...history};return render();},
   };
 }
 
@@ -141,7 +153,7 @@ test('text send remains editable/focused, history never dismisses, quote explici
   const f=screenFixture();let tree=f.render();assert.equal(f.counts().focuses,0);
   const history=label(tree,'Conversation history');assert.equal(history.props.keyboardDismissMode,'none');assert.equal(history.props.keyboardShouldPersistTaps,'always');
   f.focus();f.send();tree=f.render();assert.equal(label(tree,'Message').props.editable,true);
-  const before=f.counts();f.send();assert.equal(f.sends.length,1);
+  const before=f.counts();f.send();await settle();assert.equal(f.sends.length,1);
   f.edit('Newer typing');nodes(f.render()).find(node=>node.type==='bubble').props.onQuote({id:'new-quote',text:'New quote'});f.render();
   assert.equal(f.counts().focuses,before.focuses);
   f.sendResult.resolve({outbox:{state:'accepted'}});await settle();tree=f.render();
@@ -149,12 +161,13 @@ test('text send remains editable/focused, history never dismisses, quote explici
   assert.equal(f.counts().blurs,before.blurs);assert.equal(f.counts().dismisses,before.dismisses);f.h.unmount();
 });
 
-test('accepted unchanged text clears without blur, unknown outcome retains original compose and request ID',async()=>{
+test('journaled text clears without blur; unknown retains the original intent and never repeats its mutation',async()=>{
   for(const state of ['accepted','unknown']){
     const f=screenFixture();f.render();f.focus();const before=f.counts();f.send();f.sendResult.resolve({outbox:{state}});await settle();
-    assert.equal(label(f.render(),'Message').props.value,state==='accepted'?'':'Original');
+    assert.equal(label(f.render(),'Message').props.value,'');
+    assert.equal(f.app.intents.get()[0].text,'Original');
     assert.deepEqual(f.counts(),before);
-    if(state==='unknown'){const request=f.sends[0].requestId;f.send();await settle();assert.equal(f.sends[1].requestId,request);}
+    if(state==='unknown'){const request=f.sends[0].requestId;f.send();await settle();assert.equal(f.sends.length,1);assert.equal(f.app.intents.get()[0].requestId,request);}
     f.h.unmount();
   }
 });
@@ -163,7 +176,7 @@ test('edit revisions protect changed-back text and newly selected media from acc
   for(const edit of ['text','media','leave-return']){
     const f=screenFixture();f.render();f.send();
     if(edit==='text'){f.edit('Temporary');f.edit('Original');}
-    if(edit==='media')nodes(f.render()).find(node=>node.type==='attachments').props.onPick({uri:'synthetic',base64:'synthetic'});
+    if(edit==='media'){nodes(f.render()).find(node=>node.type==='attachments').props.onPick({uri:'synthetic',base64:'synthetic'});f.render();}
     if(edit==='leave-return'){f.route(false,'other');f.route(true,'chat');}
     f.sendResult.resolve({outbox:{state:'accepted'}});await settle();const tree=f.render();assert.equal(label(tree,'Message').props.value,'Original');
     if(edit==='media')assert.ok(label(tree,'Selected image preview'));f.h.unmount();
@@ -176,7 +189,7 @@ test('image upload captures caption/quote and edit revision at original gesture,
   nodes(f.render()).find(node=>node.type==='bubble').props.onQuote({id:'old-quote',text:'Old quote'});f.render();f.send();
   assert.equal(label(f.render(),'Message').props.editable,true);f.edit('Caption typed during upload');
   nodes(f.render()).find(node=>node.type==='bubble').props.onQuote({id:'new-quote',text:'New quote'});f.render();
-  f.uploads.resolve({id:'synthetic-upload'});await settle();assert.equal(f.sends.length,1);assert.equal(f.sends[0].action.caption,'Original caption');assert.equal(f.sends[0].quotedMessageId,'old-quote');
+  f.uploads.resolve({id:'11111111-1111-4111-8111-111111111111'});await settle();assert.equal(f.sends.length,1);assert.equal(f.sends[0].action.caption,'Original caption');assert.equal(f.sends[0].quotedMessageId,'old-quote');
   f.sendResult.resolve({outbox:{state:'accepted'}});await settle();tree=f.render();
   assert.equal(label(tree,'Message').props.value,'Caption typed during upload');assert.ok(label(tree,'Remove quote'));assert.ok(label(tree,'Selected image preview'));f.h.unmount();
 });

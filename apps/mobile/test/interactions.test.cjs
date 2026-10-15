@@ -9,14 +9,14 @@ const coreRequire=createRequire(path.resolve(__dirname,'../../../packages/core/p
 const contracts=load('../../packages/core/src/contracts.ts',{'zod':require('zod'),'emoji-regex':coreRequire('emoji-regex')});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function voiceFixture(pickerResult) {
-  const h=hooks();const acknowledgment=deferred();let starts=0,stops=0,picks=0,sends=0,clips=0,released=0;
+  const h=hooks();const acknowledgment=deferred(),errors=[];let starts=0,stops=0,picks=0,sends=0,clips=0,released=0;
   const recorder={recording:false,canRecord:true,seconds:1,start:async()=>{starts++;recorder.recording=true;},stop:async()=>{stops++;recorder.recording=false;}};
   const component=load('components/voice-composer.tsx',{'react':h.react,'react-native':native,'lucide-react-native':icons,
     'expo-document-picker':{getDocumentAsync:async()=>{picks++;return pickerResult ? pickerResult.promise : {assets:[{}]};}},'../lib/audio-clip':{clipFromAsset:()=>({release(){released++;}})},
     '../lib/audio-lane':{stopPlayback(){}},'../lib/voice-recorder':{useVoiceRecorder:()=>recorder},
-    '../lib/app-state':{useApp:()=>({palette:{},reportError:()=>{}})},'./audio-playback':{AudioPlayback:'playback',audioTime:()=> '0:01'},'../lib/theme':{fonts:{}}});
+    '../lib/app-state':{useApp:()=>({palette:{},reportError:message=>errors.push(message)})},'./audio-playback':{AudioPlayback:'playback',audioTime:()=> '0:01'},'../lib/theme':{fonts:{}}});
   const props={ref:{current:null},children:null,clip:null,disabled:false,active:true,canSend:false,sending:false,beforePick:()=>acknowledgment.promise,onSend:()=>sends++,onClip:()=>clips++,onBusyChange(){}};
-  return{props,h,recorder,acknowledgment,render:()=>h.render(()=>component.VoiceComposer(props)),counts:()=>({starts,stops,picks,sends,clips,released})};
+  return{props,h,recorder,acknowledgment,errors,render:()=>h.render(()=>component.VoiceComposer(props)),counts:()=>({starts,stops,picks,sends,clips,released})};
 }
 test('empty composer uses the Send slot for mic, text/photo/clip use Send, recording uses Stop and keeps local preview',async()=>{
   const f=voiceFixture();let tree=f.render();f.h.flush();
@@ -33,6 +33,19 @@ test('empty composer uses the Send slot for mic, text/photo/clip use Send, recor
   assert.ok(nodes(tree).some(n=>n.type==='playback'));
   label(tree,'Delete voice note').props.onPress();assert.equal(f.counts().clips,1);
 });
+test('microphone preparation and startup errors are visible beside the composer; retry clears error and never sends',async()=>{
+  const f=voiceFixture();let tree=f.render();f.h.flush();const start=f.recorder.start;
+  f.recorder.start=async()=>{throw new Error('Synthetic microphone busy');};
+  label(tree,'Record voice note').props.onPress();tree=f.render();
+  assert.ok(nodes(tree).some(n=>n.props?.children==='Preparing voice note…'));
+  f.acknowledgment.resolve();await settle();tree=f.render();
+  assert.ok(nodes(tree).some(n=>n.props?.accessibilityRole==='alert' && n.props.children==='Synthetic microphone busy'));
+  assert.deepEqual(f.errors,['Synthetic microphone busy']);assert.equal(f.counts().sends,0);
+  f.recorder.start=start;label(tree,'Record voice note').props.onPress();await settle();tree=f.render();
+  assert.equal(nodes(tree).some(n=>n.props?.children==='Synthetic microphone busy'),false);
+  assert.equal(f.counts().starts,1);assert.equal(f.counts().sends,0);
+});
+
 test('audio file import is held until acknowledgment and cancels before opening a picker on unmount',async()=>{
   const f=voiceFixture();f.render();const cleanup=f.h.flush();
   f.props.ref.current.pickAudio();await settle();assert.equal(f.counts().picks,0);
@@ -46,6 +59,7 @@ test('inactive composer invalidates pending microphone and audio picker holds ev
     if(file)f.props.ref.current.pickAudio();else label(tree,'Record voice note').props.onPress();
     f.props.active=false;f.render();f.h.flush();f.props.active=true;f.render();f.h.flush();
     f.acknowledgment.resolve();await settle();assert.equal(f.counts().starts,0);assert.equal(f.counts().picks,0);
+    assert.ok(nodes(f.render()).some(n=>typeof n.props?.children==='string' && n.props.children.includes('setup was cancelled')));
   }
 });
 test('inactive composer releases a late audio picker result instead of accepting the clip',async()=>{
@@ -82,20 +96,22 @@ test('photo permission follows the acknowledged hold; leaving during permission 
   ack.resolve();await settle();assert.equal(permissions,1);cleanup.forEach(fn=>fn());permission.resolve({granted:true});await settle();
   assert.equal(pickers,0);assert.equal(clips,0);
 });
-function screenFixture() {
-  const h=hooks();const sends=[];
+function screenFixture(initialText='') {
+  const h=hooks();const sends=[],frames=new Map();let serial=0;
+  const animation={requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial;},cancelAnimationFrame:key=>frames.delete(key)};
   const conversation={id:'chat',accountId:'account',kind:'direct',mode:'draft_only',control:'assistant_allowed',name:'Synthetic'};
   const message={id:'message',text:'Synthetic',conversationId:'chat'};
   const history={subscribe(){},get:()=>({messages:[message]}),load:async()=>{}};
   const app={snapshot:{conversations:[conversation],lastMessages:[],historyVersions:{},drafts:[]},palette:{},history,status:'online',reportError:message=>sends.push({error:message}),composer:async()=>{},viewed:async()=>{},client:{},perform:async(_path,_schema,payload)=>{sends.push(payload.action);}};
+  const scrolling=load('lib/conversation-scroll.ts',{'react':h.react,'react-native':native},{WeakMap,Map,...animation});
   const component=load('app/conversation/[id].tsx',{'react':h.react,'react-native':native,'expo-router':{Stack:{Screen:'stack'},useLocalSearchParams:()=>({id:'chat'}),useFocusEffect(){},useRouter:()=>({})},'lucide-react-native':icons,
     '../../lib/uuid':{randomUUID:()=> 'synthetic-request'},'@replybot/core/contracts':contracts,'expo-image':{Image:'image'},
     '../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
     '../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
-    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{SendResult:{}},'../../lib/local-drafts':{useLocalDraft:()=>({text:'',setText(){},ready:true})},
-    '../../lib/theme':{fonts:{}},'../../lib/foreground':{isForeground:()=>true,useForeground:()=>true}}, {WeakMap,Map,clearTimeout});
-  return{render:()=>h.render(component.default),sends,message};
+    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{SendResult:{}},'../../lib/local-drafts':{useLocalDraft:()=>({text:initialText,setText(){},ready:true})},
+    '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,'../../lib/foreground':{isForeground:()=>true,useForeground:()=>true}}, {WeakMap,Map,clearTimeout,...animation});
+  return{render:()=>h.render(component.default),sends,message,app,h,frame:()=>{const next=[...frames.values()];frames.clear();next.forEach(fn=>fn());}};
 }
 test('history and recorder siblings have scoped unique keys and file import stays in attachments',()=>{
   const f=screenFixture();const tree=f.render();const history=nodes(tree).find(n=>n.type==='scroll'),voice=nodes(tree).find(n=>n.type==='voice');
@@ -103,6 +119,20 @@ test('history and recorder siblings have scoped unique keys and file import stay
   assert.equal(nodes(tree).filter(n=>n.type==='bubble').length,1);
   assert.equal(typeof nodes(tree).find(n=>n.type==='attachments').props.onPickAudio,'function');
 });
+test('accepted composer send jumps from older history to latest; reaction sends do not',async()=>{
+  const f=screenFixture('Synthetic owner message');f.render();f.h.flush();
+  let tree=f.render();const history=nodes(tree).find(n=>n.type==='scroll'),moves=[];
+  history.props.ref.current={scrollTo:({y})=>moves.push(y)};
+  const scrolled=y=>history.props.onScroll({nativeEvent:{contentOffset:{y},layoutMeasurement:{height:400},contentSize:{height:1000}}});
+  history.props.onLayout({nativeEvent:{layout:{height:400}}});history.props.onContentSizeChange(320,1000);f.frame();scrolled(600);
+  history.props.onScrollBeginDrag();scrolled(100);assert.ok(label(f.render(),'Jump to latest message'));
+  f.app.perform=async()=>({outbox:{state:'accepted'}});
+  nodes(f.render()).find(n=>n.type==='voice').props.onSend();await settle();f.frame();assert.equal(moves.at(-1),600);
+  scrolled(600);history.props.onScrollBeginDrag();scrolled(100);const before=moves.length;
+  nodes(f.render()).find(n=>n.type==='bubble').props.onSelect(f.message);label(f.render(),'React 🔥').props.onPress();await settle();f.frame();
+  assert.equal(moves.length,before);assert.ok(label(f.render(),'Jump to latest message'));
+});
+
 test('fire and the full picker react using the shared single Unicode emoji contract',async()=>{
   const f=screenFixture();
   function select(){nodes(f.render()).find(n=>n.type==='bubble').props.onSelect(f.message);return f.render();}
@@ -132,7 +162,7 @@ test('sequence preview stays ordered and editing explicitly flattens into one ow
   const draft={id:'draft',revision:2,state:'pending',action:{kind:'text_sequence',messages:[{text:'First',quotedMessageId:'quoted'},{text:'Second'}],reason:'Synthetic'}};
   const render=()=>h.render(()=>component.DraftCard({draft}));let tree=render();
   const sequence=label(tree,'Ordered reply sequence');assert.equal(sequence.props.children[0].props.children[1].props.children,'First');assert.equal(sequence.props.children[1].props.children[1].props.children,'Second');
-  nodes(tree).find(n=>n.props?.label==='Edit as one reply').props.onPress();tree=render();assert.equal(label(tree,'Edit draft').props.value,'First\n\nSecond');
+  nodes(tree).find(n=>n.props?.label==='Edit as one reply').props.onPress();tree=render();assert.equal(label(tree,'Edit draft').props.value,'First\n\nSecond');assert.equal(label(tree,'Edit draft').props.autoFocus,true);assert.equal(label(tree,'Edit draft').props.style.maxHeight,180);
   assert.ok(nodes(tree).some(n=>typeof n.props?.children==='string' && n.props.children.includes('Sequence quotes are removed')));
   nodes(tree).find(n=>n.props?.label==='Save draft').props.onPress();await settle();assert.equal(sent.action.kind,'text');assert.equal(sent.action.text,'First\n\nSecond');assert.equal(sent.action.quotedMessageId,undefined);
 });

@@ -1,14 +1,33 @@
-import { Pressable, ScrollView, Text, View, type ViewStyle } from 'react-native';
-import type { ReactNode } from 'react';
+import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, Text, TextInput, View, type ViewStyle } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../lib/app-state';
 import { fonts } from '../lib/theme';
 export function Page({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
   const { palette } = useApp();
-  return <View style={{ flex: 1, backgroundColor: palette.background }}>
-    <View style={{ flex: 1, width: '100%', maxWidth: 680, alignSelf: 'center' }}>
-      <ServiceStrip/><ErrorNotice/>
-      {scroll ? <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 20, paddingBottom: 32, gap: 16 }}>{children}</ScrollView> : children}
-    </View>
+  const root = useRef<View>(null); const content = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  useEffect(() => {
+    if (process.env.EXPO_OS === 'web' || !scroll) return;
+    let frame: number | undefined;
+    const listener = Keyboard.addListener('keyboardDidShow', () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const focused = TextInput.State.currentlyFocusedInput();
+        if (focused) content.current?.scrollResponderScrollNativeHandleToKeyboard(focused, 16, true);
+      });
+    });
+    return () => { listener.remove(); if (frame !== undefined) cancelAnimationFrame(frame); };
+  }, [scroll]);
+  return <View ref={root} onLayout={() => root.current?.measureInWindow((_x, y) => { if (root.current) setKeyboardOffset(y); })}
+    style={{ flex: 1, backgroundColor: palette.background }}>
+    <KeyboardAvoidingView enabled={process.env.EXPO_OS !== 'web'} keyboardVerticalOffset={keyboardOffset}
+      behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <View style={{ flex: 1, width: '100%', maxWidth: 680, alignSelf: 'center' }}>
+        <ServiceStrip/><ErrorNotice/>
+        {scroll ? <ScrollView ref={content} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic"
+          contentContainerStyle={{ padding: 20, paddingBottom: 32, gap: 16 }}>{children}</ScrollView> : children}
+      </View>
+    </KeyboardAvoidingView>
   </View>;
 }
 export function ServiceStrip() {

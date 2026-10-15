@@ -10,6 +10,7 @@ export default function TabLayout() {
     headerStyle: { backgroundColor: palette.background }, headerTintColor: palette.text,
     headerShadowVisible: false, headerTitleAlign: 'left',
     headerTitleStyle: { fontFamily: fonts.bold, fontSize: 27 },
+    tabBarHideOnKeyboard: true,
     tabBarActiveTintColor: palette.accent, tabBarInactiveTintColor: palette.muted,
     tabBarStyle: { backgroundColor: palette.background, borderTopColor: palette.border, height: 80 + insets.bottom, paddingTop: 10, paddingBottom: 20 + insets.bottom },
     tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 12 },

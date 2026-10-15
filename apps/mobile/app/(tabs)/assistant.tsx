@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Send } from 'lucide-react-native';
 import { z } from 'zod';
 import { useRouter } from 'expo-router';
@@ -25,8 +25,8 @@ export default function Assistant() {
   };
   if (!snapshot) return <Page><EmptyConnection/></Page>;
   return <Page scroll={false}>
-    <KeyboardAvoidingView behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-      <ScrollView ref={scroll} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16, gap: 10 }}
+    <View style={{ flex: 1 }}>
+      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16, gap: 10 }}
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
         {!turns.length && <View style={{ gap: 14, paddingVertical: 12 }}>
           <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 14 }}>Review unanswered messages or request a draft.</Text>
@@ -66,6 +66,6 @@ export default function Assistant() {
           <Send size={22} color={palette.accentText}/>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   </Page>;
 }

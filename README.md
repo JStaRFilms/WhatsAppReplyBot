@@ -4,11 +4,11 @@ WhatsApp-like Expo client, Windows Node backend, SQLite and OpenRouter GPT-6 Lun
 
 ## Daily use on this PC and Android
 
-Install `.runtime/releases/Otherme-0.1.1.apk` over the existing Android app without
-uninstalling it, then restart the PC launcher with Q and reopen `Otherme.cmd`.
-The updated APK and backend must be used together; old clients fail closed rather
-than accessing a different profile. Double-click
-`Otherme.cmd` on this PC and keep its status window open. The APK has embedded JS;
+Install `.runtime/releases/Otherme-0.1.2.apk` over the existing Android app without
+uninstalling it or clearing app data. Updating from 0.1.1 needs no backend restart
+or account re-link. If upgrading from 0.1.0, update the backend and APK together;
+old clients fail closed rather than accessing a different profile. Double-click
+`Otherme.cmd` if the PC service is not running, and keep its status window open. The APK has embedded JS;
 Metro and Expo Go are not needed. The launcher uses this PC's Node24 and existing
 project dependencies, not a portable installer for other computers.
 
@@ -108,8 +108,10 @@ outbox and cooldown as text. Unknown outcomes are never automatically retried.
 
 Voice notes have recording, local play/pause/delete preview and explicit Send.
 Incoming eligible audio is transcribed with Gemini 3.8 Flash; GPT-6 Luna still
-writes text replies. Use Expo Go for phone microphone recording, or choose an
-audio file on HTTP web. Audio is capped at 10MB and five minutes. FFmpeg is required.
+writes text replies. In the installed Android app, tap the mic once to record,
+then Stop to preview. Recording stays local until Send. Native startup failures
+release the recorder for retry and show feedback beside the mic. A phone browser
+needs HTTPS to record; audio-file selection remains available on HTTP web. Audio is capped at 10MB and five minutes. FFmpeg is required.
 Older notes already stored as unsupported remain unavailable. See
 `docs/features/Voice_Notes.md` for privacy rules and device checks.
 
@@ -152,7 +154,10 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-177 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
+190 focused tests, strict workspace typechecks, web export and the actual signed
+0.1.2 Android build/verifier pass. Keyboard avoidance, bounded draft editing,
+intelligent chat following and Latest are included. Physical keyboard and mic
+behavior still require the owner to try the installed update. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
 image-recognition request and a synthetic speech-transcription request are verified.

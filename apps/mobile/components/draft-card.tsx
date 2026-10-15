@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { Draft, type Action } from '@replybot/core/contracts';
 import { useApp } from '../lib/app-state';
@@ -6,7 +6,9 @@ import { DecisionResult } from '../lib/api';
 import { fonts } from '../lib/theme';
 import { Button } from './ui';
 
-export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
+export const DraftCard = memo(function DraftCard({ draft, onEditorFocus, onSent }: {
+  draft: Draft; onEditorFocus?: (target: number | null) => void; onSent?: () => void;
+}) {
   const { palette, perform, status } = useApp();
   const [editing, setEditing] = useState(false);
   const [editingRevision, setEditingRevision] = useState(draft.revision);
@@ -14,12 +16,14 @@ export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
   const [text, setText] = useState(editableText);
   const [busy, setBusy] = useState(false);
   const pending = draft.state === 'pending';
+  useEffect(() => { if (editing) return () => onEditorFocus?.(null); }, [editing, onEditorFocus]);
   const decide = async (operation: 'approve' | 'dismiss' | 'edit' | 'needs_owner') => {
     setBusy(true);
     const action: Action | undefined = operation === 'edit' ? { kind: 'text', text, reason: 'Owner edited this draft.' } : undefined;
     const result = await perform('/v1/drafts/'+encodeURIComponent(draft.id)+'/decision', DecisionResult,
       { operation, revision: operation === 'edit' ? editingRevision : draft.revision, ...(action ? { action } : {}) });
     if (result) setEditing(false);
+    if (operation === 'approve' && result?.outbox?.state === 'accepted' && draft.action.kind !== 'reaction') onSent?.();
     setBusy(false);
   };
   return <View style={{ borderWidth: 1, borderColor: pending ? palette.accent : palette.border, borderRadius: 12,
@@ -31,7 +35,9 @@ export const DraftCard = memo(function DraftCard({ draft }: { draft: Draft }) {
       {pending && <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>Not sent</Text>}
     </View>
     {editing && draft.action.kind==='text_sequence' && <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>Saving combines these messages into one text reply. Sequence quotes are removed. Keep it under 4000 characters.</Text>}
-    {editing ? <TextInput accessibilityLabel="Edit draft" multiline maxLength={4000} value={text} onChangeText={setText} style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54 }}/>
+    {editing ? <TextInput accessibilityLabel="Edit draft" autoFocus multiline maxLength={4000} value={text} onChangeText={setText}
+      onFocus={event => onEditorFocus?.(event.nativeEvent.target)} onBlur={() => onEditorFocus?.(null)}
+      style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54, maxHeight: 180, textAlignVertical: 'top' }}/>
       : draft.action.kind==='text_sequence' ? <View accessibilityLabel="Ordered reply sequence" style={{gap:8}}>
         {draft.action.messages.map((message,index)=><View key={index} style={{padding:10,borderRadius:8,backgroundColor:palette.surface}}>
           <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:11}}>Message {index+1}{message.quotedMessageId ? ' · quoted reply' : ''}</Text>

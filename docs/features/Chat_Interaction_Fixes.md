@@ -90,3 +90,60 @@ input/expiry after first accepted message, unknowns/restart, stale presence and
 existing photo/voice guards need focused tests. Then workspace typecheck, one
 focused read-only review and mobile exports. Real typing visibility remains owner
 verified; do not claim it merely from mocked sendPresenceUpdate.
+
+## Mobile usability update, 15 October 2026
+
+The owner reported the Android keyboard covering the composer and inline draft
+editor, missing chat auto-scroll, and a microphone that did nothing after granting
+permission. These fixes are bundled as 0.1.2/code3 with the same Android identity
+and release key. No icon, model, consent, account data or live backend changes are
+part of this update.
+
+Page now owns one keyboard-avoiding container, using Android height/iOS padding
+and the measured screen offset rather than a guessed header height. Review inputs
+are revealed after keyboard display; draft editors autofocus and have bounded
+height with internal scrolling. Tabs hide while typing and scroll taps reach their
+actions without requiring keyboard dismissal first. Assistant/conversation no
+longer nest an additional keyboard container.
+
+Conversation scrolling is isolated in a scoped hook. Follow intent is distinct
+from the actual visible bottom used for unread acknowledgment. New content and
+keyboard/media resizing follow only near the latest messages; history browsing
+stays put. An accepted owner text/photo/voice send or draft approval jumps to its
+latest view. Reactions do not pull the reader away from an older message. A Latest
+button resumes following. Draft focus reveals the editor instead of chasing new
+incoming content. Position restoration is keyed by history cache and chat; stale
+callbacks cannot scroll a replacement profile. Drag and momentum suspend following,
+including incoming content arriving before the first drag scroll event.
+
+Two native-shaped recorder regressions reproduced a failed-start retry lock and a
+silent native no-op. Failed startup now releases a prepared recorder while it is
+still alive, resets mode and removes local bytes. The UI only claims recording
+when the native recorder reports it. Preparing/error/cancel feedback is visible by
+the microphone, permission instructions name Otherme, and inactive starts remain
+blocked. Permission/background cancellation does not silently resume recording.
+Existing layout teardown before Expo SharedObject release, hold acknowledgments,
+operation epochs and explicit Send remain required. No real recording was captured
+by the agent. The exact physical-phone failure still needs the owner to retry the
+new APK; simulations are not hardware proof.
+
+Review task: `otherme-keyboard-scroll-review-20261015-r1`, Takomi Sol Medium.
+Its one drag/content race was fixed with a regression. A separate scoped voice
+review checks the added native retry cleanup. Release evidence and exact task IDs
+are recorded in the session's task26 packet. All 190 workspace tests, typechecks
+and web export passed after both fixes. The actual signed 0.1.2/code3 APK passed
+the build worker's checks and the parent's independent verifier, including native
+adjustResize, approved certificate, embedded bundle and credential-byte scan.
+The artifact is `.runtime/releases/Otherme-0.1.2.apk`, 75,499,947 bytes, SHA-256
+`264bc467271accecae6ee45ff8f69c613d845d0c484ae6df395be16aa6d47bdc`.
+Both earlier APK hashes are unchanged. Install over the existing app without
+clearing data. No backend restart or account re-link is needed for this update.
+
+## Deferred profile/linking feedback
+
+The owner wants familiar Create profile, Switch profile and Link/Relink labels
+instead of Use another number, Return to preserved profile and Repair this number.
+The flow should explain whose account is linked and where to display/scan the QR,
+including when Otherme and WhatsApp are on the same phone. This belongs to the next
+UX batch. It is recorded here, not implemented as unrelated scope in the keyboard,
+scroll and mic patch.

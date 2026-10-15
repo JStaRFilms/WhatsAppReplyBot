@@ -44,16 +44,25 @@ export function useVoiceRecorder(onClip:(clip:AudioClip)=>void,onError:(message:
   return {recording,seconds,canRecord:true,stop,start:async(isActive:()=>boolean=()=>true)=>{
     if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
     const permission=await requestRecordingPermissionsAsync();
-    if(!permission.granted)throw new Error('Allow microphone access in Expo Go to record a voice note.');
+    if(!permission.granted)throw new Error(permission.canAskAgain === false
+      ? 'Microphone access is blocked. Allow it in your phone settings for Otherme, then try again.'
+      : 'Allow microphone access for Otherme, then tap the mic again.');
     if(!alive.current || !isForeground() || !isActive())throw new Error('Return to the chat before recording.');
+    let prepared=false;
     try{
       await setAudioModeAsync({allowsRecording:true,shouldPlayInBackground:false});
       if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
       await recorder.prepareToRecordAsync();
       if(!alive.current)throw new Error('Recording cancelled.');
-      localUri.current=recorder.uri;
-      if(!isForeground() || !isActive()){await recorder.stop();throw new Error('Recording cancelled.');}
-      recorder.record({forDuration:300});running.current=true;setSeconds(0);setRecording(true);
-    }catch(error){await resetMode();discard();throw error;}
+      prepared=true;localUri.current=recorder.uri;
+      if(!isForeground() || !isActive())throw new Error('Recording cancelled.');
+      recorder.record({forDuration:300});
+      if(!recorder.isRecording)throw new Error('The microphone did not start. Check microphone access on your phone and try again.');
+      running.current=true;setSeconds(0);setRecording(true);
+    }catch(error){
+      // A failed start can leave Android's recorder prepared and block every retry.
+      if(prepared && alive.current)await recorder.stop().catch(()=>{});
+      await resetMode();discard();throw error;
+    }
   }};
 }

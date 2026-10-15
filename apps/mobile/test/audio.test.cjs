@@ -43,7 +43,7 @@ test('web recording stays local until Send; stop/unmount releases tracks and tim
 });
 test('native Expo recorder requests permission, caps recording and cleans local files on unmount with a window shim',async()=>{
   const h=hooks();let permissions=0,starts=0,stops=0,deleted=0,clips=0;
-  const recorder={uri:'file:///synthetic-local.m4a',currentTime:1,prepareToRecordAsync:async()=>{},record:options=>{assert.equal(options.forDuration,300);starts++;},stop:async()=>{stops++;}};
+  const recorder={uri:'file:///synthetic-local.m4a',currentTime:1,isRecording:false,prepareToRecordAsync:async()=>{},record:options=>{assert.equal(options.forDuration,300);starts++;recorder.isRecording=true;},stop:async()=>{stops++;recorder.isRecording=false;}};
   const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,requestRecordingPermissionsAsync:async()=>{permissions++;return{granted:true};},setAudioModeAsync:async mode=>{assert.equal(mode.shouldPlayInBackground,false);}},
     'expo-file-system':{File:class {exists=true;delete(){deleted++;}}},'./audio-clip':{clipFromUri:()=>{clips++;return{uri:recorder.uri};}},'./foreground':{isForeground:()=>true,useForeground:()=>true}},
     {window:{},setTimeout,clearTimeout,setInterval,clearInterval,Date});
@@ -51,6 +51,33 @@ test('native Expo recorder requests permission, caps recording and cleans local 
   await voice.start();assert.equal(permissions,1);assert.equal(starts,1);assert.equal(clips,0);
   cleanup();await new Promise(resolve=>setImmediate(resolve));assert.equal(stops,1);assert.equal(deleted,1);assert.equal(clips,0);
 });
+test('native microphone start failure releases prepared recorder so a second tap can retry',async()=>{
+  const h=hooks();let prepared=false,starts=0,stops=0,clips=0;
+  const recorder={uri:'file:///synthetic-local.m4a',currentTime:1,isRecording:false,
+    prepareToRecordAsync:async()=>{if(prepared)throw new Error('already prepared');prepared=true;},
+    record:()=>{starts++;if(starts===1)throw new Error('synthetic microphone start failure');recorder.isRecording=true;},
+    stop:async()=>{stops++;prepared=false;recorder.isRecording=false;}};
+  const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,
+    requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
+    'expo-file-system':{File:class{exists=true;delete(){}}},'./audio-clip':{clipFromUri:()=>{clips++;return{};}},
+    './foreground':{isForeground:()=>true,useForeground:()=>true}},{Date});
+  const voice=hook.useVoiceRecorder(()=>{},()=>assert.fail('Unexpected asynchronous error'));h.layouts[0]();
+  await assert.rejects(voice.start(),/synthetic microphone start failure/);assert.equal(stops,1);assert.equal(prepared,false);
+  await voice.start();assert.equal(starts,2);assert.equal(recorder.isRecording,true);assert.equal(clips,0);
+  await voice.stop();assert.equal(stops,2);assert.equal(clips,1);
+});
+
+test('native recorder does not claim recording when the platform record call is a no-op',async()=>{
+  const h=hooks();let stops=0;
+  const recorder={uri:'file:///synthetic-local.m4a',currentTime:0,isRecording:false,prepareToRecordAsync:async()=>{},record(){},stop:async()=>{stops++;}};
+  const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,
+    requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
+    'expo-file-system':{File:class{exists=true;delete(){}}},'./audio-clip':{clipFromUri:()=>assert.fail('No clip')},
+    './foreground':{isForeground:()=>true,useForeground:()=>true}},{Date});
+  const voice=hook.useVoiceRecorder(()=>assert.fail('No clip'),()=>{});h.layouts[0]();
+  await assert.rejects(voice.start(),/microphone/i);assert.equal(stops,1);
+});
+
 test('web audio cache uses private blob URLs, enforces 10MB and revokes previews',async()=>{
   let revoked=0,created=0;
   const audio=load('audio-clip.web.ts',{}, {Blob,Uint8Array,URL:{createObjectURL:()=>{created++;return'blob:synthetic-private';},revokeObjectURL:()=>revoked++}});
@@ -61,7 +88,7 @@ test('native layout teardown precedes Expo release and retains file cleanup afte
   for(const state of ['idle','recording','stop-failure']){
     const h=hooks();let released=false,lateAccess=0,deleted=0,stops=0;
     const access=()=>{if(released){lateAccess++;throw new Error('SharedObject released');}};
-    const recorder={get uri(){access();return 'file:///synthetic-local.m4a';},get currentTime(){access();return 1;},
+    const recorder={get uri(){access();return 'file:///synthetic-local.m4a';},get currentTime(){access();return 1;},get isRecording(){access();return true;},
       prepareToRecordAsync:async()=>{access();},record:()=>access(),stop:async()=>{access();stops++;await Promise.resolve();if(state==='stop-failure')throw new Error('stop failed');}};
     const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},
       useAudioRecorder:()=>{h.react.useEffect(()=>()=>{released=true;});return recorder;},

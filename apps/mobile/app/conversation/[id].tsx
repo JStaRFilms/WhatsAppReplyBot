@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
-import { ChevronLeft, SlidersHorizontal, Smile, X } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, SlidersHorizontal, Smile, X } from 'lucide-react-native';
 import { randomUUID } from '../../lib/uuid';
 import { Draft, type Message, OwnerAction } from '@replybot/core/contracts';
 import { Image } from 'expo-image';
@@ -19,9 +19,9 @@ import { SendResult } from '../../lib/api';
 import { useLocalDraft } from '../../lib/local-drafts';
 import { fonts } from '../../lib/theme';
 import { HistoryCache } from '../../lib/history-cache';
+import { useConversationScroll } from '../../lib/conversation-scroll';
 import { isForeground, useForeground } from '../../lib/foreground';
 
-const scrollPositions = new WeakMap<HistoryCache, Map<string, { offset: number; atBottom: boolean }>>();
 const emojis = ['😀','😂','😊','😍','🥰','😎','🤔','😮','😢','😭','👍','👎','❤️','🙏','🎉','🔥','✅','👋'];
 
 export default function ConversationScreen() {
@@ -63,46 +63,21 @@ export default function ConversationScreen() {
   const [sending, setSending] = useState(false); const sendLock = useRef(false);
   const [drafting, setDrafting] = useState(false); const draftLock = useRef(false);
   const pendingIntent = useRef<{ key: string; requestId: string } | null>(null);
-  const scroll = useRef<ScrollView>(null);
-  const position = useMemo(() => {
-    const saved = scrollPositions.get(history)?.get(id);
-    return { offset: saved?.offset ?? 0, initialOffset: saved?.offset ?? 0, atBottom: saved?.atBottom ?? true, height: 0, contentHeight: 0, positioned: false };
-  }, [id, history]);
-  const [positioned, setPositioned] = useState(false);
-  const [atBottom, setAtBottom] = useState(false);
   const [focused, setFocused] = useState(false);
   const focusedRef = useRef(false);
   const viewedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cancelViewed = useCallback(() => { clearTimeout(viewedTimer.current); }, []);
-  const frames = useRef<number[]>([]);
-  const finishPosition = () => {
-    position.positioned = true;
-    position.atBottom = position.contentHeight - position.height - position.offset <= 24;
-    setAtBottom(position.atBottom);
-    setPositioned(true);
-  };
-  const scrollToLatest = () => {
-    if (!cached || position.height <= 0 || position.positioned && !position.atBottom) return;
-    frames.current.forEach(cancelAnimationFrame);
-    frames.current = [requestAnimationFrame(() => {
-      const bottom = Math.max(0, position.contentHeight - position.height);
-      const target = !position.positioned && !position.atBottom ? Math.min(position.initialOffset, bottom) : bottom;
-      scroll.current?.scrollTo({ y: target, animated: false });
-      // Long histories are revealed by the scroll acknowledgment, not by a guessed timeout.
-      if (Math.abs(position.offset - target) <= 2) {
-        frames.current.push(requestAnimationFrame(finishPosition));
-      }
-    })];
-  };
+  const scrolling = useConversationScroll(history, id, !!cached, cancelViewed);
+  const { scroll, position, positioned, atBottom } = scrolling;
   const c = snapshot?.conversations.find(c => c.id === id);
   useLayoutEffect(() => {
     alive.current=true;
-    setPauseState('idle'); setHistoryError(false); setPositioned(false); setAtBottom(false);
+    setPauseState('idle'); setHistoryError(false);
     setReactionPicker(false);setReactionEmoji('');
     setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);
     setAttachment(null);setPicking(false);uploadIntent.current=null;setAudioClip(null);audioIntent.current=null;setAudioBusy(false);
     composerState.current=null; seenMessage.current=null;
-    return () => { alive.current=false;frames.current.forEach(cancelAnimationFrame); cancelViewed(); };
+    return () => { alive.current=false; cancelViewed(); };
   }, [id,history,cancelViewed]);
   useFocusEffect(useCallback(() => {
     focusedRef.current = true; setFocused(true);
@@ -175,7 +150,7 @@ export default function ConversationScreen() {
     if (result && result.outbox.state !== 'accepted') reportError(result.outbox.state === 'unknown' || result.outbox.state === 'partial' ? 'Send outcome is uncertain. Do not resend this message.' : 'The message was not accepted. Check WhatsApp connection.');
     if(result?.outbox.state==='accepted'){
       if(action.kind!=='reaction')setText('');
-      if(activeId.current===id){position.atBottom=true;scrollToLatest();
+      if(activeId.current===id){if(action.kind!=='reaction')scrolling.latest();
         if(action.kind!=='reaction'){setAttachment(null);uploadIntent.current=null;setAudioClip(null);audioIntent.current=null;setQuote(null);}
         pendingIntent.current=null;setPauseState('acknowledged');}
     }
@@ -243,37 +218,30 @@ export default function ConversationScreen() {
         <Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 12, lineHeight:18 }} numberOfLines={1}>{drafting ? 'Drafting…' : 'Draft reply'}</Text>
       </Pressable>}
     </View>
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}
+    <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
+      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}
         accessibilityLabel="Conversation history" accessibilityElementsHidden={!!cached && !positioned} importantForAccessibility={cached && !positioned ? 'no-hide-descendants' : 'auto'}
         scrollEnabled={positioned} style={{ flex: 1, opacity: cached && !positioned ? 0 : 1 }}
-        onLayout={e => { position.height = e.nativeEvent.layout.height; scrollToLatest(); }}
-        onContentSizeChange={(_, height) => { cancelViewed(); setAtBottom(false); position.contentHeight = height; scrollToLatest(); }}
-        scrollEventThrottle={16} onScroll={({ nativeEvent: e }) => {
-          position.offset = e.contentOffset.y;
-          position.height = e.layoutMeasurement.height;
-          position.contentHeight = e.contentSize.height;
-          const bottom = Math.max(0, position.contentHeight - position.height);
-          const target = position.atBottom ? bottom : Math.min(position.initialOffset, bottom);
-          if (!position.positioned && Math.abs(position.offset - target) <= 2) finishPosition();
-          if (position.positioned) {
-            position.atBottom = bottom - position.offset <= 24;
-            setAtBottom(position.atBottom);
-            if (!position.atBottom) cancelViewed();
-            let saved = scrollPositions.get(history);
-            if (!saved) { saved = new Map(); scrollPositions.set(history, saved); }
-            saved.set(id, { offset: position.offset, atBottom: position.atBottom });
-          }
-        }}>
+        onLayout={scrolling.onLayout} onContentSizeChange={scrolling.onContentSizeChange}
+        onScrollBeginDrag={scrolling.onScrollBeginDrag} onScrollEndDrag={scrolling.onScrollEndDrag}
+        onMomentumScrollBegin={scrolling.onMomentumScrollBegin} onMomentumScrollEnd={scrolling.onMomentumScrollEnd}
+        scrollEventThrottle={16} onScroll={scrolling.onScroll}>
         {!cached && <View style={{ padding: 24, alignItems: 'center' }}>{historyError ? <Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Could not load messages.</Text> : <ActivityIndicator color={palette.accent}/>}</View>}
         {messages.map(m=>{
           const draft=turnDrafts.get(m.id);
           return <View key={m.id} testID={'turn-'+m.id}>
             <MessageBubble message={m} active={focused && foreground} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={setSelected} onQuote={setQuote}/>
-            {draft && ['pending','needs_owner','stale'].includes(draft.state) && <View style={{paddingVertical:8}}><DraftCard draft={draft}/></View>}
+            {draft && ['pending','needs_owner','stale'].includes(draft.state) && <View style={{paddingVertical:8}}><DraftCard draft={draft} onEditorFocus={scrolling.editorFocus} onSent={scrolling.latest}/></View>}
           </View>;
         })}
       </ScrollView>
+      {scrolling.showLatest && <Pressable accessibilityRole="button" accessibilityLabel="Jump to latest message" onPress={scrolling.latest}
+        style={{ position: 'absolute', right: 16, bottom: 12, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10,
+          minHeight: 44, borderRadius: 22, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }}>
+        <ChevronDown size={18} color={palette.accent}/><Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 13 }}>Latest</Text>
+      </Pressable>}
+      </View>
       {emojiOpen && <View accessibilityLabel="Emoji picker" style={{flexDirection:'row',flexWrap:'wrap',paddingHorizontal:16,paddingVertical:6,gap:4,backgroundColor:palette.surface}}>
         {emojis.map(emoji => <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'Insert '+emoji} style={{padding:8}}
           onPress={() => {
@@ -315,7 +283,7 @@ export default function ConversationScreen() {
       {pauseState !== 'idle' && <Text style={{ color: pauseState === 'failed' ? palette.danger : palette.muted, fontFamily: fonts.regular, fontSize: 11, textAlign: 'center', paddingBottom: 7 }}>
         {pauseState === 'pending' ? 'Pause requested…' : pauseState === 'failed' ? 'Pause was not acknowledged' : 'Pause acknowledged'}
       </Text>}
-    </KeyboardAvoidingView>
+    </View>
     <PermissionSheet conversation={c} visible={permissions} onClose={() => setPermissions(false)}/>
     <Modal transparent visible={selected !== null} animationType="fade" onRequestClose={() => setSelected(null)}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000088' }}>

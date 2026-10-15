@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { setTimeout as wait } from 'node:timers/promises';
-import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, AudioUpload, ReactionObservation, actionUnits } from './contracts.ts';
+import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, AudioUpload, ReactionObservation, actionUnits, normalizeGeneratedAction, type NameSource } from './contracts.ts';
 import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
 import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
 import { SqliteStore } from './store.ts';
+import { OwnerInstructions, OwnerInstructionsInput, ContactNameSettings, ContactNamesInput, ContactNamesImportInput, ContactNamesImportResult } from './api.ts';
 
 export type TransportResult = { state: 'accepted'; transportId: string } | { state: 'failed' | 'unknown' };
 export interface DispatchOptions {
@@ -53,10 +54,20 @@ export class Workflow {
       }
     });
   }
-  private readonly changes = new Set<(conversationId: string) => void>();
+  private readonly changes = new Set<(conversationId: string, aiOnly?: boolean) => void>();
   constructor(readonly store: SqliteStore, readonly accountId: string, private readonly clock = Date.now,
-    private readonly sleep = (ms: number, signal: AbortSignal): Promise<void> => wait(ms, undefined, { signal })) {}
-  onChange(listener: (conversationId: string) => void): () => void {
+    private readonly sleep = (ms: number, signal: AbortSignal): Promise<void> => wait(ms, undefined, { signal })) {
+    this.store.transaction(() => {
+      if (this.store.releaseContextVersion(accountId) >= 1) return;
+      const affected = new Set([
+        ...this.store.drafts(accountId).filter(draft => draft.state === 'pending').map(draft => draft.conversationId),
+        ...this.store.outboxes(accountId).filter(outbox => outbox.origin !== 'owner_manual' && outbox.components.some(part => part.state === 'queued')).map(outbox => outbox.conversationId),
+      ]);
+      for (const id of affected) this.invalidate(this.conversation(id),false,true);
+      this.store.saveReleaseContextVersion(accountId,1);
+    });
+  }
+  onChange(listener: (conversationId: string, aiOnly?: boolean) => void): () => void {
     this.changes.add(listener);
     return () => { this.changes.delete(listener); };
   }
@@ -140,6 +151,83 @@ export class Workflow {
       return { consent };
     });
   }
+  setOwnerInstructions(input: z.infer<typeof OwnerInstructionsInput>): OwnerInstructions {
+    const body = OwnerInstructionsInput.parse(input);
+    return this.request(body.requestId,{operation:'owner-instructions',...body},OwnerInstructions,() => {
+      const current = this.store.ownerInstructions(this.accountId);
+      if (current.revision !== body.expectedRevision) throw new DomainError('owner_instructions_changed');
+      if (current.text === body.text) return current;
+      const next = {text:body.text,revision:current.revision+1};
+      this.store.saveOwnerInstructions(this.accountId,next);
+      for (const c of this.store.conversations(this.accountId)) this.invalidate(c,false,true);
+      return next;
+    });
+  }
+  setContactNames(input: z.infer<typeof ContactNamesInput>): ContactNameSettings {
+    const body = ContactNamesInput.parse(input);
+    return this.request(body.requestId,{operation:'contact-names',...body},ContactNameSettings,() => {
+      const current = this.store.contactNameSettings(this.accountId);
+      if (current.revision !== body.expectedRevision) throw new DomainError('contact_names_changed');
+      if (current.enabled && body.enabled) return current;
+      const next = current.enabled === body.enabled ? current
+        : {...current,enabled:body.enabled,revision:current.revision+1,lastPhoneSyncAt:null,lastPhoneImportRequestId:null};
+      this.store.saveContactNameSettings(this.accountId,next);
+      if (!next.enabled) {
+        this.store.clearContactNames(this.accountId,'wa_saved');
+        this.store.clearContactNames(this.accountId,'phone_matched');
+      }
+      for (const c of this.store.conversations(this.accountId)) this.resolveContactName(c);
+      return next;
+    });
+  }
+  importContactNames(input: z.infer<typeof ContactNamesImportInput>): z.infer<typeof ContactNamesImportResult> {
+    const body = ContactNamesImportInput.parse(input);
+    return this.request(body.requestId,{operation:'contact-names-import',...body},ContactNamesImportResult,() => {
+      const current = this.store.contactNameSettings(this.accountId);
+      if (current.revision !== body.expectedRevision) throw new DomainError('contact_names_changed');
+      if (!current.enabled) throw new DomainError('contact_names_disabled');
+      const ids = new Set<string>();
+      for (const entry of body.entries) {
+        const c = this.conversation(entry.conversationId);
+        if (ids.has(c.id) || c.kind !== 'direct' || !/^\d+@s\.whatsapp\.net$/.test(c.id)
+          || this.store.waCanonical(this.accountId,c.id) !== c.id) throw new DomainError('invalid_contact_match',422);
+        ids.add(c.id);
+      }
+      this.store.clearContactNames(this.accountId,'phone_matched');
+      for (const entry of body.entries) this.store.saveContactName(this.accountId,entry.conversationId,'phone_matched',entry.name,this.clock(),body.requestId);
+      for (const c of this.store.conversations(this.accountId)) this.resolveContactName(c);
+      const settings = {...current,revision:current.revision+1,lastPhoneSyncAt:this.clock(),lastPhoneImportRequestId:body.requestId};
+      this.store.saveContactNameSettings(this.accountId,settings);
+      return {settings};
+    });
+  }
+  observeContactNames(conversationId: string, names: Partial<Record<'wa_saved'|'wa_notify'|'wa_verified', string|null>>): void {
+    this.store.transaction(() => {
+      const c = this.store.conversation(this.accountId,conversationId);
+      if (!c || c.kind !== 'direct' || !/^\d+@s\.whatsapp\.net$/.test(c.id) || this.store.waCanonical(this.accountId,c.id) !== c.id) return;
+      for (const source of ['wa_saved','wa_notify','wa_verified'] as const) {
+        const name = names[source];
+        if (name === undefined || source === 'wa_saved' && !this.store.contactNameSettings(this.accountId).enabled) continue;
+        if (name && !ContactNamesImportInput.shape.entries.element.shape.name.safeParse(name).success) continue;
+        this.store.saveContactName(this.accountId,c.id,source,name ?? '',this.clock());
+      }
+      this.resolveContactName(c);
+    });
+  }
+  refreshContactName(conversationId: string): void {
+    this.store.transaction(() => this.resolveContactName(this.conversation(conversationId)));
+  }
+  private resolveContactName(c: Conversation): void {
+    if (c.kind !== 'direct' || !/^\d+@s\.whatsapp\.net$/.test(c.id) || this.store.waCanonical(this.accountId,c.id) !== c.id) return;
+    const enabled = this.store.contactNameSettings(this.accountId).enabled;
+    const rows = this.store.contactNames(this.accountId,c.id);
+    const priority: NameSource[] = enabled ? ['wa_saved','phone_matched','wa_notify','wa_verified'] : ['wa_notify','wa_verified'];
+    const selected = priority.map(source => rows.find(row => row.source === source)).find(row => row !== undefined);
+    const name = selected?.name ?? (c.id.endsWith('@s.whatsapp.net') ? c.id.split('@')[0] ?? 'Unknown contact' : 'Unknown contact');
+    const nameSource = selected?.source ?? (c.id.endsWith('@s.whatsapp.net') ? 'number' : 'unknown');
+    if (c.name === name && c.nameSource === nameSource) return;
+    this.invalidate({...c,name,nameSource,nameRevision:(c.nameRevision ?? 0)+1},false,true);
+  }
   private grant(conversationId: string): Grant | undefined {
     return this.store.grants(this.accountId, conversationId).find(g => g.state === 'active');
   }
@@ -153,21 +241,26 @@ export class Workflow {
     }
     component.state = next;
   }
-  private invalidate(c: Conversation, revokeGrant: boolean): Conversation {
+  private invalidate(c: Conversation, revokeGrant: boolean, aiOnly = false): Conversation {
     const next = { ...c, workflowVersion: c.workflowVersion + 1 };
     this.store.saveConversation(next);
     for (const draft of this.store.drafts(this.accountId, c.id)) {
       if (draft.state === 'pending') this.store.saveDraft({ ...draft, state: 'stale' });
     }
     for (const outbox of this.store.outboxes(this.accountId, c.id)) {
-      if (outbox.origin === 'owner_manual') continue;
+      if (outbox.origin === 'owner_manual') {
+        // Context changes must not interrupt a current owner-authored sequence.
+        // Already-stale manual work stays stale after unrelated authority changes.
+        if (aiOnly && outbox.action.kind === 'text_sequence' && outbox.components.some(part => part.state === 'queued') && outbox.workflowVersion === c.workflowVersion) this.store.saveOutbox({...outbox,workflowVersion:next.workflowVersion});
+        continue;
+      }
       for (const part of outbox.components) if (part.state === 'queued') this.release(outbox, part, 'cancelled');
       outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
     }
     if (revokeGrant) for (const g of this.store.grants(this.accountId, c.id)) {
       if (g.state === 'active') this.store.saveGrant({ ...g, state: 'revoked' });
     }
-    for (const listener of this.changes) listener(c.id);
+    for (const listener of this.changes) listener(c.id,aiOnly);
     return next;
   }
   private resolveHandovers(conversationId: string, answeredAt?: number): void {
@@ -277,7 +370,8 @@ export class Workflow {
   }
   context(conversationId: string) {
     const c = this.conversation(conversationId);
-    return buildContext(c, this.accountId, this.store.messages(this.accountId, c.id), [], 8000, this.clock());
+    if (!this.store.modelConsent(this.accountId)) return buildContext(c,this.accountId,this.store.messages(this.accountId,c.id),[],8000,this.clock());
+    return buildContext(c, this.accountId, this.store.messages(this.accountId, c.id), [], 8000, this.clock(), new Map(), this.store.ownerInstructions(this.accountId));
   }
   private targets(c: Conversation, action: OwnerAction, quotedMessageId: string | null = null): void {
     const messages = this.store.messages(this.accountId, c.id);
@@ -299,7 +393,7 @@ export class Workflow {
     }
   }
   createDraft(conversationId: string, proposed: Action, expectedVersion: number, requestId: string, audioSourceIds:string[] = []): Draft {
-    const action = Action.parse(proposed);
+    const action = normalizeGeneratedAction(proposed);
     return this.request(requestId, { operation: 'draft', conversationId, action, expectedVersion, ...(audioSourceIds.length ? {audioSourceIds} : {}) }, Draft, () => {
       let c = this.conversation(conversationId);
       if (!aiAccess(c, this.accountId) || c.control === 'manual') throw new DomainError('ai_access_denied', 403);
@@ -498,7 +592,7 @@ export class Workflow {
     const wake = new AbortController();
     const abort = () => wake.abort();
     const conversationId = this.store.outbox(this.accountId,id)?.conversationId;
-    const unsubscribe = this.onChange(chat => { if (chat === conversationId) abort(); });
+    const unsubscribe = this.onChange((chat,aiOnly) => { if (chat === conversationId && (!aiOnly || this.store.outbox(this.accountId,id)?.origin !== 'owner_manual')) abort(); });
     options.signal?.addEventListener('abort',abort,{once:true});
     if (options.signal?.aborted) abort();
     try {
@@ -548,6 +642,7 @@ export class Workflow {
           if (!outbox) throw new DomainError('outbox_not_found', 404);
           const component = outbox.components.find(c => c.id === part.id);
           if (!component || component.state !== 'dispatching') return;
+          if (result.state === 'accepted' && component.transportId && component.transportId !== result.transportId) result = {state:'unknown'};
           this.release(outbox, component, result.state);
           if (result.state === 'accepted') {
             component.transportId = result.transportId; outbox.transportId ??= result.transportId;

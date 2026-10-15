@@ -62,6 +62,19 @@ No new automatic mutation retry, outbox cancellation endpoint or unknown-send ov
 
 Make `perform` return the validated mutation result once current-scope checks pass and schedule guarded refresh without awaiting it. Preserve action/domain/unknown errors independently of read errors, including dc99aa6 Assistant recovery. Audit every caller for any dependence on synchronous snapshot availability. Callers must use returned data or show pending until a read arrives, never infer refreshed state. Send intents need structured failures from the existing API path, not a swallowed `undefined` treated as failure proof.
 
+## Owner-added draft-request feedback
+
+37 also owns the subsequent explicit request to fix silent in-chat draft loading.
+At the original Draft reply gesture, show Drafting text immediately. Resolve from
+the typed Draft response, independent of a slow snapshot. Show Draft ready with
+an explicit View of its source card, or current silence/handover/stale/error state.
+Missing acknowledgment stays unconfirmed; never silently retry paid generation or
+invent server-side progress. Keep typing/history/quote and unknown-send warnings
+intact. Guard client/chat/profile/request epochs, preserve newer composition and
+use the existing Draft action/state schema. Tests defer generation and reads
+independently, including unknown timeout and no duplicate request. No additional
+backend status API is required.
+
 ## Outgoing WhatsApp receipt contract
 
 Keep outbox/component accounting state unchanged. Add optional receipt evidence to outbound Message and Component projections only. Proposed `OutgoingReceipt` is `{level:'sent'|'delivered'|'read', observedAt:number, source:'wa_status'|'wa_recipient'}`. Absence means no evidence. No required receipt field on legacy records. Inbound messages never acquire outgoing ticks.

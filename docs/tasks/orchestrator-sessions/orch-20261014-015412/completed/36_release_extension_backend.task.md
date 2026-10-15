@@ -53,8 +53,31 @@ No actual address-book, .env/token/auth/signing/SQLite/runtime reads, live backe
 
 ## Execution
 
-Running with provider takomi, openai-codex/gpt-6.1-sol, thinking high.
+Completed source handoff with provider takomi, openai-codex/gpt-6.1-sol, thinking high.
 T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-release-extension-backend-20261015-r1`.
 Client request ID: otherme-release-extension-backend-20261015-r1.
 Parent accepted34 and its simplification in a1da333. No other core/backend writer.
-37 waits for this source/DTO handoff;33 stays held for38 and source freeze.
+37 consumes this source/DTO handoff;33 stays held for38 and source freeze.
+
+## Parent source acceptance
+
+Parent reran the integrated `pnpm test`:282 pass,78 core/82 backend/93 mobile/29
+packaging. `pnpm typecheck` passes all workspaces. No live API, database, contacts,
+model, phone or service was used. Real receipt/privacy/contact behavior remains
+unverified. All source changes are within owned core/backend source/tests.
+
+Parent found one confirmed regression in name resolution. Toggling or importing
+names iterated all chats and renamed groups/status/unresolved labels to Unknown
+contact. A new focused test failed before the fix. Resolution now accepts only
+canonical direct phone chats, preserving ineligible labels and workflow versions.
+The regression and full core/backend suites/types pass.38 must retain this check.
+
+Final handoff: Message.outgoingReceipt and Component.outgoingReceipt are optional
+{level:sent|delivered|read,observedAt,source:wa_status|wa_recipient}. Missing means
+unconfirmed; send responses remain {simulated,outbox}. Conversation has optional
+nameSource/nameRevision, legacy unsourced/0. API exports OwnerInstructions/Input,
+ContactNameSettings, ContactNamesInput and ContactNamesImportInput/Result. Routes
+and exact single-import contract match a1da333, with512KiB only on import and
+lastPhoneImportRequestId for read-only reconciliation. Optional ownerInstructions/
+contactBookNames capability flags exist only in opt-in discovery. Parent preserves
+manual/unknown accounting, original consent and all previous source safeguards.

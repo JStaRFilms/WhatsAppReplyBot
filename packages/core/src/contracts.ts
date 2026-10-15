@@ -13,9 +13,16 @@ export const PauseState = z.object({
   catchUpMessageId: z.string().nullable(),
 });
 export type PauseState = z.infer<typeof PauseState>;
+export const NameSource = z.enum(['wa_saved', 'phone_matched', 'wa_notify', 'wa_verified', 'number', 'unknown', 'legacy']);
+export type NameSource = z.infer<typeof NameSource>;
+export const OutgoingReceipt = z.object({
+  level: z.enum(['sent', 'delivered', 'read']), observedAt: z.number().nonnegative(),
+  source: z.enum(['wa_status', 'wa_recipient']),
+}).strict();
+export type OutgoingReceipt = z.infer<typeof OutgoingReceipt>;
 export const Conversation = z.object({
   id: z.string().min(1), accountId: z.string().min(1), contactId: z.string().min(1),
-  name: z.string(), kind: z.enum(['direct', 'group', 'status_broadcast', 'unknown']),
+  name: z.string(), nameSource: NameSource.optional(), nameRevision: z.number().int().nonnegative().optional(), kind: z.enum(['direct', 'group', 'status_broadcast', 'unknown']),
   mode: Mode.nullable(), excluded: z.boolean(), control: z.enum(['assistant_allowed', 'manual']),
   workflowVersion: z.number().int().positive(), policyVersion: z.number().int().positive(),
   lastHumanActivityAt: z.number().nonnegative(), hours: Hours.nullable(), pause: PauseState.nullable().optional(),
@@ -48,7 +55,7 @@ export const AudioTranscript = z.object({text:z.string().max(12000),uncertain:z.
 export type AudioTranscript = z.infer<typeof AudioTranscript>;
 export const Message = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), transportId: z.string(),
-  direction: z.enum(['inbound', 'outbound']),
+  direction: z.enum(['inbound', 'outbound']), outgoingReceipt: OutgoingReceipt.optional(),
   authorship: z.enum(['owner_written', 'assistant_written', 'owner_edited_assistant', 'contact_written', 'unknown']),
   text: z.string().max(100_000), occurredAt: z.number(),
   source: z.enum(['live', 'backfill', 'replay', 'unknown']),
@@ -74,6 +81,14 @@ export const Action = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reaction_plus_text'), reaction: Reaction, text: z.string().trim().min(1).max(4000), quotedMessageId: z.string().min(1).nullable().optional(), reason: Reason }).strict(),
 ]);
 export type Action = z.infer<typeof Action>;
+export function normalizeGeneratedAction(proposed: Action): Action {
+  const action = Action.parse(proposed);
+  const prose = (text: string) => text.replace(/[\t\p{Zs}]*\u2014[\t\p{Zs}]*/gu, ', ');
+  const reason = prose(action.reason);
+  if (action.kind === 'text_sequence') return Action.parse({ ...action, reason,
+    messages: action.messages.map(message => ({ ...message, text: prose(message.text) })) });
+  return Action.parse('text' in action ? { ...action, reason, text: prose(action.text) } : { ...action, reason });
+}
 export const OwnerImageAction = z.object({
   kind: z.literal('image'), uploadId: z.string().uuid(), caption: z.string().max(4000), reason: Reason,
 }).strict();
@@ -103,7 +118,7 @@ export const Component = z.object({
   quotedMessageId: z.string().min(1).nullable().optional(),
   delayAfterPreviousMs: z.number().int().nonnegative().optional(), dueAt: z.number().nonnegative().nullable().optional(),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed']),
-  transportId: z.string().nullable(),
+  transportId: z.string().nullable(), outgoingReceipt: OutgoingReceipt.optional(),
 });
 export type Component = z.infer<typeof Component>;
 export const Outbox = z.object({

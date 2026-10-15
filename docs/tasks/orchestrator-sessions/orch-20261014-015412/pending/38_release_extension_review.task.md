@@ -8,7 +8,9 @@ Read scoped instructions, docs/Coding_Guidelines.md, docs/Project_Requirements.m
 
 ## Original brief and authority
 
-The owner added five next-release requirements while review32 was running. Verify immediate honest pending send feedback and continued composition/history/swipe-to-quote during send/upload, true outgoing WhatsApp receipt ticks, optional WhatsApp-first phone-book display names synchronized to PC/browser, AI prose U+2014 replacement with comma-space before persistence/review/send, and one bounded per-profile About me and reply instructions field. Current permitted recipient name may accompany AI requests. Full/unmatched/unrelated contact-book export remains forbidden.
+The owner added the next-release requirements while review32 was running. Verify immediate honest pending send feedback and continued composition/history/swipe-to-quote during send/upload, true outgoing WhatsApp receipt ticks, optional WhatsApp-first phone-book display names synchronized to PC/browser, AI prose U+2014 replacement with comma-space before persistence/review/send, and one bounded per-profile About me and reply instructions field. Current permitted recipient name may accompany AI requests. Full/unmatched/unrelated contact-book export remains forbidden. A later explicit
+request also requires visible in-chat Drafting feedback, typed outcome/View and
+honest unconfirmed timeout handling without automatic paid generation retry.
 
 Review32 covered74f26af, not this extension. Its one P2 withheld acceptance because a background-cancelled Assistant history read became persistent action feedback after successful recovery. Parent reproduced it and fixed dc99aa6 with local read feedback, epoch/cleanup guards and local read-only retry, preserving action/domain/unknown errors. All93 mobile tests/types passed after that fix. Earlier250 workspace tests/types and132 isolated browser checks predate the extension. This review must check the narrow fix and new code, not treat32 as acceptance or repeat its old baseline claims as new evidence.
 
@@ -18,8 +20,13 @@ The owner's missing incoming messages report is a separate unproven ingestion is
 
 ## Objective
 
-Accept or reject the combined source against the five owner-added requirements,
+Accept or reject the combined source against the owner-added requirements,
 with evidence for confirmed blockers and explicit limits on hardware claims.
+
+Parent36 acceptance found a name resolution regression: setting/import loops renamed
+group/status/unknown/unresolved labels. Parent reproduced it before the fix and
+restricted resolution to canonical direct phone chats. Keep this test and ensure
+new name UI does not bypass it. Parent282 tests/types passed after the correction.
 
 ## Scope
 
@@ -30,6 +37,11 @@ Check these boundaries:
 - Original gesture captures immutable text/quote/media/revision/scope/request IDs before awaits. Rapid duplicate tap does not enqueue twice, deliberate identical send does. Journal failure/full state preserves owner content. Media ownership survives pending work. Later gestures cannot overtake slow upload in one conversation, and route/remount/restart never replays a mutation.
 - Preparing/uploading/pending/accepted/unknown/partial/failed states tell the truth. Input/history/selection/swipe/next composition remain usable during send/upload/refresh. Old completion never erases newer text/quote/media or false-empty composer occupancy. Acknowledged holds, actual-visible unread and keyboard/mic lifecycle remain intact.
 - `perform` returns mutation data without waiting on refresh; all existing callers tolerate that sequencing. Read recovery never hides domain/unknown errors or promotes cancellation to persistent action feedback. Lost HTTP response reconciles by scoped request/outbox identity, not content, and missing status proves nothing. Unknown retains reservations and stops automatic client successors without a blind retry.
+- Draft reply shows immediate local progress and a validated result/View, silence,
+  handover, stale or actionable failure state. Unacknowledged timeouts stay
+  unconfirmed; no automatic paid retry, invented progress or snapshot-dependent
+  request spinner. Late profile/chat/request completions cannot replace current
+  feedback or erase newer composition. View opens the actual source card.
 - One/double/blue ticks require verified sent/delivered/read evidence, not HTTP/sendMessage acceptance, local echo or app viewed state. Match profile/current socket/direct canonical chat/outgoing transport/component IDs, including early receipt before Message creation. Max-rank update survives duplicate/out-of-order events/restart. Different account/chat and own-device/read-self events cannot paint recipient reads. No group/status claim, readMessages call, second grant charge/refund or whole-sequence status inferred from one part.
 - Names are optional/default off, WhatsApp saved before phone matched before push/verified/number. Partial contact updates preserve absent fields; push cannot replace saved. No chat creation from imports. Existing legacy name is not confirmed model identity. Native explicit permission/action only, no web import, background read or WRITE_CONTACTS. Exact international match only, no suffix/country/LID guess or ambiguous pick. One bounded import is atomic; hash replay/conflict, count/body bounds and off/scope/revision failure cannot partially replace/expose names. Exact lastPhoneImportRequestId, not a timestamp or missing row, reconciles an unacknowledged import. No staged/chunked protocol is required. Off deletes active saved-book/phone aliases and recomputes fallback.
 - The only current eligible recipient name reaches model context, after consent/aiAccess. Full book/unmatched/other-contact names and raw phone-import IDs never do. Owner instructions are one explicit PC-saved plain-text field per profile with byte/code-point limits, CAS conflicts and no auto extraction/import/demographic form. No cross-profile editor/DB context or sensitive logs/discovery.

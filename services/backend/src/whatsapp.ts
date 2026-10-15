@@ -1,10 +1,10 @@
-import makeWASocket, { useMultiFileAuthState, jidNormalizedUser, DisconnectReason, proto, generateMessageIDV2, normalizeMessageContent, type WAMessage } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, jidNormalizedUser, DisconnectReason, proto, generateMessageIDV2, normalizeMessageContent, type WAMessage, type Contact } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DomainError, automaticDecision, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation } from '@replybot/core';
+import { DomainError, automaticDecision, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation, type OutgoingReceipt } from '@replybot/core';
 import { directJid, normalizeWhatsApp, isViewOnce } from './whatsapp-normalize.ts';
 import { downloadAttachment, mediaDeadline } from './whatsapp-media.ts';
 
@@ -116,16 +116,21 @@ export class WhatsAppAdapter {
     socket.ev.on('contacts.upsert', contacts => {
       this.enqueueData(socket, async () => { for (const contact of contacts) {
         const jid = this.canonical(contact.id, contact.lid ?? contact.phoneNumber);
-        if (directJid(jid)) this.conversation(jid, contact.name ?? contact.notify ?? contact.verifiedName);
+        this.contactNames(jid,contact);
+      } });
+    });
+    socket.ev.on('contacts.update', contacts => {
+      this.enqueueData(socket, async () => { for (const contact of contacts) {
+        if (!contact.id) continue;
+        this.contactNames(this.canonical(contact.id,contact.lid ?? contact.phoneNumber),contact);
       } });
     });
     socket.ev.on('messaging-history.set', history => {
       this.enqueueData(socket, async () => {
-        for (const contact of history.contacts) {
-          const jid = this.canonical(contact.id, contact.lid ?? contact.phoneNumber);
-          if (directJid(jid)) this.conversation(jid, contact.name ?? contact.notify);
-        }
+        for (const contact of history.contacts) this.canonical(contact.id,contact.lid ?? contact.phoneNumber);
         for (const raw of history.messages) await this.receive(raw, 'backfill');
+        // History messages may establish a chat. Names alone still cannot create one.
+        for (const contact of history.contacts) this.contactNames(this.canonical(contact.id,contact.lid ?? contact.phoneNumber),contact);
       });
     });
     socket.ev.on('messages.upsert', event => {
@@ -146,11 +151,25 @@ export class WhatsAppAdapter {
     socket.ev.on('messages.update', updates => {
       this.enqueueData(socket, async () => {
         for (const { key, update } of updates) {
+          const level = update.status === proto.WebMessageInfo.Status.SERVER_ACK ? 'sent'
+            : update.status === proto.WebMessageInfo.Status.DELIVERY_ACK ? 'delivered'
+            : update.status === proto.WebMessageInfo.Status.READ ? 'read' : undefined;
+          if (level) this.receipt(key,{level,source:'wa_status',observedAt:this.clock()});
           const revoked = update.message?.protocolMessage?.key;
           if (revoked?.remoteJid && revoked.id) this.erase(this.canonical(revoked.remoteJid),revoked.id);
           else if (update.messageStubType === proto.WebMessageInfo.StubType.REVOKE && key.remoteJid && key.id) this.erase(this.canonical(key.remoteJid,key.remoteJidAlt),key.id);
         }
       });
+    });
+    socket.ev.on('message-receipt.update', updates => {
+      this.enqueueData(socket, async () => { for (const {key,receipt} of updates) {
+        const chat = this.receiptChat(key);
+        if (!chat || !receipt.userJid || this.receiptIdentity(receipt.userJid) !== chat) continue;
+        const read = Number(receipt.readTimestamp ?? 0);
+        const delivered = Number(receipt.receiptTimestamp ?? 0);
+        if (Number.isFinite(read) && read > 0) this.receipt(key,{level:'read',source:'wa_recipient',observedAt:this.clock()});
+        else if (Number.isFinite(delivered) && delivered > 0) this.receipt(key,{level:'delivered',source:'wa_recipient',observedAt:this.clock()});
+      } });
     });
     socket.ev.on('messages.delete', event => {
       this.enqueueData(socket, async () => {
@@ -163,6 +182,33 @@ export class WhatsAppAdapter {
   }
   private enqueueData(socket: ReturnType<typeof makeWASocket>, operation: () => Promise<void>): void {
     this.enqueue(async () => { if (!this.stopped && this.socket === socket && this.verifiedSocket === socket) await operation(); });
+  }
+  private receiptIdentity(jid: string): string | undefined {
+    if (!directJid(jid) || jid.includes(':')) return undefined;
+    const chat = this.flow.store.waCanonical(this.flow.accountId,jidNormalizedUser(jid));
+    const owner = this.socket?.user?.id;
+    const ownerLid = this.socket?.user?.lid;
+    if (!owner || chat === jidNormalizedUser(owner) || ownerLid && chat === jidNormalizedUser(ownerLid)) return undefined;
+    return /^\d+@s\.whatsapp\.net$/.test(chat) ? chat : undefined;
+  }
+  private receiptChat(key: WAMessage['key']): string | undefined {
+    if (key.fromMe !== true || !key.remoteJid || !key.id) return undefined;
+    const chat = this.receiptIdentity(key.remoteJid);
+    if (!chat || key.remoteJidAlt && this.receiptIdentity(key.remoteJidAlt) !== chat
+      || key.participant && this.receiptIdentity(key.participant) !== chat) return undefined;
+    return chat;
+  }
+  private receipt(key: WAMessage['key'], receipt: OutgoingReceipt): void {
+    const chat = this.receiptChat(key);
+    if (chat && key.id) this.flow.store.observeOutgoingReceipt(this.flow.accountId,chat,key.id,receipt);
+  }
+  private contactNames(jid: string, contact: Partial<Contact>): void {
+    if (!/^\d+@s\.whatsapp\.net$/.test(jid) || !this.flow.store.conversation(this.flow.accountId,jid)) return;
+    this.flow.observeContactNames(jid,{
+      ...(contact.name !== undefined ? {wa_saved:contact.name} : {}),
+      ...(contact.notify !== undefined ? {wa_notify:contact.notify} : {}),
+      ...(contact.verifiedName !== undefined ? {wa_verified:contact.verifiedName} : {}),
+    });
   }
   private erase(chat: string, transportId: string): void {
     const message = this.flow.store.messages(this.flow.accountId,chat).find(m => m.transportId === transportId);
@@ -193,15 +239,19 @@ export class WhatsAppAdapter {
           name: original.name || target.name, policyVersion: paused.policyVersion+1 });
       }
       this.flow.store.saveWaAlias(this.flow.accountId, lid, phone);
+      if (original) {
+        this.flow.store.mergeReleaseContext(this.flow.accountId,lid,phone);
+        this.flow.refreshContactName(phone);
+      }
     } else if (phone && lid) this.flow.store.saveWaAlias(this.flow.accountId,lid,phone);
     return this.flow.store.waCanonical(this.flow.accountId, first);
   }
-  private conversation(jid: string, name?: string | null): Conversation {
+  private conversation(jid: string): Conversation {
     const current = this.flow.store.conversation(this.flow.accountId,jid);
-    if (current) { if (name && current.name !== name) this.flow.store.saveConversation({ ...current, name }); return this.flow.conversation(jid); }
+    if (current) return current;
     const unresolved = jid.endsWith('@lid');
     const c: Conversation = { id: jid, accountId: this.flow.accountId, contactId: jid,
-      name: name || jid.split('@')[0] || 'Unknown contact', kind: unresolved ? 'unknown' : 'direct',
+      name: unresolved ? 'Unknown contact' : jid.split('@')[0] || 'Unknown contact', nameSource: unresolved ? 'unknown' : 'number', nameRevision: 0, kind: unresolved ? 'unknown' : 'direct',
       mode: null, excluded: false, control: 'assistant_allowed', workflowVersion: 1, policyVersion: 1,
       lastHumanActivityAt: 0, hours: null };
     this.flow.store.saveConversation(c); return c;
@@ -242,7 +292,8 @@ export class WhatsAppAdapter {
       return;
     }
     const chat = this.canonical(raw.key.remoteJid, raw.key.remoteJidAlt);
-    this.conversation(chat, raw.key.fromMe ? undefined : raw.pushName);
+    this.conversation(chat);
+    if (!raw.key.fromMe && raw.pushName !== undefined) this.flow.observeContactNames(chat,{wa_notify:raw.pushName});
     const message = normalizeWhatsApp(raw,this.flow.accountId,chat,source);
     if (!message) return;
     const previous = this.flow.store.waMessage(this.flow.accountId,chat,message.transportId);
@@ -373,7 +424,7 @@ export class WhatsAppAdapter {
           : component.kind === 'reaction' && component.reaction && reactionRaw
             ? {react:{text:component.reaction.emoji,key:reactionRaw.key}} : {text:component.text ?? ''};
         const sent = await socket.sendMessage(c.id,content,{messageId:transportId,...(quoted ? {quoted} : {})});
-        if (this.socket !== socket || this.verifiedSocket !== socket) return {state:'unknown'};
+        if (this.socket !== socket || this.verifiedSocket !== socket || sent?.key.id !== transportId) return {state:'unknown'};
         if (sent?.key.id && (component.kind === 'image' || component.kind==='audio')) {
           const previous = this.flow.store.waMessage(this.flow.accountId,c.id,sent.key.id);
           if (!previous || !z.object({deleted:z.literal(true)}).safeParse(JSON.parse(previous)).success)

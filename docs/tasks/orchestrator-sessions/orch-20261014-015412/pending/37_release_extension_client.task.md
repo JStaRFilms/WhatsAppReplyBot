@@ -6,6 +6,29 @@ Persona coder, Takomi Sol High, Build. requiredCapabilities=[write-code]. Canoni
 
 Read scoped instructions, docs/Coding_Guidelines.md, docs/Project_Requirements.md, Release_Gate_Extension.md, Release_Extension_Implementation_Plan.md, Daily_Use_Batch_1_Contract.md, Account_Profile_API.md, Owner_Control_and_Local_Drafts.md and completed28 through32. Read36's finalized API/DTO handoff and actual source/types/tests before editing.
 
+## Finalized36 handoff and parent launch authorization
+
+36 source is accepted after parent282 integrated tests and all workspace types.
+Message.outgoingReceipt and Component.outgoingReceipt are optional
+{level:sent|delivered|read,observedAt,source:wa_status|wa_recipient}; absence is
+unconfirmed. SendResult remains {simulated,outbox}. Conversation.nameSource and
+nameRevision are optional, with missing treated as legacy/0. Import settings and
+single atomic body/response match this packet; use exported core schemas rather
+than duplicating their types. No import chunk/staging protocol exists.
+
+Parent fixed and regression-tested a name-toggle/import bug that renamed non-direct
+or unresolved chats. Preserve this restriction; do not invent client name caches.
+All current source safeguards and dc99aa6 Assistant read-feedback fix remain.
+
+At launch37, parent authorizes only the exact existing-SDK dependency install in
+canonical apps/mobile/package.json and root pnpm-lock.yaml:
+`pnpm --filter @replybot/mobile add --save-exact expo-contacts@57.0.7 --ignore-scripts`.
+No other package/SDK/toolchain/version choice, lifecycle script, actual contacts,
+private data or build-copy write is authorized. API/integrity/permission preflight
+below is complete; inspect the installed public types/source before calling it.
+If installation fails or drifts other pinned dependencies, stop and report rather
+than choosing another version or running additional installation commands.
+
 ## Objective
 
 Keep composition/history/quote usable during send/upload, show honest pending intents and real outgoing receipt ticks, and add one per-profile owner instructions field plus optional minimal Android-to-PC contact-name synchronization. Do not replace uncertain outcomes with success, relax source/hold/profile guards or claim device acceptance.
@@ -26,6 +49,32 @@ Conditional dependency/config ownership is apps/mobile/package.json, apps/mobile
 - `perform` returns current-scope validated mutation data without awaiting snapshot refresh. Schedule read refresh separately; audit all callers for snapshot assumptions. Preserve action/domain/unknown feedback independently from transient reads and dc99aa6 Assistant-local read cancellation/retry. Intent API calls need structured failures, not undefined interpreted as definite failure.
 - Accepted result releases mutation wait, not a false WhatsApp tick. Show accepted-awaiting-ack unless receipt evidence exists. A slow/failed snapshot cannot change accepted into failed. HTTP timeout/parse failure/profile loss after submission stays uncertain. Never retry mutations or release unknown accounting.
 - Read-only existing scoped snapshot reconciles journal by account/chat/request ID and then component/transport IDs, never matching text. Absence proves nothing. Restart/new binding never resumes mutations. Scope changes stop old lanes and callbacks; no old intent rebind/send in a new profile. Locally never-submitted content or definitive failed content may be explicitly restored only without overwriting newer work. No handed-off cancel/retry button or new unknown override.
+
+## Explicit Draft reply feedback
+
+Owner additionally reported the in-chat Draft reply spinner ending with no clear
+result, sometimes before the content appears. Include this in the release gate.
+Show immediate local Drafting feedback for the acknowledged button gesture; a
+spinner alone is insufficient. Keep typing/history/quote available. Success uses
+the typed Draft response: Draft ready with an explicit View draft action, Needs
+your input for handover, No reply suggested for silence, or a clear stale/changed
+conversation outcome. View locates the actual source-anchored draft without
+inventing content or forcing an unsolicited history jump/keyboard popup.
+
+Show actionable current-request failure feedback. Network/parse/timeout without
+acknowledgment is unconfirmed, not proof of failed generation. Do not automatically
+retry a paid draft request or pretend server progress stages exist. A delayed
+snapshot must not hide a validated draft result or prolong its request spinner.
+Read-only status refresh may show a confirmed current draft; an absent row proves
+nothing. Guard chat/profile/client epochs and newer requests so stale completion
+or errors cannot update another conversation. Do not clear unrelated unknown-send
+or domain warnings. Explain silence/handover instead of leaving an empty result.
+
+Focused tests defer generation and snapshot separately, cover pending, current
+success/View, silence/handover, stale source, explicit server error, unacknowledged
+timeout, scope change and no automatic duplicate request. No fabricated progress,
+blind retry, auto-send or newer owner composition loss. Use actual existing Draft
+state/action semantics, not a new backend generation/status API.
 
 ## Receipts
 

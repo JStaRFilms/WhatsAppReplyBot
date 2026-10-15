@@ -71,13 +71,14 @@ function syntheticTransport(sendMessage: Socket['sendMessage']) {
 test('image transport passes staged bytes, caption and quote; saved raw supports previews without reviving tombstones', async () => {
   for (const deleted of [false,true]) {
     const bytes = await sharp({create:{width:4,height:5,channels:3,background:'#123456'}}).jpeg().toBuffer();
-    let calls = 0;
+    let calls = 0; let sentTransport = '';
     const fixture = syntheticTransport(async (jid,content,options) => {
       calls++;
       assert.equal(jid,'123@s.whatsapp.net'); assert.ok('image' in content);
       if ('image' in content) {assert.deepEqual(content.image,bytes);assert.equal(content.caption,'caption');}
-      assert.equal(options?.quoted?.key.id,'quote-transport');
-      return {key:{id:'sent-image',remoteJid:jid,fromMe:true},messageTimestamp:1,
+      assert.equal(options?.quoted?.key.id,'quote-transport'); assert.ok(options?.messageId); sentTransport = options.messageId;
+      if (deleted) fixture.store.saveWaMessage(fixture.flow.accountId,jid,sentTransport,JSON.stringify({deleted:true}));
+      return {key:{id:sentTransport,remoteJid:jid,fromMe:true},messageTimestamp:1,
         message:{imageMessage:{mimetype:'image/jpeg',width:4,height:5,caption:'caption'}}};
     });
     const {store,flow,chat,adapter} = fixture;
@@ -86,16 +87,15 @@ test('image transport passes staged bytes, caption and quote; saved raw supports
       store.saveMessage({id:'quote-id',accountId:flow.accountId,conversationId:chat,transportId:'quote-transport',direction:'inbound',
         authorship:'contact_written',text:'synthetic quote',occurredAt:1000,source:'live',quotedMessageId:null,statusReply:false,statusContext:null,media:null,reaction:null});
       store.saveWaMessage(flow.accountId,chat,'quote-transport',JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(quote).finish()).toString('base64')}));
-      if (deleted) store.saveWaMessage(flow.accountId,chat,'sent-image',JSON.stringify({deleted:true}));
       const upload = flow.stageImage(chat,{mime:'image/jpeg',width:4,height:5,bytes},'upload');
       const queued = flow.manualSend(chat,{kind:'image',uploadId:upload.id,caption:'caption',reason:'test'},'send','quote-id');
       assert.equal((await adapter.dispatch(queued.id)).state,'accepted'); assert.equal(calls,1);
       const sent = store.messages(flow.accountId,chat).at(-1); assert.ok(sent);
       assert.equal(adapter.mediaCurrent(sent),!deleted);
       if(deleted){assert.equal(sent.media,null);assert.equal(sent.text,'[Message deleted]');}
-      if (deleted) assert.equal(store.waMessage(flow.accountId,chat,'sent-image'),JSON.stringify({deleted:true}));
+      if (deleted) assert.equal(store.waMessage(flow.accountId,chat,sentTransport),JSON.stringify({deleted:true}));
       else {
-        const raw = store.waMessage(flow.accountId,chat,'sent-image'); assert.ok(raw);
+        const raw = store.waMessage(flow.accountId,chat,sentTransport); assert.ok(raw);
         assert.ok(z.object({protobuf:z.string().min(1)}).parse(JSON.parse(raw)).protobuf);
       }
     } finally {store.close();}

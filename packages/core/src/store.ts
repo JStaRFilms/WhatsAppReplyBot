@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload, AudioUpload } from './contracts.ts';
+import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload, AudioUpload, OutgoingReceipt, type NameSource } from './contracts.ts';
 
-import { AssistantTurn } from './api.ts';
+import { AssistantTurn, OwnerInstructions, ContactNameSettings } from './api.ts';
 
 const Payload = z.object({ payload: z.string() });
 const Cached = z.object({ payload_hash: z.string(), result: z.string() });
@@ -44,6 +44,21 @@ export class SqliteStore {
         FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));
         CREATE INDEX IF NOT EXISTS ${table}_conversation ON ${table}(account_id,conversation_id);`);
     }
+    const columns = new Set(this.db.prepare('PRAGMA table_info(account_settings)').all().map(row => row.name));
+    for (const [column, declaration] of Object.entries({
+      owner_instructions: "TEXT NOT NULL DEFAULT ''", owner_instructions_revision: 'INTEGER NOT NULL DEFAULT 0',
+      contact_book_names_enabled: 'INTEGER NOT NULL DEFAULT 0', contact_names_revision: 'INTEGER NOT NULL DEFAULT 0',
+      phone_names_synced_at: 'INTEGER', phone_names_import_request_id: 'TEXT', release_context_version: 'INTEGER NOT NULL DEFAULT 0',
+    })) if (!columns.has(column)) this.db.exec(`ALTER TABLE account_settings ADD COLUMN ${column} ${declaration}`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS contact_names (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, source TEXT NOT NULL, name TEXT NOT NULL, updated_at INTEGER NOT NULL, phone_import_request_id TEXT,
+      PRIMARY KEY(account_id,conversation_id,source),
+      FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));
+      CREATE TABLE IF NOT EXISTS wa_receipts (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, transport_id TEXT NOT NULL,
+      level TEXT NOT NULL, observed_at INTEGER NOT NULL, source TEXT NOT NULL,
+      PRIMARY KEY(account_id,conversation_id,transport_id),
+      FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));`);
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS message_time ON messages(account_id,conversation_id,json_extract(payload,'$.occurredAt') DESC);
       CREATE UNIQUE INDEX IF NOT EXISTS message_transport_id ON messages(
@@ -167,6 +182,109 @@ export class SqliteStore {
     this.db.prepare('INSERT INTO account_settings(account_id,model_consent) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET model_consent=excluded.model_consent')
       .run(accountId, consent ? 1 : 0);
   }
+  ownerInstructions(accountId: string): OwnerInstructions {
+    const row = this.db.prepare('SELECT owner_instructions AS text,owner_instructions_revision AS revision FROM account_settings WHERE account_id=?').get(accountId);
+    return row ? OwnerInstructions.parse(row) : { text: '', revision: 0 };
+  }
+  saveOwnerInstructions(accountId: string, value: OwnerInstructions): void {
+    this.db.prepare('INSERT INTO account_settings(account_id,owner_instructions,owner_instructions_revision) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET owner_instructions=excluded.owner_instructions,owner_instructions_revision=excluded.owner_instructions_revision').run(accountId,value.text,value.revision);
+  }
+  contactNameSettings(accountId: string): ContactNameSettings {
+    const row = this.db.prepare('SELECT contact_book_names_enabled AS enabled,contact_names_revision AS revision,phone_names_synced_at AS lastPhoneSyncAt,phone_names_import_request_id AS lastPhoneImportRequestId FROM account_settings WHERE account_id=?').get(accountId);
+    return row ? ContactNameSettings.parse({ ...row, enabled: row.enabled === 1 })
+      : { enabled: false, revision: 0, lastPhoneSyncAt: null, lastPhoneImportRequestId: null };
+  }
+  saveContactNameSettings(accountId: string, value: ContactNameSettings): void {
+    this.db.prepare(`INSERT INTO account_settings(account_id,contact_book_names_enabled,contact_names_revision,phone_names_synced_at,phone_names_import_request_id) VALUES(?,?,?,?,?)
+      ON CONFLICT(account_id) DO UPDATE SET contact_book_names_enabled=excluded.contact_book_names_enabled,contact_names_revision=excluded.contact_names_revision,phone_names_synced_at=excluded.phone_names_synced_at,phone_names_import_request_id=excluded.phone_names_import_request_id`)
+      .run(accountId,value.enabled?1:0,value.revision,value.lastPhoneSyncAt,value.lastPhoneImportRequestId);
+  }
+  releaseContextVersion(accountId: string): number {
+    const row = this.db.prepare('SELECT release_context_version AS version FROM account_settings WHERE account_id=?').get(accountId);
+    return row ? z.object({version:z.number()}).parse(row).version : 0;
+  }
+  saveReleaseContextVersion(accountId: string, version: number): void {
+    this.db.prepare('INSERT INTO account_settings(account_id,release_context_version) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET release_context_version=excluded.release_context_version').run(accountId,version);
+  }
+  contactNames(accountId: string, conversationId: string): {source: NameSource; name: string; updatedAt:number; phoneImportRequestId:string|null}[] {
+    return this.db.prepare('SELECT source,name,updated_at AS updatedAt,phone_import_request_id AS phoneImportRequestId FROM contact_names WHERE account_id=? AND conversation_id=?').all(accountId,conversationId)
+      .map(row => z.object({source:z.enum(['wa_saved','phone_matched','wa_notify','wa_verified']),name:z.string(),updatedAt:z.number(),phoneImportRequestId:z.string().nullable()}).parse(row));
+  }
+  saveContactName(accountId: string, conversationId: string, source: NameSource, name: string, updatedAt = Date.now(), phoneImportRequestId: string|null = null): void {
+    if (!name) { this.db.prepare('DELETE FROM contact_names WHERE account_id=? AND conversation_id=? AND source=?').run(accountId,conversationId,source); return; }
+    this.db.prepare('INSERT INTO contact_names VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,conversation_id,source) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at,phone_import_request_id=excluded.phone_import_request_id').run(accountId,conversationId,source,name,updatedAt,phoneImportRequestId);
+  }
+  clearContactNames(accountId: string, source: 'wa_saved'|'phone_matched'): void {
+    this.db.prepare('DELETE FROM contact_names WHERE account_id=? AND source=?').run(accountId,source);
+  }
+  outgoingReceipt(accountId: string, conversationId: string, transportId: string): OutgoingReceipt | undefined {
+    const chat = this.waCanonical(accountId,conversationId);
+    const row = this.db.prepare('SELECT level,observed_at AS observedAt,source FROM wa_receipts WHERE account_id=? AND conversation_id=? AND transport_id=?').get(accountId,chat,transportId);
+    if (!row) return undefined;
+    const targets = this.db.prepare(`WITH chats AS (SELECT ? AS id UNION SELECT alias FROM wa_aliases WHERE account_id=? AND canonical=?)
+      SELECT conversation_id AS chat,'message' AS kind,json_extract(payload,'$.direction') AS direction FROM messages
+      WHERE account_id=? AND conversation_id IN (SELECT id FROM chats) AND json_extract(payload,'$.transportId')=?
+      UNION ALL SELECT o.conversation_id AS chat,'component' AS kind,'outbound' AS direction FROM outbox o,json_each(o.payload,'$.components') p
+      WHERE o.account_id=? AND o.conversation_id IN (SELECT id FROM chats) AND json_extract(p.value,'$.transportId')=?`)
+      .all(chat,accountId,chat,accountId,transportId,accountId,transportId);
+    if (!targets.length || targets.some(target => target.direction !== 'outbound')
+      || targets.filter(target => target.kind === 'message').length > 1 || targets.filter(target => target.kind === 'component').length > 1
+      || new Set(targets.map(target => target.chat)).size > 1) return undefined;
+    return OutgoingReceipt.parse(row);
+  }
+  observeOutgoingReceipt(accountId: string, conversationId: string, transportId: string, input: OutgoingReceipt): boolean {
+    const receipt = OutgoingReceipt.parse(input);
+    return this.transaction(() => {
+      const chat = this.conversation(accountId,conversationId);
+      if (chat?.kind !== 'direct' || this.waCanonical(accountId,conversationId) !== conversationId) return false;
+      const chats = this.conversations(accountId).filter(c => this.waCanonical(accountId,c.id) === conversationId);
+      const messages = chats.flatMap(c => this.messages(accountId,c.id)).filter(m => m.transportId === transportId);
+      const outboxes = chats.flatMap(c => this.outboxes(accountId,c.id)).filter(o => o.components.some(p => p.transportId === transportId));
+      const components = outboxes.flatMap(o => o.components).filter(p => p.transportId === transportId);
+      if (messages.length && outboxes.length && messages[0]?.conversationId !== outboxes[0]?.conversationId) return false;
+      if (messages.some(m => m.direction !== 'outbound') || messages.length > 1 || components.length > 1
+        || !messages.length && !components.some(p => ['dispatching','accepted','unknown'].includes(p.state))) return false;
+      const previous = this.outgoingReceipt(accountId,conversationId,transportId);
+      const rank = { sent: 1, delivered: 2, read: 3 };
+      if (previous && rank[previous.level] >= rank[receipt.level]) return false;
+      this.db.prepare('INSERT INTO wa_receipts VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,conversation_id,transport_id) DO UPDATE SET level=excluded.level,observed_at=excluded.observed_at,source=excluded.source')
+        .run(accountId,conversationId,transportId,receipt.level,receipt.observedAt,receipt.source);
+      for (const id of new Set([conversationId,...messages.map(m => m.conversationId),...outboxes.map(o => o.conversationId)]))
+        this.db.prepare('INSERT INTO history_versions VALUES(?,?,1) ON CONFLICT(account_id,conversation_id) DO UPDATE SET revision=revision+1').run(accountId,id);
+      return true;
+    });
+  }
+  mergeReleaseContext(accountId: string, from: string, to: string): void {
+    for (const row of this.contactNames(accountId,from)) {
+      if (!this.contactNames(accountId,to).some(candidate => candidate.source === row.source)) this.saveContactName(accountId,to,row.source,row.name,row.updatedAt,row.phoneImportRequestId);
+    }
+    this.db.prepare('DELETE FROM contact_names WHERE account_id=? AND conversation_id=?').run(accountId,from);
+    const rows = this.db.prepare('SELECT transport_id,level,observed_at,source FROM wa_receipts WHERE account_id=? AND conversation_id=?').all(accountId,from);
+    for (const raw of rows) {
+      const row = z.object({transport_id:z.string(),level:OutgoingReceipt.shape.level,observed_at:z.number(),source:OutgoingReceipt.shape.source}).parse(raw);
+      if (this.messages(accountId,to).some(m => m.transportId === row.transport_id)
+        || this.outboxes(accountId,to).some(o => o.components.some(p => p.transportId === row.transport_id))) {
+        this.db.prepare('DELETE FROM wa_receipts WHERE account_id=? AND conversation_id=? AND transport_id=?').run(accountId,to,row.transport_id);
+        continue;
+      }
+      const previous = this.outgoingReceipt(accountId,to,row.transport_id);
+      const rank = {sent:1,delivered:2,read:3};
+      if (!previous || rank[previous.level] < rank[row.level]) this.db.prepare('INSERT INTO wa_receipts VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,conversation_id,transport_id) DO UPDATE SET level=excluded.level,observed_at=excluded.observed_at,source=excluded.source')
+        .run(accountId,to,row.transport_id,row.level,row.observed_at,row.source);
+    }
+    this.db.prepare('DELETE FROM wa_receipts WHERE account_id=? AND conversation_id=?').run(accountId,from);
+  }
+  private projectMessage(message: Message): Message {
+    const {outgoingReceipt: _receipt, ...record} = message;
+    const receipt = record.direction === 'outbound' ? this.outgoingReceipt(record.accountId,record.conversationId,record.transportId) : undefined;
+    return receipt ? {...record,outgoingReceipt:receipt} : record;
+  }
+  private projectOutbox(outbox: Outbox): Outbox {
+    return {...outbox,components:outbox.components.map(({outgoingReceipt: _receipt,...part}) => {
+      const receipt = part.transportId ? this.outgoingReceipt(outbox.accountId,outbox.conversationId,part.transportId) : undefined;
+      return receipt ? {...part,outgoingReceipt:receipt} : part;
+    })};
+  }
   assistantTurns(accountId: string): AssistantTurn[] {
     return this.db.prepare('SELECT payload FROM assistant_turns WHERE account_id=? ORDER BY rowid DESC LIMIT 100').all(accountId)
       .map(row => AssistantTurn.parse(JSON.parse(Payload.parse(row).payload))).reverse();
@@ -213,20 +331,20 @@ export class SqliteStore {
   }
   conversations(accountId: string): Conversation[] { return this.list('conversations', accountId, Conversation); }
   saveConversation(record: Conversation): void { this.put('conversations', Conversation.parse(record)); }
-  message(accountId:string,id:string):Message | undefined { return this.read('messages',accountId,id,Message); }
-  messages(accountId: string, conversationId: string): Message[] { return this.list('messages', accountId, Message, conversationId); }
+  message(accountId:string,id:string):Message | undefined { const message = this.read('messages',accountId,id,Message); return message ? this.projectMessage(message) : undefined; }
+  messages(accountId: string, conversationId: string): Message[] { return this.list('messages', accountId, Message, conversationId).map(message => this.projectMessage(message)); }
   recentMessages(accountId: string, conversationId: string, limit = 100): Message[] {
     return this.db.prepare("SELECT payload FROM messages WHERE account_id=? AND conversation_id=? ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT ?")
-      .all(accountId,conversationId,limit).map(row => Message.parse(JSON.parse(Payload.parse(row).payload))).reverse();
+      .all(accountId,conversationId,limit).map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload)))).reverse();
   }
   lastMessages(accountId: string): Message[] {
     return this.db.prepare(`SELECT m.payload FROM conversations c JOIN messages m ON m.rowid=(
       SELECT rowid FROM messages WHERE account_id=c.account_id AND conversation_id=c.id
       ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT 1) WHERE c.account_id=?`)
-      .all(accountId).map(row => Message.parse(JSON.parse(Payload.parse(row).payload)));
+      .all(accountId).map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload))));
   }
   saveMessage(record: Message): void {
-    const message=Message.parse(record);this.put('messages',message);
+    const {outgoingReceipt: _receipt,...message}=Message.parse(record);this.put('messages',message);
     this.db.prepare('INSERT INTO history_versions VALUES(?,?,1) ON CONFLICT(account_id,conversation_id) DO UPDATE SET revision=revision+1').run(message.accountId,message.conversationId);
   }
   drafts(accountId: string, conversationId?: string): Draft[] { return this.list('drafts', accountId, Draft, conversationId); }
@@ -234,9 +352,9 @@ export class SqliteStore {
   saveDraft(record: Draft): void { this.put('drafts', Draft.parse(record)); }
   grants(accountId: string, conversationId?: string): Grant[] { return this.list('delegations', accountId, Grant, conversationId); }
   saveGrant(record: Grant): void { this.put('delegations', Grant.parse(record)); }
-  outboxes(accountId: string, conversationId?: string): Outbox[] { return this.list('outbox', accountId, Outbox, conversationId); }
-  outbox(accountId: string, id: string): Outbox | undefined { return this.read('outbox', accountId, id, Outbox); }
-  saveOutbox(record: Outbox): void { this.put('outbox', Outbox.parse(record)); }
+  outboxes(accountId: string, conversationId?: string): Outbox[] { return this.list('outbox', accountId, Outbox, conversationId).map(outbox => this.projectOutbox(outbox)); }
+  outbox(accountId: string, id: string): Outbox | undefined { const outbox = this.read('outbox', accountId, id, Outbox); return outbox ? this.projectOutbox(outbox) : undefined; }
+  saveOutbox(record: Outbox): void { const outbox = Outbox.parse(record); this.put('outbox', {...outbox,components:outbox.components.map(({outgoingReceipt: _receipt,...part}) => part)}); }
   proposal(accountId: string, id: string): Proposal | undefined { return this.read('owner_actions', accountId, id, Proposal); }
   saveProposal(record: Proposal): void { this.put('owner_actions', Proposal.parse(record)); }
   request(accountId: string, id: string): { hash: string; result: unknown } | undefined {

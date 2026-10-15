@@ -40,7 +40,7 @@ test('public SPA and compiled assets share the backend, never an API fallback', 
     assert.equal(missingApi.statusCode, 404); assert.doesNotMatch(missingApi.body, /Synthetic public app/);
     assert.equal((await app.inject({ url: '/v1/session', headers: { authorization } })).json().capabilities, undefined);
     const session = SessionDiscovery.parse((await app.inject({ url: '/v1/session?capabilities=1', headers: { authorization } })).json());
-    assert.deepEqual(session.capabilities, { desktopBrowser: true, pcQrDisplay: false });
+    assert.deepEqual(session.capabilities, { desktopBrowser: true, pcQrDisplay: false, ownerInstructions: true, contactBookNames: true });
   } finally { await app.close(); rmSync(f.temporary, { recursive: true, force: true }); }
 });
 test('encoded API routes retain authentication and profile guards beside public assets', async () => {
@@ -49,10 +49,16 @@ test('encoded API routes retain authentication and profile guards beside public 
   const app = createApp({ store: new SqliteStore(), token: 'synthetic-owner-token', desktopDir: f.directory, profileScope: scope });
   const scoped = { authorization, 'X-Otherme-Profile': scope.profileId, 'X-Otherme-Revision': String(scope.revision) };
   try {
-    for (const url of ['/%76%31/session', '/v%31/session', '/%76%31/snapshot', '/v1/%73napshot']) {
+    for (const url of ['/%76%31/session', '/v%31/session', '/%76%31/snapshot', '/v1/%73napshot', '/%76%31/owner-instructions', '/v1/%63ontact-names']) {
       for (const method of ['GET', 'HEAD'] as const) {
         assert.equal((await app.inject({ method, url })).statusCode, 401, method+' '+url);
       }
+    }
+    for (const url of ['/%76%31/owner-instructions','/v1/%63ontact-names']) {
+      assert.equal((await app.inject({url,headers:{authorization}})).statusCode,426);
+      assert.equal((await app.inject({url,headers:{...scoped,'X-Otherme-Revision':'1'}})).statusCode,409);
+      const settings = await app.inject({url,headers:scoped});
+      assert.equal(settings.statusCode,200); assert.equal(settings.headers['cache-control'],'no-store');
     }
     assert.equal((await app.inject({ url: '/%76%31/snapshot', headers: { authorization } })).statusCode, 426);
     assert.equal((await app.inject({ url: '/%76%31/snapshot', headers: { ...scoped, 'X-Otherme-Revision': '1' } })).statusCode, 409);

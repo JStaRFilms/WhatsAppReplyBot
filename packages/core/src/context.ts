@@ -1,5 +1,6 @@
 import { DomainError, type Conversation, type Message, type AudioTranscript } from './contracts.ts';
 import { aiAccess } from './policy.ts';
+import type { OwnerInstructions } from './api.ts';
 
 export interface Memory {
   accountId: string; contactId: string; text: string;
@@ -8,6 +9,8 @@ export interface Memory {
 export interface ModelContext {
   instructions: string; messages: (Message & {audioTranscript?:AudioTranscript & {actor:Message['authorship'];source:'decoded_audio'}})[]; memories: Memory[]; styleExamples: string[];
   limitations: string[]; worstCaseTextTokens: number;
+  ownerInstructions?: OwnerInstructions;
+  recipient?: {displayName:string;source:NonNullable<Conversation['nameSource']>;revision:number};
 }
 const instructions = 'You draft and reply AS the account holder to their WhatsApp contact. '
   + 'This is a private conversation between the account holder and contact, not a conversation with you. '
@@ -31,9 +34,19 @@ const instructions = 'You draft and reply AS the account holder to their WhatsAp
   + 'For handover, address the owner directly as you. Give a short actionable reason, '
   + 'such as "Confirm what you meant before I reply." Do not refer to them as the owner.';
 
+export function requiredContextMessageIds(messages: Message[]): Set<string> {
+  const required = new Set<string>();
+  for (const message of [messages.at(-1),messages.filter(m => m.direction === 'inbound').at(-1)]) {
+    if (!message) continue;
+    required.add(message.id);
+    if (message.quotedMessageId) required.add(message.quotedMessageId);
+  }
+  return required;
+}
+
 export function buildContext(
   conversation: Conversation, accountId: string, allMessages: Message[],
-  allMemories: Memory[] = [], budget = 8000, now = Date.now(), transcripts:ReadonlyMap<string,AudioTranscript> = new Map(),
+  allMemories: Memory[] = [], budget = 8000, now = Date.now(), transcripts:ReadonlyMap<string,AudioTranscript> = new Map(), ownerInstructions?: OwnerInstructions,
 ): ModelContext {
   if (!aiAccess(conversation, accountId)) throw new DomainError('ai_access_denied', 403);
   const scoped = allMessages.filter(m => m.accountId === accountId && m.conversationId === conversation.id)
@@ -43,7 +56,11 @@ export function buildContext(
     && m.contactId === conversation.contactId && m.sourceIds.length > 0
     && m.sourceIds.every(id => sourceIds.has(id))).slice(0, 8);
   const limitations: string[] = [];
-  const messages = scoped.slice(-20).map(message => {
+  const required = requiredContextMessageIds(scoped);
+  const selected = new Set(required);
+  for (const message of scoped.slice(-20).reverse()) if (selected.size < 20) selected.add(message.id);
+  const messages = scoped.filter(m => selected.has(m.id)).map(record => {
+    const {outgoingReceipt: _receipt,...message} = record;
     if (message.statusReply && message.statusContext === null) limitations.push('status_original_missing');
     if (!message.media) return message;
     const unavailable = message.media.viewOnce || (message.media.expiresAt !== null && message.media.expiresAt <= now)
@@ -61,9 +78,17 @@ export function buildContext(
   const styleExamples = scoped.filter(m => m.authorship === 'owner_written' && m.direction === 'outbound'
     && m.text.trim().length>0 && m.text.length <= 600).slice(-3).map(m => m.text);
   const context: ModelContext = { instructions, messages, memories, styleExamples,
-    limitations: [...new Set(limitations)], worstCaseTextTokens: 0 };
+    limitations: [...new Set(limitations)], worstCaseTextTokens: 0,
+    ...(ownerInstructions?.text ? {ownerInstructions} : {}),
+    ...(ownerInstructions && conversation.nameSource && !['number','unknown','legacy'].includes(conversation.nameSource)
+      ? {recipient:{displayName:conversation.name,source:conversation.nameSource,revision:conversation.nameRevision ?? 0}} : {}),
+  };
   const size = () => new TextEncoder().encode(JSON.stringify({ ...context, worstCaseTextTokens: 0 })).length + 512;
-  while (size() > budget && context.messages.length > 1) context.messages.shift();
+  while (size() > budget) {
+    const optional = context.messages.findIndex(m => !required.has(m.id));
+    if (optional < 0) break;
+    context.messages.splice(optional,1);
+  }
   while (size() > budget && context.memories.length) context.memories.pop();
   while (size() > budget && context.styleExamples.length) context.styleExamples.shift();
   if (size() > budget) throw new DomainError('context_budget_exceeded', 422);

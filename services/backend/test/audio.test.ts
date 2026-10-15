@@ -159,7 +159,7 @@ test('WhatsApp audio transport uses staged Opus PTT and same-chat quotes without
   const bytes=Buffer.from('synthetic-opus');let calls=0;
   const socket:Pick<Socket,'user'|'sendMessage'>={user:{id:'456@s.whatsapp.net'},sendMessage:async(jid,content,options)=>{
     calls++;assert.ok('audio' in content);if('audio' in content){assert.deepEqual(content.audio,bytes);assert.equal(content.ptt,true);assert.equal(content.mimetype,'audio/ogg; codecs=opus');}
-    assert.equal(options?.quoted?.key.id,'q');return{key:{id:'sent-audio',remoteJid:jid,fromMe:true},messageTimestamp:1,message:{audioMessage:{mimetype:'audio/ogg; codecs=opus',seconds:1}}};
+    assert.equal(options?.quoted?.key.id,'q');assert.ok(options?.messageId);return{key:{id:options.messageId,remoteJid:jid,fromMe:true},messageTimestamp:1,message:{audioMessage:{mimetype:'audio/ogg; codecs=opus',seconds:1}}};
   }};
   const adapter=new WhatsAppAdapter(flow,'unused',async()=>{});Object.defineProperty(adapter,'socket',{value:socket});Object.defineProperty(adapter,'verifiedSocket',{value:socket});Object.defineProperty(adapter,'status',{value:{...adapter.snapshot(),state:'connected'}});
   try {

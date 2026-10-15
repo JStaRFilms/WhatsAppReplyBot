@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Action, OwnerAction, DomainError, Workflow, aiAccess, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
-import { ClientSnapshot, ProfileTransitionInput, type ProfileScope, type ProfileOperation } from '@replybot/core/api';
+import { ClientSnapshot, ProfileTransitionInput, OwnerInstructionsInput, ContactNamesInput, ContactNamesImportInput, type ProfileScope, type ProfileOperation } from '@replybot/core/api';
 import { ProfileRegistry, bounded } from './profiles.ts';
 import { assistantTurn, attention } from './assistant.ts';
 import { draftGenerator, type RemoteModel } from './draft-model.ts';
@@ -123,14 +123,17 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
       admitted.set(request.id, { promise, resolve });
     }
   });
-  app.addHook('onSend', async (_request, reply, payload) => {
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (['/v1/owner-instructions','/v1/contact-names','/v1/contact-names/import'].includes(request.routeOptions.url ?? '')) reply.header('Cache-Control','no-store');
     if (shutdownStarted) reply.header('Connection', 'close');
     return payload;
   });
   app.addHook('onResponse', async request => {
     admitted.get(request.id)?.resolve(); admitted.delete(request.id);
   });
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
+    if (request.routeOptions.url === '/v1/contact-names/import' && error && typeof error === 'object'
+      && 'code' in error && error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') return reply.code(413).send({error:'body_too_large'});
     if (error instanceof DomainError) return reply.code(error.status).send({ error: error.code });
     if (error instanceof z.ZodError) return reply.code(422).send({ error: 'invalid_request' });
     return reply.code(500).send({ error: 'service_error' });
@@ -153,7 +156,7 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   });
   app.get('/v1/session', async request => ({ protocol: 2, scope,
     label: registry?.list().find(p => p.profileId === scope.profileId)?.label ?? 'Original account', transition: registry?.current() ?? null,
-    ...(z.object({ capabilities: z.literal('1') }).safeParse(request.query).success ? { capabilities: { pcQrDisplay, desktopBrowser } } : {}) }));
+    ...(z.object({ capabilities: z.literal('1') }).safeParse(request.query).success ? { capabilities: { pcQrDisplay, desktopBrowser, ownerInstructions: true, contactBookNames: true } } : {}) }));
   app.get('/v1/profile-operations/:requestId', async request => {
     if (!registry) throw new DomainError('profile_operation_not_found', 404);
     return registry.operation(z.object({ requestId: z.string() }).parse(request.params).requestId);
@@ -211,6 +214,11 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     return { token: options.token, demo: !whatsapp };
   });
   app.get('/v1/snapshot', async () => snapshot());
+  app.get('/v1/owner-instructions', async () => options.store.ownerInstructions(accountId));
+  app.post('/v1/owner-instructions', async request => flow.setOwnerInstructions(OwnerInstructionsInput.parse(request.body)));
+  app.get('/v1/contact-names', async () => options.store.contactNameSettings(accountId));
+  app.post('/v1/contact-names', async request => flow.setContactNames(ContactNamesInput.parse(request.body)));
+  app.post('/v1/contact-names/import', {bodyLimit:512*1024}, async request => flow.importContactNames(ContactNamesImportInput.parse(request.body)));
   const whatsappStatus = () => {
     const status = whatsapp?.snapshot() ?? { state: 'disconnected', qr: null, error: null, historyMessages: 0 };
     if (status.state === 'connected' || status.state === 'error' || blocked()) pcDisplay?.expire();

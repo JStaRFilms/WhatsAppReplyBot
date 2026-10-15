@@ -15,7 +15,7 @@ export type ProfileOperation = z.infer<typeof ProfileOperation>;
 export const PcDisplay = z.object({ requestId: z.string().min(1).max(96), state: z.enum(['requested', 'ready', 'unavailable', 'expired']) }).strict();
 export type PcDisplay = z.infer<typeof PcDisplay>;
 export const SessionDiscovery = z.object({ protocol: z.literal(2), scope: ProfileScope, label: z.string(), transition: ProfileOperation.nullable(),
-  capabilities: z.object({ pcQrDisplay: z.boolean().optional(), desktopBrowser: z.boolean().optional() }).strict().optional(),
+  capabilities: z.object({ pcQrDisplay: z.boolean().optional(), desktopBrowser: z.boolean().optional(), ownerInstructions: z.boolean().optional(), contactBookNames: z.boolean().optional() }).strict().optional(),
 }).strict();
 export type SessionDiscovery = z.infer<typeof SessionDiscovery>;
 export const ProfileList = z.object({ profiles: z.array(ProfileDescriptor) }).strict();
@@ -29,6 +29,27 @@ export const ProfileTransitionInput = z.discriminatedUnion('kind', [
 export type ProfileTransitionInput = z.infer<typeof ProfileTransitionInput>;
 export const ProfileTransitionResult = z.object({ operation: ProfileOperation }).strict();
 export type ProfileTransitionResult = z.infer<typeof ProfileTransitionResult>;
+const Revision = z.number().int().nonnegative();
+const ReleaseRequest = z.object({ requestId: z.string().min(1).max(96), expectedRevision: Revision });
+const plainText = (points: number, bytes: number) => z.string().refine(text =>
+  [...text].length <= points && new TextEncoder().encode(text).length <= bytes
+  && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\ud800-\udfff]/u.test(text), 'Invalid plain text');
+export const OwnerInstructions = z.object({ text: plainText(2000, 4000), revision: Revision }).strict();
+export type OwnerInstructions = z.infer<typeof OwnerInstructions>;
+export const OwnerInstructionsInput = ReleaseRequest.extend({ text: OwnerInstructions.shape.text }).strict();
+export type OwnerInstructionsInput = z.infer<typeof OwnerInstructionsInput>;
+export const ContactNameSettings = z.object({ enabled: z.boolean(), revision: Revision,
+  lastPhoneSyncAt: z.number().nonnegative().nullable(), lastPhoneImportRequestId: z.string().nullable(),
+}).strict();
+export type ContactNameSettings = z.infer<typeof ContactNameSettings>;
+export const ContactNamesInput = ReleaseRequest.extend({ enabled: z.boolean() }).strict();
+export type ContactNamesInput = z.infer<typeof ContactNamesInput>;
+export const ContactNamesImportInput = ReleaseRequest.extend({ entries: z.array(z.object({
+  conversationId: z.string().min(1).max(128), name: plainText(120, 512).refine(text => text.trim().length > 0 && !/[\t\r\n]/.test(text)),
+}).strict()).max(500) }).strict();
+export type ContactNamesImportInput = z.infer<typeof ContactNamesImportInput>;
+export const ContactNamesImportResult = z.object({ settings: ContactNameSettings }).strict();
+export type ContactNamesImportResult = z.infer<typeof ContactNamesImportResult>;
 export const ClientSnapshot = Snapshot.extend({
   profileScope: ProfileScope.default({ profileId: 'original', accountId: 'whatsapp-owner', revision: 0 }),
   serverTime:z.number().default(0),

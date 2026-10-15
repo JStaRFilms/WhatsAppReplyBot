@@ -147,6 +147,17 @@ review32's findings and dc99aa6 response. Release33 stays blocked on36,37,38 and
 parent validation/source freeze.35 remains the separate ingestion investigation.
 These packets have not launched; parent records exact execution IDs after launch.
 
+### In-chat Draft reply feedback
+
+The owner reported a draft-request spinner ending without a visible success,
+error or indication where the result appeared. Require immediate Drafting text,
+then a typed outcome: Draft ready with View, Needs your input, No reply suggested,
+stale source or actionable error. A lost acknowledgment is unconfirmed, not proof
+of failure. Do not automatically retry paid generation. Snapshot delay must not
+extend or hide a known result; late chat/profile responses cannot repaint another
+chat. Keep source anchoring, existing silence/handover semantics and local typing/
+history/quote interaction.37 owns this client change without a new server API.
+
 ## Planning and verification
 
 Task34 records user choices, examines current send/outbox/receipt/contact paths

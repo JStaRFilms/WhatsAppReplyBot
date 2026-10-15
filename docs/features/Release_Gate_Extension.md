@@ -55,10 +55,22 @@ canonical conversation/context names. Match verified phone identities, never
 ambiguous suffixes or globally shared LIDs. Define toggle-off/cache deletion and
 permission-denial behavior. Do not read actual contacts during development.
 
+### AI reply punctuation
+
+The owner additionally requires automatic replacement of every em dash in
+AI-written draft/reply prose with a comma followed by a space. Apply this before
+persistence and review, so approved text and dispatched text match. Cover ordinary
+text replies and each generated text-sequence component. Preserve owner-written
+messages, original source/quoted messages, IDs, emoji and transport metadata.
+Do not rewrite history or ASR source transcripts. Use one typed generation boundary
+rather than a send-only mutation. Retain existing validation and limits after
+transformation. Add focused tests for repeated/spaced/unspaced em dashes, sequence
+components and unaffected owner/source data. No extra model call is needed.
+
 ## Planning and verification
 
 Task34 records user choices, examines current send/outbox/receipt/contact paths
-and authors a bounded implementation plan. Update the existing approved contract,
+and authors a bounded implementation plan, including the AI punctuation rule. Update the existing approved contract,
 requirements and relevant feature docs once the data flow is settled. Create
 self-contained implementation packets with non-overlapping ownership before
 launching writers. Reuse current charcoal/blue/light UI, not new visual exploration.

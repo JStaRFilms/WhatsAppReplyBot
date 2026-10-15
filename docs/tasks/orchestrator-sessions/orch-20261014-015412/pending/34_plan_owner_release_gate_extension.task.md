@@ -11,7 +11,8 @@ and requirements docs, completed28–31 and the actual source/types/tests. Use u
 ## Objective
 
 Define the narrow implementation and review plan for the owner's added nonblocking
-send UX, truthful WhatsApp receipt ticks and opt-in contact-book display names.
+send UX, truthful WhatsApp receipt ticks, opt-in contact-book display names and
+automatic AI em-dash replacement with comma plus space.
 Do not treat the existing original-baseline review32 as acceptance of new work.
 
 ## Scope
@@ -19,7 +20,8 @@ Do not treat the existing original-baseline review32 as acceptance of new work.
 First record the user's contact lookup/sync and dependency choices. Inspect current
 composer busy guards and perform/refresh sequencing, durable request/outbox/transport
 bindings and receipt events, contact-name ingestion, native/web storage and build
-constraints. Resolve intent ordering, pending/unknown UX and monotonic scoped
+constraints. Locate one typed AI prose boundary for punctuation normalization
+before draft persistence/review/send, without mutating owner/source text or IDs. Resolve intent ordering, pending/unknown UX and monotonic scoped
 receipt correlation. Choose the minimum supported contact permission/data flow.
 Reuse selected UI and prior safety logic. No product code changes in this task.
 
@@ -29,7 +31,8 @@ User choices are recorded without assumptions. Authored plan states the required
 interfaces/data flow/schema changes if any, interaction/status semantics, source
 ownership, dependencies, focused tests, privacy constraints, rollback and remaining
 hardware checks. New implementation packets have real scopes and completion
-criteria. Release33 is explicitly blocked on implementation and its focused review.
+criteria. Include focused punctuation tests and validation after replacement.
+Release33 is explicitly blocked on implementation and its focused review.
 
 ## Expected artifacts
 

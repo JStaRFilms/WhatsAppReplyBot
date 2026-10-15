@@ -57,6 +57,39 @@ acknowledgment to bind its matching completed operation. A scope change from ano
 client requires visible owner Continue, no automatic history fetch. Reconnect can
 restore same persisted scope normally. Only readonly discovery/op poll mayretry.
 
+## Proposed owner-added release APIs
+
+[Release_Extension_Implementation_Plan.md](Release_Extension_Implementation_Plan.md)
+is authoritative for the narrow extension proposals. They are not implemented by
+this documentation.36 owns shared DTOs/backend before37 consumes them. All new
+routes use the existing account/profile/revision headers, owner authentication,
+transition admission/drain, body limits and no-store/privacy rules.
+
+- GET/POST `/v1/owner-instructions` uses `{text,revision}`; POST strict input is
+  `{requestId,expectedRevision,text}`. Empty clears; max2,000 code points/4,000
+  UTF-8 bytes, no silent truncation. Conflict409 owner_instructions_changed.
+- GET/POST `/v1/contact-names` uses `{enabled,revision,lastPhoneSyncAt}`; POST is
+  `{requestId,expectedRevision,enabled}`. Default off, conflict contact_names_changed.
+- POST `/v1/contact-names/import` is a bounded explicit matched-name import with
+  `{requestId,importId,expectedRevision,chunkIndex,final,entries}`. Each entry is
+  `{conversationId,name}`. Max20/chunk,500/import, five-minute memory staging, one
+  active import/profile, final atomic replacement. Name max120 code points/512
+  UTF-8 bytes. Return `{importId,nextChunkIndex,committed,settings}`, no names in
+  ack cache/logs. Revision/off/scope changes reject stale work. No actual book reads
+  or import during development. Plan contains exact replay/expiry/failure semantics.
+
+Optional ownerInstructions/contactBookNames capability flags appear only on
+`GET /v1/session?capabilities=1`. Preserve plain protocol2 discovery exactly.
+Missing flags mean unavailable controls. Optional sourced name/revision fields and
+Message/Component receipt projections do not change send body or outbox accounting
+enums. Existing snapshot request IDs suffice for read-only send reconciliation.
+
+Instructions/name revisions are data revisions, not ProfileScope revision. Saving
+them never transitions an account or resumes AI. They invalidate affected workflow
+versions and unsent AI work while preserving grants, sources and unknown/handoff
+accounting. Name/prompt/source text never belongs in discovery/launcher identity.
+No owner-field or name alias may be shared across profiles.
+
 ## Ownership
 
 Backend/core/launcher coder owns packages/core, services/backend,

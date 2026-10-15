@@ -89,6 +89,62 @@ Permission/never-reply/source-expiry/unknown-send enforcement stays in backend
 code, not merely this user-editable prompt. Use invented profile instructions in
 tests. Preserve the full earlier style-extraction handoff for later Batch2.
 
+## Settled implementation contract from task34
+
+[Release_Extension_Implementation_Plan.md](Release_Extension_Implementation_Plan.md)
+records the source inspection, proposed interfaces/schema, interaction rules,
+privacy, tests and rollback. It is a plan, not an implementation claim. The owner
+choices above remain authoritative, including permission to send only the current
+AI-permitted recipient's resolved name with model context.
+
+Use original-gesture immutable send intents with local pending feedback and a
+recoverable device journal. Keep one ordered client lane per conversation and the
+existing backend dispatch lane. Mutation completion releases its wait before a
+snapshot refresh; accepted is still not a WhatsApp tick. Unknown/partial requests
+retain identity/content/accounting and never trigger replay. Composition/history/
+quote remain usable. Existing scoped snapshot outboxes support request-ID
+reconciliation, so no asynchronous send service or new lookup API is needed.
+
+Receipt evidence is optional, persisted by account/chat/transport ID and projected
+per outgoing Message/Component. Only verified WhatsApp sent/delivered/read events
+advance one/double/blue ticks monotonically. HTTP acceptance, own echoes and app
+unread do not. Display receipts cannot refund/charge grants, resolve unknown
+accounting or transmit WhatsApp read receipts.
+
+Book names default off per profile. When on, use WhatsApp saved, phone matched,
+push/notify, verified label, then number/unknown. Preserve source precedence and
+partial contact updates. Explicit Android foreground sync reads minimal name/phone
+fields, matches exact international numbers locally and sends only matched existing
+chat/name pairs to PC. No inbox creation, book upload or automatic background read.
+Off deletes saved-book/phone aliases and recomputes fallback; Android permission
+remains separate. Chunked bounded phone imports commit as one replacement.
+
+The simple owner field is About me and reply instructions,2,000 code points and
+4,000 UTF-8 bytes, explicit versioned save per profile. No automatic extraction or
+Batch2 work. Instructions/name changes invalidate affected pending/in-flight AI
+work and unsent AI components without rewriting approved text, recalling handoff,
+resetting grants or releasing unknown reservations. Count the actual serialized
+prompt/schema/name/preferences within the existing conservative text budget.
+
+Normalize generated Action prose once in createDraft and revalidate after
+replacement, never at manual/edit/dispatch boundaries. A one-time extension upgrade
+stales legacy pending AI drafts and cancels unsent legacy AI components while
+preserving all history and dispatching/unknown reservations. No automatic redraft.
+
+Installed Expo57.0.28 nominates expo-contacts ~57.0.7 in its local compatibility
+manifest. Proposed exact pin57.0.7 still needs package/public-API verification and
+parent confirmation of canonical install target before installation. The historical
+short copy C:/Otherme-build must not be overwritten; release33 needs a confirmed
+approved nonexistent copy target. No install, outside-root write or final build
+occurred in task34.
+
+Pending36 owns all backend/core shared contracts/store/WhatsApp/context work.
+Pending37 follows36 and owns the client/controller/conversation/Settings/native
+contact integration. Pending38 is the focused read-only combined review, including
+review32's findings and dc99aa6 response. Release33 stays blocked on36,37,38 and
+parent validation/source freeze.35 remains the separate ingestion investigation.
+These packets have not launched; parent records exact execution IDs after launch.
+
 ## Planning and verification
 
 Task34 records user choices, examines current send/outbox/receipt/contact paths

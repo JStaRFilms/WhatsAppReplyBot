@@ -7,6 +7,32 @@ No Expo Go or Metro required at runtime. No auto-start at Windows sign-in, cloud
 build upload, firewall change, Windows service installation or public hosting.
 Publisher JStar Studios, jstarstudios.com; final name Otherme.
 
+## Owner-added release hold and dependency targets
+
+Release33 is held for the extension in
+[Release_Gate_Extension.md](Release_Gate_Extension.md) and
+[Release_Extension_Implementation_Plan.md](Release_Extension_Implementation_Plan.md).
+Backend/core36 and client37 must land, parent validation must pass and focused
+review38 must accept the combined source before final production browser/APK
+artifacts. Original review32 is not acceptance of the new requirements. Preserve
+existing signing/package identity and let parent choose the next version at freeze.
+
+Task34 inspected Expo57.0.28's installed compatibility manifest, which nominates
+expo-contacts ~57.0.7. Conditional phone fallback proposes exact pin57.0.7, pending
+package/public-API verification and confirmed install target. No module was
+installed during planning. No other dependency/SDK/toolchain change is authorized.
+Canonical apps/mobile package/config plus canonical lockfile are source authority.
+
+C:/Otherme-build below is the historically approved short physical copy, not
+permission to inspect/delete/overwrite it now. prepare-android-copy requires a
+nonexistent destination. Parent must confirm that exact approved target is
+nonexistent or obtain a new exact target before release copy/dependency writes.
+Canonical installation and fresh copy installation are separate confirmed targets.
+No delegated planner/implementation writer may write outside project, touch actual
+signing/credentials or perform final builds. Final merged native manifest must
+verify contact read permission only if used, no WRITE_CONTACTS, with all existing
+mic/camera/network/backup restrictions preserved. Owner hardware checks remain.
+
 ## Signing
 
 Owner explicitly approved a cryptographically random password stored in ignored

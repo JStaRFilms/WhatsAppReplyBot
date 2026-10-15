@@ -46,6 +46,31 @@ cover the highest row watermark actually included in the loaded window. Pause de
 cache is bounded and scoped to the authenticated API client. Local draft storage
 is device-only; server credentials stay in SecureStore rather than draft storage.
 
+## Planned nonblocking send extension
+
+The next-release amendment in
+[Release_Extension_Implementation_Plan.md](Release_Extension_Implementation_Plan.md)
+adds a separate recoverable submitted-intent journal, not server access to unsent
+local drafts. At the original gesture capture text/quote/media/revision and stable
+request IDs. Show pending immediately, persist before network/clearing and clear
+only that captured revision. Keep input/history/swipe-to-quote usable during
+send/upload and preserve newer acknowledged occupancy. One ordered client lane
+prevents later text overtaking earlier media; backend dispatch lanes stay intact.
+
+A mutation result no longer waits for snapshot refresh. Accepted is not a receipt
+tick. Unacknowledged/unknown/partial work retains identity/content/reservations and
+cannot auto-retry, including on remount/restart; queued local successors wait
+without locking composition. Scoped outbox request IDs support read-only status
+reconciliation, not content matching or absence-as-failure. Media bytes remain
+locally owned while pending, never copied into the journal; missing restart media
+requires explicit reattachment. See the plan for bounded storage/failure behavior.
+
+Book-name and owner-instruction changes invalidate dependent pending/in-flight AI
+work but cannot reset grants, lift holds or recall handed-off components. Real
+outgoing WhatsApp receipt projections are independent from app-visible unread and
+outbox accounting. Viewing incoming chats still sends no WhatsApp read receipt.
+These are planned changes for36/37 and review38, not additional verified behavior.
+
 ## Verification
 
 39 focused safety tests, strict typechecks and web export pass. Fake clocks cover

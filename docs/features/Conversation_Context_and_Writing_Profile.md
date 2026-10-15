@@ -16,6 +16,40 @@ Related documents:
 
 For the context and style extension, use the direction here instead of treating the older 20-message/three-example architecture limits as the desired endpoint. Numerical recommendations below are not claims about provider capabilities. Existing send permissions and safety requirements remain unchanged.
 
+## Narrow next-release owner field, approved after this handoff
+
+The owner later approved one plain-text About me and reply instructions field per
+WhatsApp profile for the next combined release. See
+[Release_Gate_Extension.md](Release_Gate_Extension.md) and
+[Release_Extension_Implementation_Plan.md](Release_Extension_Implementation_Plan.md).
+This is a bounded first part of writing-profile editing, not approval to implement
+the rest of this future context handoff. Preserve the full companion
+Writing_Style_Extraction_Prompt.md unchanged. Its copy/import/extraction workflow,
+ten examples, durable ASR, sessions, compaction and contact memories stay deferred.
+
+The current code has generic participant roles, not an explicit owner identity or
+recipient name. The new owner field is explicit saved text, max2,000 code points/
+4,000 UTF-8 bytes, empty clears, PC-stored revision/CAS and account-isolated. No
+inferred name from profile label or demographic form. The owner explicitly permits
+the current AI-permitted recipient's resolved name in context; this supersedes the
+earlier proposed blanket no-contact-name-to-AI restriction. No full book/unmatched/
+unrelated names are permitted. Consent, never-reply and all backend policy remain.
+
+Use captured owner/name revisions in both context-build paths and generation
+freshness. Changes stale pending/edited AI drafts and cancel only unsent queued AI
+components. Do not rewrite approved text, revoke unrelated grants or refund/cancel
+handoff/unknown work. Existing workflow invalidation is the enforcement mechanism.
+Count the actual serialized owner/name/policy/roles/transcript/schema within the
+existing conservative8,000 text-input budget, with1,000 output cap and existing
+media uncertainty. Do not claim exact tokenizer counts or increase message/example
+windows as part of this release. Mandatory overflow fails without a paid call.
+
+Normalize generated Action prose U+2014 to comma-space before draft persistence
+and revalidate limits. Owner instructions, owner edits, original messages/quotes,
+IDs and raw ASR remain untouched. No send-time rewrite or extra model call.
+Implementation36/37 and focused review38 precede release33; nothing here claims
+implementation or real-device verification.
+
 ## Owner feedback and decision status
 
 ### Requested direction

@@ -8,6 +8,39 @@ reference design and continuity handoff are committed as b0648a9 and39f9001. No
 Batch2 context/storage implementation or schema migration is authorized in this
 batch. Follow Daily_Use_UX_and_Continuity_Plan.md and the selected design/state maps.
 
+## Owner-added combined release amendment
+
+The original contract below remains authored history. The owner subsequently added
+[Release_Gate_Extension.md](Release_Gate_Extension.md). Its bounded implementation
+contract is [Release_Extension_Implementation_Plan.md](Release_Extension_Implementation_Plan.md).
+This amendment permits only the extension's additive settings/name/receipt records
+and synthetic upgrade tests despite the earlier no-schema-change Batch1 rule.
+Actual private DB operations remain prohibited in delegated implementation.
+
+Nonblocking send uses original-gesture immutable intents, local pending journal,
+per-conversation ordering and request-ID reconciliation through scoped snapshots.
+Return typed mutation results before separate read refresh, without erasing action
+or unknown feedback. Input/history/quote remain usable through send/upload. Keep
+acknowledged holds, exact confirmation, source expiry and profile isolation.
+
+Optional outgoing receipt projections record observed WhatsApp evidence per
+component, never accepted equals delivered/read. No read receipt transmission on
+incoming chat open. App unread remains separate. Book names default off and use
+saved WhatsApp before minimal explicit Android matched-name sync, then sourced
+fallback. Current eligible recipient name may accompany AI; the full/unmatched/
+unrelated book never may. One2,000-code-point/4,000-byte per-profile instructions
+field is explicitly saved with revision checks. Name/instruction changes invalidate
+future/stale AI work, never alter handed-off/unknown accounting or approved bytes.
+Generated Action prose normalization happens once before draft persistence, then
+validation, not at manual/edit/dispatch boundaries. Full Batch2 remains deferred.
+
+36 is the sole backend/core API/store/WhatsApp/context writer.37 follows36 as sole
+mobile controller/conversation/Settings/native-contact writer.38 reviews both and
+the original32 findings/dc99aa6 response.33 waits for this source gate, parent
+validation/freeze and confirmed final copy/dependency targets.35 remains separate
+missing-incoming investigation. Old28 through32 ownership/results below are not
+acceptance of this new extension. No automatic launch or install follows this doc.
+
 ## Client and server responsibilities
 
 Windows remains the independent worker while the phone/browser is closed. Client

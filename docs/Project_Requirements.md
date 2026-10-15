@@ -80,6 +80,56 @@ in those issues share the contracts in
 - Logs and tests contain synthetic data, not contact content, secrets or session
   material. Export to OpenRouter requires explicit owner privacy consent.
 
+## Owner-added next-release requirements
+
+The owner added these to the combined daily-use release after its original review
+started. They are approved scope, not implemented or hardware-verified behavior.
+[Release_Gate_Extension.md](features/Release_Gate_Extension.md) records the choices;
+[the implementation plan](features/Release_Extension_Implementation_Plan.md)
+defines bounded contracts, persistence, permissions and tests. Existing MUS issue
+IDs remain unchanged. These extend FR-001/004/007/009/011/012, not a second product.
+
+- Send/upload shows immediate honest local pending status and keeps input, history
+  and swipe-to-quote usable. Capture immutable text/quote/media and request identity
+  at the original gesture. Keep ordering, acknowledged holds, newer composition,
+  profile isolation and unknown reservations. Mutation completion does not wait on
+  snapshot refresh. Never replay an uncertain send.
+- Outgoing one/double/blue ticks require actual scoped WhatsApp sent/delivered/read
+  evidence. HTTP/sendMessage acceptance and app-visible unread are different.
+  Missing/private receipts mean unconfirmed. Opening incoming chats never sends a
+  WhatsApp read receipt. Per-component receipt display does not change accounting.
+- Optional per-profile book names default off. Prefer saved WhatsApp names, then
+  explicitly synced native matched names, then push/verified/number fallback.
+  Android may request READ_CONTACTS only for explicit foreground lookup/sync;
+  browser uses the minimal PC-synced results. No write permission, full-book upload,
+  unmatched persistence, suffix/country guessing or inbox creation from imports.
+  Off deletes saved-book/phone aliases. The current AI-permitted recipient's
+  resolved name may go to AI. This supersedes the earlier proposed no-name-to-AI
+  restriction, not consent/exclusion/never-reply or unrelated-book privacy rules.
+- Every generated reply/draft prose U+2014 becomes comma-space before persistence,
+  review and send. Revalidate expanded action/reason/sequence limits. Preserve
+  owner edits/manual text, instructions, original sources/ASR, quoted data and IDs;
+  never normalize at dispatch or add a model call for punctuation.
+- One per-WhatsApp-profile About me and reply instructions field is explicit
+  plain text, bounded to2,000 code points/4,000 UTF-8 bytes and versioned on PC.
+  It and the eligible recipient name accompany AI requests under existing consent.
+  Changes stale dependent pending/in-flight AI work and cancel only unsent AI
+  components, never rewrite approved text or reset unknown/grant accounting.
+  Backend hard policy wins over editable preferences. Count all serialized prompt
+  fields/schema against the existing conservative budget. No demographic forms,
+  automatic extraction, document import or full Batch2 context implementation.
+
+The narrow additive schema/API proposal is in the plan. It supersedes the original
+Batch1 no-schema-change constraint only for these extension records and synthetic
+upgrade implementation/tests. It does not authorize opening/migrating real data.
+Conditional Expo Contacts is the only authorized new module, subject to exact
+version/target confirmation before install. Planning performed no installations.
+Release33 is blocked on implementation36/37 and focused review38 plus parent
+validation. Review32's original baseline is not extension acceptance. Native
+mic/keyboard, real contacts/receipts and PC behavior remain owner acceptance checks.
+The separately reported missing incoming messages remain investigation35, not an
+authorized speculative repair within this release plan.
+
 ## Product and feasibility are different deliverables
 
 Future production requirements include Expo messaging, assistant chat and a

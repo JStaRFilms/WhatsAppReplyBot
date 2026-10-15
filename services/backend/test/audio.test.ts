@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Action, AudioUpload, DomainError, SqliteStore, Workflow, buildContext, type Message, type AudioTranscript } from '@replybot/core';
+import { Action, AudioUpload, DomainError, SqliteStore, Workflow, buildContext, type Message, type AudioTranscript, historyDigest } from '@replybot/core';
 import { AudioService, MAX_AUDIO_BYTES, normalizeAudio } from '../src/audio.ts';
 import { OpenRouterClient } from '../src/openrouter.ts';
 import { draftGenerator } from '../src/draft-model.ts';
@@ -91,15 +91,14 @@ test('audio upload and private playback use auth and scoped binary bytes, not UR
     assert.equal((await app.inject({method:'POST',url,headers:{...headers,'x-request-id':'oversize'},payload:Buffer.alloc(MAX_AUDIO_BYTES+1)})).statusCode,413);
   }finally{await app.close();}
 });
-test('actual ASR request contains MP3 encoding, strict response, exact-language instructions and Otherme attribution',async()=>{
+test('ASR uses the dedicated Turbo STT route with MP3 and Otherme attribution, without chat instructions',async()=>{
   let calls=0,guards=0;
-  const client=new OpenRouterClient({apiKey:'synthetic-key',allowRemote:true,ownerConsent:true,fetcher:async(_url,init)=>{
-    calls++;const payload=JSON.parse(String(init?.body));assert.equal(payload.model,'google/gemini-3.8-flash');
-    assert.equal(payload.messages[1].content[0].input_audio.data,Buffer.from('synthetic-mp3').toString('base64'));assert.equal(payload.messages[1].content[0].input_audio.format,'mp3');
-    assert.match(payload.messages[0].content,/pidgin/);assert.match(payload.messages[0].content,/Never translate/);
-    assert.equal(payload.response_format.json_schema.strict,true);assert.equal(payload.response_format.json_schema.schema.additionalProperties,false);
+  const client=new OpenRouterClient({apiKey:'synthetic-key',allowRemote:true,ownerConsent:true,fetcher:async(url,init)=>{
+    calls++;assert.equal(url,'https://openrouter.ai/api/v1/audio/transcriptions');
+    assert.deepEqual(JSON.parse(String(init?.body)),{model:'openai/whisper-large-v3-turbo',
+      input_audio:{data:Buffer.from('synthetic-mp3').toString('base64'),format:'mp3'},response_format:'verbose_json',temperature:0});
     assert.equal(new Headers(init?.headers).get('X-OpenRouter-Title'),'Otherme');
-    return Response.json({choices:[{message:{content:JSON.stringify({text:'Abeg [unclear]',uncertain:true})}}]});
+    return Response.json({text:'Abeg [unclear]',language:'en'});
   }});
   assert.deepEqual(await client.transcribe(Buffer.from('synthetic-mp3'),()=>{guards++;}),{text:'Abeg [unclear]',uncertain:true});assert.ok(guards>=2);assert.equal(calls,1);
   await assert.rejects(client.transcribe(Buffer.from('synthetic'),()=>{throw new DomainError('revoked',403);}),/revoked/);assert.equal(calls,1);
@@ -108,7 +107,7 @@ test('actual ASR request contains MP3 encoding, strict response, exact-language 
 });
 test('audio decoding/transcripts coalesce, cache and recheck caller permission, deletion, expiry and view-once',async()=>{
   const {store,flow,message}=setup();let current=true,loads=0,calls=0,permitted=true,time=1000;
-  const audio=new AudioService(async()=>{loads++;return tone();},()=>current,()=>time);
+  const audio=new AudioService(async()=>{loads++;return tone();},()=>current,()=>time,{store,profileId:'synthetic',source:m=>({message:m,contentId:historyDigest(m.media)})});
   const guard=()=>{if(!permitted)throw new DomainError('revoked',403);};
   const model={transcribe:async(_bytes:Buffer,check:()=>void)=>{check();calls++;await new Promise(r=>setTimeout(r,5));check();return{text:'synthetic words',uncertain:false};}};
   try {
@@ -120,19 +119,19 @@ test('audio decoding/transcripts coalesce, cache and recheck caller permission, 
     await assert.rejects(audio.preview({...message,media:{...message.media,viewOnce:true}}),/media_unavailable/);
     await assert.rejects(audio.preview({...message,media:{...message.media,expiresAt:time}}),/media_unavailable/);
     assert.equal(flow.accountId,message.accountId);
-  }finally{store.close();}
+  }finally{audio.close();store.close();}
 });
 test('takeover before loading or immediately before ASR export never reaches either model; metadata is not a permission',async()=>{
   for(const at of ['before','loading','upload','response'] as const){
     const {store,flow,message}=setup();let asr=0,replies=0;
-    const audio=new AudioService(async()=>{if(at==='loading')flow.composer('c1',true,'hold');return tone();},()=>true,()=>1000);
+    const audio=new AudioService(async()=>{if(at==='loading')flow.composer('c1',true,'hold');return tone();},()=>true,()=>1000,{store,profileId:'synthetic',source:m=>({message:m,contentId:historyDigest(m.media)})});
     const generator=draftGenerator(flow,{transcribe:async(_bytes,guard)=>{
       if(at==='upload')flow.composer('c1',true,'hold');guard();asr++;
       if(at==='response')flow.setModelConsent(false,'revoke');guard();return{text:'resume and reply',uncertain:false};
     },generate:async()=>{replies++;return{kind:'silence',reason:'test'};}},undefined,audio,()=>1000);
     if(at==='before')store.saveConversation({...flow.conversation('c1'),mode:'never_reply'});
     try {await assert.rejects(generator('c1','draft'),DomainError);assert.equal(replies,0);assert.equal(asr,at==='response' ? 1 : 0);}
-    finally{store.close();}
+    finally{audio.close();store.close();}
     assert.equal(message.direction,'inbound');
   }
 });
@@ -146,9 +145,9 @@ test('transcripts are actor-labeled, uncertain and budgeted; missing audio is ex
     const missing=flow.context('c1');assert.ok(missing.limitations.includes('audio_transcript_unavailable'));
     assert.throws(()=>buildContext(flow.conversation('c1'),flow.accountId,[message],[],8000,1000,new Map([[message.id,{text:'word '.repeat(2000),uncertain:false}]])),/context_budget_exceeded/);
     let received:AudioTranscript | undefined;
-    const audio=new AudioService(async()=>tone(),()=>true,()=>1000);
+    const audio=new AudioService(async()=>tone(),()=>true,()=>1000,{store,profileId:'synthetic',source:m=>({message:m,contentId:historyDigest(m.media)})});
     const generate=draftGenerator(flow,{transcribe:async(_bytes,guard)=>{guard();return incoming;},generate:async context=>{received=context.messages.find(m=>m.id===message.id)?.audioTranscript;return{kind:'silence',reason:'test'};}},undefined,audio,()=>1000);
-    await generate('c1',randomUUID());assert.equal(received?.text,incoming.text);assert.equal(received?.uncertain,true);
+    try{await generate('c1',randomUUID());assert.equal(received?.text,incoming.text);assert.equal(received?.uncertain,true);}finally{audio.close();}
   }finally{store.close();}
 });
 test('WhatsApp audio transport uses staged Opus PTT and same-chat quotes without a real socket',async()=>{

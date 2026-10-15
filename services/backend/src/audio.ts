@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DomainError, type Message, type Workflow, type AudioTranscript } from '@replybot/core';
+import { AudioTranscript, DomainError, historyDigest, type Message, type Workflow, type AsrSource, type SqliteStore, type AsrProvenance } from '@replybot/core';
 
 export const MAX_AUDIO_BYTES=10*1024*1024;
 const PCM_LIMIT=300*16000*2;
@@ -39,15 +39,26 @@ export function readableAudio(message:Message,now=Date.now()):boolean {
   return m?.kind==='audio' && !m.viewOnce && m.access==='available'
     && (m.expiresAt===null || m.expiresAt>now) && (m.duration===undefined || m.duration<=300);
 }
-export interface Transcriber { transcribe:(bytes:Buffer,guard:()=>void)=>Promise<AudioTranscript> }
+export const AUDIO_NORMALIZER='ffmpeg-mono16k-mp3-48k-v1';
+export interface Transcriber {
+  transcribe:(bytes:Buffer,guard:()=>void)=>Promise<AudioTranscript>;
+  asrProvenance?:Pick<AsrProvenance,'adapter'|'model'>;
+}
+export interface AudioPersistence {
+  store:SqliteStore; profileId:string;
+  source:(m:Message)=>{message:Message;contentId:string;equivalents?:Message[]}|undefined;
+  normalize?:typeof normalizeAudio;
+}
 export class AudioService {
-  private readonly cache=new Map<string,{message:Message;bytes:Buffer;expires:number;transcript?:AudioTranscript}>();
+  private readonly cache=new Map<string,{message:Message;identity:AsrSource;bytes:Buffer;expires:number}>();
+  private closed=false;
   private readonly expiryTimer:ReturnType<typeof setInterval>;
   private readonly pending=new Map<string,Promise<Buffer>>();
   private readonly transcribing=new Map<string,Promise<AudioTranscript>>();
   constructor(private readonly load:(m:Message)=>Promise<Buffer>,private readonly current:(m:Message)=>boolean,
-    private readonly now=Date.now, private readonly sourceVersion=(m:Message)=>JSON.stringify(m.media)) {
+    private readonly now:()=>number, private readonly persistence:AudioPersistence) {
     this.expiryTimer=setInterval(()=>{
+      this.persistence.store.pruneAsr(this.now());
       for(const [key,item] of this.cache){
         try{if(item.expires<=this.now())this.cache.delete(key);else this.check(item.message);}
         catch{this.cache.delete(key);}
@@ -55,44 +66,87 @@ export class AudioService {
     },1000);
     this.expiryTimer.unref();
   }
-  close():void {clearInterval(this.expiryTimer);this.cache.clear();}
-  private key(m:Message):string {return JSON.stringify([m.accountId,m.conversationId,m.id,this.sourceVersion(m)]);}
-  check(m:Message):void {
-    if(!readableAudio(m,this.now()) || !this.current(m)) {this.cache.delete(this.key(m));throw new DomainError('media_unavailable',404);}
+  close():void {this.closed=true;clearInterval(this.expiryTimer);this.cache.clear();}
+  private source(m:Message):{message:Message;identity:AsrSource;identities:AsrSource[]} {
+    if(this.closed)throw new DomainError('media_unavailable',404);
+    const source=this.persistence.source(m);
+    if(!source || source.message.accountId!==m.accountId || !readableAudio(m,this.now())
+      || !readableAudio(source.message,this.now()) || !this.current(source.message)) {
+      this.persistence.store.suppressAsr(m.accountId,m.conversationId,m.transportId);
+      for(const [key,item] of this.cache)if(item.message.accountId===m.accountId && item.message.transportId===m.transportId)this.cache.delete(key);
+      throw new DomainError('media_unavailable',404);
+    }
+    const original=source.message;
+    const identity:AsrSource={accountId:original.accountId,profileId:this.persistence.profileId,
+      conversationId:original.conversationId,messageId:original.id,transportId:original.transportId,contentId:source.contentId};
+    const identities=[identity,...(source.equivalents ?? []).map(copy=>({...identity,
+      conversationId:copy.conversationId,messageId:copy.id,transportId:copy.transportId}))];
+    for(const id of identities)this.persistence.store.invalidateAsrContent(id);
+    for(const [key,item] of this.cache)if(identities.some(id=>id.accountId===item.identity.accountId
+      && id.conversationId===item.identity.conversationId && id.messageId===item.identity.messageId
+      && id.contentId!==item.identity.contentId))this.cache.delete(key);
+    return {message:original,identity,identities};
   }
+  check(m:Message):void {this.source(m);}
   async preview(m:Message):Promise<Buffer> {
-    this.check(m);
+    const initial=this.source(m),key=historyDigest(initial.identity);
+    const check=()=>{
+      const current=this.source(m);
+      if(historyDigest(current.identity)!==key)throw new DomainError('media_unavailable',404);
+      return current;
+    };
     for(const [key,value] of this.cache)if(value.expires<=this.now())this.cache.delete(key);
-    const key=this.key(m);const cached=this.cache.get(key);if(cached)return cached.bytes;
+    const cached=this.cache.get(key);if(cached)return cached.bytes;
     let task=this.pending.get(key);
     if(!task){
       if(this.pending.size>=2)throw new DomainError('audio_busy',503);
       task=(async()=>{
-        const check=()=>{this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);};
-        check();const input=await this.load(m);check();
-        const {bytes}=await normalizeAudio(input,'mp3');check();
-        this.cache.set(key,{message:m,bytes,expires:Math.min(this.now()+300000,m.media?.expiresAt ?? Infinity)});
+        const input=await this.load(initial.message);check();
+        const {bytes}=await (this.persistence.normalize ?? normalizeAudio)(input,'mp3');const current=check();
+        this.cache.set(key,{message:m,identity:current.identity,bytes,expires:Math.min(this.now()+300000,current.message.media?.expiresAt ?? Infinity)});
         for(const id of this.cache.keys()){if(this.cache.size<=10)break;this.cache.delete(id);}
         return bytes;
       })().finally(()=>this.pending.delete(key));this.pending.set(key,task);
     }
-    const bytes=await task;this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);return bytes;
+    const bytes=await task;check();return bytes;
   }
   async transcript(m:Message,model:Transcriber,guard:()=>void):Promise<AudioTranscript> {
-    guard();this.check(m);
-    const bytes=await this.preview(m);guard();this.check(m);
-    const key=this.key(m);const cached=this.cache.get(key)?.transcript;
-    if(cached){guard();this.check(m);return cached;}
+    guard();const initial=this.source(m),{identity}=initial,key=historyDigest(identity),store=this.persistence.store;
+    const exportGuard=()=>{
+      guard();const current=this.source(m);
+      if(historyDigest(current.identity)!==key)throw new DomainError('media_unavailable',404);
+      return current;
+    };
+    const lookup=(identities:AsrSource[])=>{
+      const saved=identities.map(source=>store.asrAttempt(source,this.now()));
+      return saved.find(row=>row?.state==='complete' && row.transcript!==null) ?? saved.find(row=>row!==undefined);
+    };
     let task=this.transcribing.get(key);
     if(!task){
+      const saved=lookup(initial.identities);
+      if(saved?.state==='complete' && saved.transcript){exportGuard();return saved.transcript;}
+      if(saved)throw new DomainError('audio_attempt_unavailable',409);
       if(this.transcribing.size>=2)throw new DomainError('audio_busy',503);
-      const exportGuard=()=>{guard();this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);};
-      exportGuard();
-      task=model.transcribe(bytes,exportGuard).then(transcript=>{
-        exportGuard();const item=this.cache.get(key);if(item)item.transcript=transcript;return transcript;
-      }).finally(()=>this.transcribing.delete(key));this.transcribing.set(key,task);
+      task=(async()=>{
+        const bytes=await this.preview(m);const current=exportGuard();
+        const saved=lookup(current.identities);
+        if(saved?.state==='complete' && saved.transcript){exportGuard();return saved.transcript;}
+        if(saved)throw new DomainError('audio_attempt_unavailable',409);
+        const attemptId=store.reserveAsr(identity,current.message.media?.expiresAt ?? null,this.now());
+        try {
+          exportGuard();
+          const transcript=AudioTranscript.parse(await model.transcribe(bytes,exportGuard));exportGuard();
+          if(!store.completeAsr(identity,attemptId,transcript,{...model.asrProvenance ?? {adapter:'custom',model:'unspecified'},normalizer:AUDIO_NORMALIZER},this.now()))
+            throw new DomainError('audio_attempt_unavailable',409);
+          return transcript;
+        }catch(error){
+          store.unknownAsr(identity.accountId,attemptId);
+          if(error instanceof DomainError)throw error;
+          throw new DomainError('transcription_unknown',502);
+        }
+      })().finally(()=>this.transcribing.delete(key));this.transcribing.set(key,task);
     }
-    const result=await task;guard();this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);return result;
+    const result=await task;exportGuard();return result;
   }
 }
 export function registerAudioUploads(app:FastifyInstance,flow:Workflow):void {

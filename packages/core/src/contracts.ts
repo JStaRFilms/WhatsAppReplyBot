@@ -53,6 +53,16 @@ export const AudioUpload = z.object({
 export type AudioUpload = z.infer<typeof AudioUpload>;
 export const AudioTranscript = z.object({text:z.string().max(12000),uncertain:z.boolean()}).strict();
 export type AudioTranscript = z.infer<typeof AudioTranscript>;
+export const AsrSource = z.object({
+  accountId:z.string().min(1).max(128), profileId:z.string().min(1).max(128),
+  conversationId:z.string().min(1).max(128), messageId:z.string().min(1).max(512), transportId:z.string().min(1).max(128),
+  contentId:z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export type AsrSource = z.infer<typeof AsrSource>;
+export const AsrProvenance = z.object({
+  adapter:z.string().min(1).max(128), model:z.string().min(1).max(128), normalizer:z.string().min(1).max(128),
+}).strict();
+export type AsrProvenance = z.infer<typeof AsrProvenance>;
 export const Message = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), transportId: z.string(),
   direction: z.enum(['inbound', 'outbound']), outgoingReceipt: OutgoingReceipt.optional(),

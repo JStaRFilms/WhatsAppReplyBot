@@ -2,12 +2,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { HistoryCursor, historyDigest, eventIdentity, partialMessage, automaticTrigger, type RawHistoryEvidence, type HistorySource } from './history.ts';
 import { z } from 'zod';
-import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload, AudioUpload, OutgoingReceipt, type NameSource } from './contracts.ts';
+import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload, AudioUpload, AudioTranscript, AsrSource, AsrProvenance, OutgoingReceipt, type NameSource } from './contracts.ts';
 
 import { AssistantTurn, OwnerInstructions, ContactNameSettings, type HistoryGroup, type HistoryPage } from './api.ts';
 
 const Payload = z.object({ payload: z.string() });
 const Cached = z.object({ payload_hash: z.string(), result: z.string() });
+const AsrRow = z.object({attemptId:z.string(),state:z.enum(['reserved','complete','unknown','suppressed']),
+  transcript:z.string().nullable(),provenance:z.string().nullable()});
 type Table = 'conversations' | 'messages' | 'drafts' | 'delegations' | 'outbox' | 'owner_actions';
 type RecordData = Conversation | Message | Draft | Grant | Outbox | Proposal;
 
@@ -74,7 +76,87 @@ export class SqliteStore {
         account_id,conversation_id,json_extract(payload,'$.transportId'));
       CREATE UNIQUE INDEX IF NOT EXISTS outbox_request_id ON outbox(account_id,json_extract(payload,'$.requestId'));
       CREATE UNIQUE INDEX IF NOT EXISTS active_grant ON delegations(account_id,conversation_id)
-        WHERE json_extract(payload,'$.state')='active';`);
+        WHERE json_extract(payload,'$.state')='active';
+      CREATE TABLE IF NOT EXISTS asr_attempts (
+        account_id TEXT NOT NULL,profile_id TEXT NOT NULL,source_key TEXT NOT NULL,content_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,message_id TEXT NOT NULL,transport_id TEXT NOT NULL,attempt_id TEXT NOT NULL UNIQUE,
+        state TEXT NOT NULL CHECK(state IN ('reserved','complete','unknown','suppressed')),
+        transcript TEXT CHECK(transcript IS NULL OR json_valid(transcript)),provenance TEXT CHECK(provenance IS NULL OR json_valid(provenance)),
+        expires_at REAL,last_used REAL NOT NULL,PRIMARY KEY(account_id,profile_id,source_key,content_id));
+      CREATE INDEX IF NOT EXISTS asr_source ON asr_attempts(account_id,conversation_id,transport_id);
+      UPDATE asr_attempts SET state='unknown' WHERE state='reserved';`);
+    this.pruneAsr(Date.now());
+  }
+  private asrKey(source:AsrSource):string {
+    return historyDigest([source.conversationId,source.messageId,source.transportId]);
+  }
+  pruneAsr(now:number):void {
+    this.db.prepare(`UPDATE asr_attempts SET state='suppressed',transcript=NULL,provenance=NULL
+      WHERE expires_at IS NOT NULL AND expires_at<=? AND state IN ('reserved','complete','unknown')`).run(now);
+  }
+  asrAttempt(input:AsrSource,now:number) {
+    const source=AsrSource.parse(input);this.pruneAsr(now);
+    const row=this.db.prepare(`SELECT attempt_id AS attemptId,state,transcript,provenance FROM asr_attempts
+      WHERE account_id=? AND profile_id=? AND source_key=? AND content_id=?`)
+      .get(source.accountId,source.profileId,this.asrKey(source),source.contentId);
+    if(!row)return undefined;
+    const saved=AsrRow.parse(row);
+    if(saved.state==='complete' && saved.transcript!==null){
+      this.db.prepare('UPDATE asr_attempts SET last_used=? WHERE account_id=? AND attempt_id=?').run(now,source.accountId,saved.attemptId);
+      return {...saved,transcript:AudioTranscript.parse(JSON.parse(saved.transcript)),
+        provenance:saved.provenance===null ? null : AsrProvenance.parse(JSON.parse(saved.provenance))};
+    }
+    return {...saved,transcript:null,provenance:null};
+  }
+  reserveAsr(input:AsrSource,expiresAt:number|null,now:number):string {
+    const source=AsrSource.parse(input);
+    return this.transaction(()=>{
+      this.pruneAsr(now);
+      if(expiresAt!==null && expiresAt<=now)throw new DomainError('audio_source_unavailable',410);
+      if(this.asrAttempt(source,now))throw new DomainError('audio_attempt_unavailable',409);
+      const count=this.db.prepare('SELECT COUNT(*) AS count FROM asr_attempts WHERE account_id=?').get(source.accountId);
+      if(z.object({count:z.number()}).parse(count).count>=10000)throw new DomainError('audio_attempt_capacity',503);
+      const id=randomUUID();
+      this.db.prepare(`INSERT INTO asr_attempts(account_id,profile_id,source_key,content_id,conversation_id,message_id,
+        transport_id,attempt_id,state,expires_at,last_used) VALUES(?,?,?,?,?,?,?,?,'reserved',?,?)`)
+        .run(source.accountId,source.profileId,this.asrKey(source),source.contentId,source.conversationId,source.messageId,source.transportId,id,expiresAt,now);
+      return id;
+    });
+  }
+  completeAsr(input:AsrSource,attemptId:string,transcript:AudioTranscript,provenance:AsrProvenance,now:number):boolean {
+    const source=AsrSource.parse(input),text=JSON.stringify(AudioTranscript.parse(transcript)),origin=JSON.stringify(AsrProvenance.parse(provenance));
+    return this.transaction(()=>{
+      this.pruneAsr(now);
+      const updated=this.db.prepare(`UPDATE asr_attempts SET state='complete',transcript=?,provenance=?,last_used=?
+        WHERE account_id=? AND profile_id=? AND source_key=? AND content_id=? AND attempt_id=? AND state='reserved'`)
+        .run(text,origin,now,source.accountId,source.profileId,this.asrKey(source),source.contentId,attemptId);
+      if(!updated.changes)return false;
+      const retained=this.db.prepare(`SELECT account_id AS accountId,attempt_id AS id,length(CAST(transcript AS BLOB)) AS bytes
+        FROM asr_attempts WHERE transcript IS NOT NULL ORDER BY last_used DESC,rowid DESC`).all();
+      let count=0,bytes=0;
+      for(const row of retained){
+        const item=z.object({accountId:z.string(),id:z.string(),bytes:z.number()}).parse(row);count++;bytes+=item.bytes;
+        if(count>1000 || bytes>4*1024*1024)this.db.prepare(`UPDATE asr_attempts SET state='suppressed',transcript=NULL,provenance=NULL
+          WHERE account_id=? AND attempt_id=?`).run(item.accountId,item.id);
+      }
+      return true;
+    });
+  }
+  unknownAsr(accountId:string,attemptId:string):void {
+    this.db.prepare(`UPDATE asr_attempts SET state='unknown',transcript=NULL,provenance=NULL
+      WHERE account_id=? AND attempt_id=? AND state='reserved'`).run(accountId,attemptId);
+  }
+  suppressAsr(accountId:string,conversationId?:string,transportId?:string):void {
+    const members=conversationId===undefined ? undefined : JSON.stringify(this.historyGroup(accountId,conversationId).memberIds);
+    this.db.prepare(`UPDATE asr_attempts SET state='suppressed',transcript=NULL,provenance=NULL WHERE account_id=?
+      ${members===undefined ? '' : 'AND conversation_id IN (SELECT value FROM json_each(?))'} ${transportId===undefined ? '' : 'AND transport_id=?'}`)
+      .run(accountId,...(members===undefined?[]:[members]),...(transportId===undefined?[]:[transportId]));
+  }
+  invalidateAsrContent(input:AsrSource):void {
+    const source=AsrSource.parse(input);
+    this.db.prepare(`UPDATE asr_attempts SET state='suppressed',transcript=NULL,provenance=NULL
+      WHERE account_id=? AND profile_id=? AND source_key=? AND content_id<>?`)
+      .run(source.accountId,source.profileId,this.asrKey(source),source.contentId);
   }
   // Backend supplies protobuf evidence without introducing transport types into core.
   inspectHistoryRaw: ((payload: string) => RawHistoryEvidence) | undefined;
@@ -342,6 +424,15 @@ export class SqliteStore {
     const row=this.db.prepare('SELECT id,mime,duration,bytes FROM audio_uploads WHERE account_id=? AND conversation_id=? AND id=?').get(accountId,conversationId,id);
     return row ? AudioUpload.extend({bytes:z.instanceof(Uint8Array)}).parse(row) : undefined;
   }
+  sentAudioIdentity(accountId:string,conversationId:string,transportId:string): {id:string;identity:string}|undefined {
+    const row=this.db.prepare(`SELECT u.id,r.payload_hash AS identity FROM audio_uploads u JOIN outbox o
+      ON o.account_id=u.account_id AND o.conversation_id=u.conversation_id JOIN json_each(o.payload,'$.components') p
+      ON json_extract(p.value,'$.uploadId')=u.id JOIN api_requests r ON r.account_id=u.account_id AND json_extract(r.result,'$.id')=u.id
+      WHERE u.account_id=? AND u.conversation_id=? AND json_extract(o.payload,'$.origin')='owner_manual'
+      AND json_extract(p.value,'$.kind')='audio' AND json_extract(p.value,'$.state')='accepted'
+      AND json_extract(p.value,'$.transportId')=? LIMIT 1`).get(accountId,conversationId,transportId);
+    return row ? z.object({id:z.string(),identity:z.string()}).parse(row) : undefined;
+  }
   sentAudioUpload(accountId:string,conversationId:string,transportId:string):(AudioUpload & {bytes:Uint8Array}) | undefined {
     const row=this.db.prepare(`SELECT u.id,u.mime,u.duration,u.bytes FROM audio_uploads u JOIN outbox o
       ON o.account_id=u.account_id AND o.conversation_id=u.conversation_id JOIN json_each(o.payload,'$.components') p
@@ -434,6 +525,14 @@ export class SqliteStore {
     const previous = this.historyGroup(accountId,alias);
     this.db.prepare('INSERT INTO wa_aliases(account_id,alias,canonical) VALUES(?,?,?) ON CONFLICT(account_id,alias) DO NOTHING').run(accountId, alias, canonical);
     this.bumpHistory(accountId,canonical,true,previous.revision,previous.sourceEpoch);
+    const group=this.historyGroup(accountId,canonical);
+    if(group.aiBlocked)this.suppressAsr(accountId,canonical);
+    else for(const row of this.db.prepare(`SELECT message_id AS id FROM asr_attempts WHERE account_id=?
+      AND conversation_id IN (SELECT value FROM json_each(?)) AND state IN ('reserved','complete')`).all(accountId,JSON.stringify(group.memberIds))){
+      const {id}=z.object({id:z.string()}).parse(row);
+      const source=this.historySource(accountId,canonical,id);
+      if(source && source.state!=='available')this.suppressAsr(accountId,source.conversationId,source.transportId);
+    }
   }
   saveWaMessage(accountId: string, conversationId: string, transportId: string, payload: string): void {
     if (!this.db.isTransaction) {this.transaction(()=>this.saveWaMessage(accountId,conversationId,transportId,payload));return;}
@@ -448,7 +547,13 @@ export class SqliteStore {
       }
     }
     this.db.prepare('INSERT INTO wa_messages VALUES(?,?,?,?) ON CONFLICT(account_id,conversation_id,transport_id) DO UPDATE SET payload=excluded.payload').run(accountId, conversationId, transportId, payload);
-    if (previous !== undefined && historyDigest(this.rawEvidence(previous)) !== historyDigest(this.rawEvidence(payload))) this.bumpHistory(accountId,conversationId,true);
+    if (previous !== undefined && historyDigest(this.rawEvidence(previous)) !== historyDigest(this.rawEvidence(payload))) {
+      this.bumpHistory(accountId,conversationId,true);this.suppressAsr(accountId,conversationId,transportId);
+    }
+    const evidence=this.rawEvidence(payload);
+    const message=this.eventMessages(accountId,conversationId,transportId)[0];
+    if(evidence.deleted || evidence.viewOnce || evidence.conflict
+      || message && this.historySource(accountId,conversationId,message.id)?.state!=='available')this.suppressAsr(accountId,conversationId,transportId);
   }
   waMessage(accountId: string, conversationId: string, transportId: string): string | undefined {
     const row = this.db.prepare('SELECT payload FROM wa_messages WHERE account_id=? AND conversation_id=? AND transport_id=?').get(accountId, conversationId, transportId);
@@ -459,8 +564,10 @@ export class SqliteStore {
     return row ? z.object({ model_consent: z.number() }).parse(row).model_consent === 1 : false;
   }
   saveModelConsent(accountId: string, consent: boolean): void {
+    if(!this.db.isTransaction){this.transaction(()=>this.saveModelConsent(accountId,consent));return;}
     this.db.prepare('INSERT INTO account_settings(account_id,model_consent) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET model_consent=excluded.model_consent')
       .run(accountId, consent ? 1 : 0);
+    if(!consent)this.suppressAsr(accountId);
   }
   ownerInstructions(accountId: string): OwnerInstructions {
     const row = this.db.prepare('SELECT owner_instructions AS text,owner_instructions_revision AS revision FROM account_settings WHERE account_id=?').get(accountId);
@@ -617,6 +724,7 @@ export class SqliteStore {
     if (!this.db.isTransaction) {this.transaction(()=>this.saveConversation(record));return;}
     const previous = this.conversation(record.accountId,record.id);
     this.put('conversations', Conversation.parse(record));
+    if(this.historyGroup(record.accountId,record.id).aiBlocked)this.suppressAsr(record.accountId,record.id);
     const restrictions = (c: Conversation) => [c.kind,c.mode,c.excluded,c.control,c.hours,
       c.pause ? {...c.pause,catchUpMessageId:null} : null];
     if (previous && JSON.stringify(restrictions(previous)) !== JSON.stringify(restrictions(record))) this.bumpHistory(record.accountId,record.id,true);
@@ -636,7 +744,9 @@ export class SqliteStore {
     const {outgoingReceipt: _receipt,...message}=Message.parse(record);this.put('messages',message);
     this.db.prepare('INSERT INTO history_versions VALUES(?,?,1) ON CONFLICT(account_id,conversation_id) DO UPDATE SET revision=revision+1').run(message.accountId,message.conversationId);
     const content = (m: Message) => [m.text,m.direction,m.authorship,m.occurredAt,m.quotedMessageId,m.media,m.contentState,m.contentRecovered];
-    this.bumpHistory(message.accountId,message.conversationId,!!previous && JSON.stringify(content(previous)) !== JSON.stringify(content(message)));
+    const changed=!!previous && JSON.stringify(content(previous)) !== JSON.stringify(content(message));
+    this.bumpHistory(message.accountId,message.conversationId,changed);
+    if(changed || message.media?.viewOnce || message.media?.access==='expired')this.suppressAsr(message.accountId,message.conversationId,message.transportId);
   }
   drafts(accountId: string, conversationId?: string): Draft[] { return this.list('drafts', accountId, Draft, conversationId); }
   draft(accountId: string, id: string): Draft | undefined { return this.read('drafts', accountId, id, Draft); }

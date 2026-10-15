@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DomainError, automaticDecision, automaticTrigger, partialMessage, eventIdentity, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation, type OutgoingReceipt } from '@replybot/core';
+import { DomainError, historyDigest, automaticDecision, automaticTrigger, partialMessage, eventIdentity, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation, type OutgoingReceipt } from '@replybot/core';
 import { directJid, normalizeWhatsApp, isViewOnce, inspectHistoryRaw, decodeStoredMessage, attachmentIdentity, messageId } from './whatsapp-normalize.ts';
 import { downloadAttachment, mediaDeadline } from './whatsapp-media.ts';
 
@@ -329,6 +329,24 @@ export class WhatsAppAdapter {
     return message.accountId===this.flow.accountId && saved?.conversationId===message.conversationId && !!saved.media && !!raw && !isViewOnce(raw) && !!normalized?.media
       && !saved.media.viewOnce && (saved.media.expiresAt===null || saved.media.expiresAt>this.clock())
       && (normalized.media.expiresAt===null || normalized.media.expiresAt>this.clock());
+  }
+  audioIdentity(message:Message):string|undefined {
+    const source=this.flow.store.historySource(this.flow.accountId,message.conversationId,message.id,this.clock());
+    const original=source?.message,media=original?.media;
+    if(message.accountId!==this.flow.accountId || source?.state!=='available' || original?.conversationId!==message.conversationId
+      || media?.kind!=='audio' || media.access!=='available' || media.viewOnce || media.expiresAt!==null && media.expiresAt<=this.clock())return undefined;
+    const raw=decodeStoredMessage(this.flow.store.waMessage(this.flow.accountId,source.conversationId,source.transportId));
+    if(!raw || !attachmentIdentity(raw) || !normalizeMessageContent(raw.message)?.audioMessage || raw.key.id!==source.transportId)return undefined;
+    const fingerprint=(item:WAMessage,m:Message)=>historyDigest(['audio-source-v1',attachmentIdentity(item),item.key.fromMe ?? false,
+      item.key.participant ?? null,item.key.participantAlt ?? null,m.direction,m.authorship,m.source==='unknown'?'unknown':'whatsapp',m.occurredAt]);
+    const identity=fingerprint(raw,original);
+    for(const id of source.candidateIds){
+      if(id===source.messageId)continue;
+      const copy=this.flow.store.message(this.flow.accountId,id);
+      const stored=copy ? decodeStoredMessage(this.flow.store.waMessage(this.flow.accountId,copy.conversationId,copy.transportId)) : undefined;
+      if(!copy || !stored || stored.key.id!==message.transportId || fingerprint(stored,copy)!==identity)return undefined;
+    }
+    return identity;
   }
   async downloadMedia(message:Message, ownerVideo = false):Promise<Buffer> {
     this.requireReady();

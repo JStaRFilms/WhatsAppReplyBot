@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Action, OwnerAction, DomainError, Workflow, aiAccess, inPermittedHours, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
+import { Action, OwnerAction, DomainError, Workflow, historyDigest, aiAccess, inPermittedHours, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
 import { ClientSnapshot, MediaVariant, ProfileTransitionInput, OwnerInstructionsInput, ContactNamesInput, ContactNamesImportInput, type ProfileScope, type ProfileOperation } from '@replybot/core/api';
 import { ProfileRegistry, bounded } from './profiles.ts';
 import { assistantTurn, attention } from './assistant.ts';
@@ -88,9 +88,20 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     const saved=source?.state==='available' ? source.message : undefined;
     const raw=options.store.waMessage(accountId,message.conversationId,message.transportId);
     if(raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success)return false;
-    return message.accountId===accountId && !!saved && saved.conversationId===message.conversationId && readableAudio(saved,now())
-      && (!!options.store.sentAudioUpload(accountId,message.conversationId,message.transportId) || whatsapp?.mediaCurrent(message)===true);
-  },now,message=>String(options.store.historyGroup(accountId,message.conversationId).sourceEpoch));
+    return !blocked() && !shutdownStarted && message.accountId===accountId && !!saved && readableAudio(saved,now())
+      && (!!options.store.sentAudioIdentity(accountId,saved.conversationId,saved.transportId) || whatsapp?.mediaCurrent(saved)===true);
+  },now,{store:options.store,profileId:scope.profileId,source:message=>{
+    if(message.accountId!==accountId)return undefined;
+    const source=options.store.historySource(accountId,message.conversationId,message.id,now());
+    if(source?.state!=='available')return undefined;
+    const original=source.message;
+    const upload=options.store.sentAudioIdentity(accountId,original.conversationId,original.transportId);
+    const contentId=whatsapp?.audioIdentity(original) ?? (upload ? historyDigest(['owner-audio-v1',upload.id,upload.identity,original.direction,original.authorship]) : undefined);
+    const equivalents=source.candidateIds.flatMap(id=>{
+      const copy=options.store.message(accountId,id);return copy && copy.id!==original.id ? [copy] : [];
+    });
+    return contentId ? {message:source.message,contentId,equivalents} : undefined;
+  }});
   const generateDraft=draftGenerator(flow,options.remoteModel,media,audio,now);
   const mediaReplies=new Map<string,()=>void>();
   app.register(cors, { origin: (origin, callback) => callback(null, !origin || allowedOrigin(origin)) });

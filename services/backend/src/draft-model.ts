@@ -3,7 +3,7 @@ import { Draft, DomainError, aiAccess, type AudioTranscript, type Action, type M
 import { demoReply } from './demo-model.ts';
 import type { VisualFrame } from './media.ts';
 import { readableAudio, type AudioService, type Transcriber } from './audio.ts';
-export interface RemoteModel { generate:(context:ModelContext,visuals?:VisualFrame[])=>Promise<Action>; transcribe?:Transcriber['transcribe'] }
+export interface RemoteModel { generate:(context:ModelContext,visuals?:VisualFrame[])=>Promise<Action>; transcribe?:Transcriber['transcribe']; asrProvenance?:Transcriber['asrProvenance'] }
 export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals:(context:ModelContext)=>Promise<VisualFrame[]>},audio?:AudioService,now=Date.now) {
   const active=new Map<string,{hash:string;result:Promise<Draft>}>();
   const generations=new Map<string,Promise<Draft>>();
@@ -41,7 +41,7 @@ export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals
           const transcripts=new Map<string,AudioTranscript>();
           if(remote?.transcribe && audio)for(const message of context.messages.filter(m=>m.direction==='inbound' && readableAudio(m,now())).slice(-2)) {
             guard();
-            try{transcripts.set(message.id,await audio.transcript(message,{transcribe:remote.transcribe},guard));}
+            try{transcripts.set(message.id,await audio.transcript(message,{transcribe:remote.transcribe,...(remote.asrProvenance ? {asrProvenance:remote.asrProvenance} : {})},guard));}
             catch{guard();}
           }
           guard();

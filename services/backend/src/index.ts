@@ -7,7 +7,7 @@ import { ProfileRegistry, profilePaths, bounded } from './profiles.ts';
 import { networkInterfaces } from 'node:os';
 import { SqliteStore } from '@replybot/core';
 import { createApp } from './server.ts';
-import { OpenRouterClient } from './openrouter.ts';
+import { OpenRouterClient, ASR_PROVENANCE, resolveAudioModel } from './openrouter.ts';
 import { DEMO_ACCOUNT } from './seed.ts';
 import { hasSavedPairing, rootIdentifier, manageServer } from './launcher-startup.ts';
 
@@ -65,8 +65,8 @@ const app = createApp({ store, token, accountId, profileScope,
   ...(remote ? { remoteModel: { generate: (context,visuals) => new OpenRouterClient({
     apiKey, allowRemote: true, ownerConsent: store.modelConsent(accountId),
     appName:process.env.OPENROUTER_APP_NAME || 'Otherme',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
-  }).generate(context,visuals), transcribe:(bytes,guard)=>new OpenRouterClient({
-    apiKey,allowRemote:true,ownerConsent:store.modelConsent(accountId),audioModel:process.env.OPENROUTER_AUDIO_MODEL || 'google/gemini-3.8-flash',
+  }).generate(context,visuals), asrProvenance:ASR_PROVENANCE, transcribe:(bytes,guard)=>new OpenRouterClient({
+    apiKey,allowRemote:true,ownerConsent:store.modelConsent(accountId),audioModel:resolveAudioModel(process.env.OPENROUTER_AUDIO_MODEL),
     appName:process.env.OPENROUTER_APP_NAME || 'Otherme',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
   }).transcribe(bytes,guard) } } : {}),
 });

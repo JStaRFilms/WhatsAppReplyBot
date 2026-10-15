@@ -92,7 +92,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Investigation complete; owner approved all three history fixes, now scoped by40 |
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |
 | 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Complete69f01fd;39 baseline and accepted44 final browser evidence; source38/hardware separate |
-| 38 | Review combined extended release | reviewer | vibe-build |36/37/41–49 integrated and44 accepted | Running Sol High read-only,399cc99..2453912, parent452 tests/types and108 full browser checks pass |
+| 38 | Review combined extended release | reviewer | vibe-build |36/37/41–50 integrated and44 accepted | Blocked on two confirmed P2 findings, parent reproduced;50 scoped correction, no second generic audit |
 | 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Complete; parent36 checks/18 screenshots pass after fixture wait correction;69f01fd baseline only |
 | 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Complete; parent accepted with cached-first/policy/manual-work/JPEG corrections in30f4f15 |
 | 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Complete, source32fe269; parent22 focused/342 workspace tests and all types pass |
@@ -104,6 +104,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 47 | Correct bounded actual row visibility after history reflow | coder | vibe-build |44 R1 confirmed blocker | Complete eb8a242, source440 tests/types pass; r2 exposes additional warm/resize/editor failures assigned48 |
 | 48 | Correct warm geometry, focused editor anchors and foreground photo recovery | coder | vibe-build |47 plus44 r2 confirmed failures | Complete35cba0c; parent449 tests/types and27 isolated browser checks pass |
 | 49 | Diagnose and correct thumbnail cancellation availability | coder | vibe-build |48 plus44 r3 recorded failures | Complete2453912, deterministic purge/ownership red-green; parent452 tests/types and full browser acceptance |
+| 50 | Correct two confirmed review38 blockers | coder | vibe-build |38 r1 confirmed findings,49 accepted | Running Sol High, viewer uncommitted lease and paired contact-only no-chat; no expanded scope |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

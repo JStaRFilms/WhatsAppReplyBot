@@ -234,6 +234,27 @@ T3 task ID is
 Client request ID is `otherme-combined-release-review38-20261015-r1`.
 Final artifact33 remains held. Parent resumes from the completion notification.
 
+## Round1 result and confirmed response
+
+Terminal review result withheld acceptance for exactly two confirmed P2 blockers.
+MediaViewer loses a returned handle when closed before React state commits, leaking
+the sole viewer slot. Contact-only paired phone/LID identifiers call canonical()
+and materialize unrelated inbox conversations before name eligibility, even off.
+Parent independently reproduced both on unchanged source, releases0 versus1 and
+savedNames=false/conversations1 versus0. See Release_Review_38_Findings.md.
+
+Reviewer independently passed73 focused core/backend tests,145 mobile, all types,
+diff checks and both inline reproductions. It verified186 public inputs,28 export
+and160 sealed artifacts, and inspected parent91+17 browser evidence, not a replay.
+No other confirmed blocker was reported. Native/artifact limits remain as supplied.
+
+Task50 now fixes only these defects with red-to-green regressions. Source acceptance
+stays withheld and33 held until parent verifies the exact responses and relevant
+checks. No second generic review is authorized. Any needed narrow follow-up must
+use a new task with this brief, findings, responses and actual unresolved objection.
+The completed44 evidence remains attributed to2453912; affected new-source checks
+must be added after50 rather than silently relabeling those old outputs.
+
 ## Limits
 
 No source/docs/status/board/master-plan writes, package/version/lock changes, installs, actual DB/migration/.env/auth/token/signing/runtime/book reads, model/image quota, live backend/WhatsApp/profile/API actions, services/viewers/phone input or final web/APK build. Only documented synthetic `.runtime/ui-task31` and `.runtime/ui-task37` artifacts,

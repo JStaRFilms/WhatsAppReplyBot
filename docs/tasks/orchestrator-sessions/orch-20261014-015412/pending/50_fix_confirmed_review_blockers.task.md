@@ -82,6 +82,14 @@ Return exact changed paths, causes, red/green logs/commands/counts and limitatio
 No new generic review; these are the two confirmed findings from the one combined38.
 Parent verifies responses, closes blockers and owns version/verifier/source freeze33.
 
+## Execution
+
+Running Takomi Sol High as sole source writer. Parent reproduced both P2 findings
+before dispatch. T3 task ID is
+`node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-confirmed-review38-fixes-20261015-r1`.
+Client request ID is `otherme-confirmed-review38-fixes-20261015-r1`.
+Review38 is blocked on these responses;33/version/verifier freeze remains held.
+
 ## Safety
 
 Only public source and approved synthetic ui31/ui37/ui44, invented profile/account/

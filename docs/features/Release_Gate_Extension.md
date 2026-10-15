@@ -41,19 +41,23 @@ during implementation. Use synthetic adapter events and disposable stores.
 
 ### Optional contact-book display names
 
-The owner wants familiar saved contact names instead of WhatsApp display names,
-with an explicit on/off switch. Resolve whether Android-only local lookup or
-minimal phone-to-PC name synchronization is wanted. True native address-book
-lookup may require the SDK-compatible Expo Contacts package; obtain that consent
-before installing it. No SDK/toolchain installs or license acceptance are implied.
+The owner selected synced names across phone and PC/browser, using WhatsApp sync
+or phone-number matching, and explicitly wants AI to see the current contact's
+name. Prefer saved names already available from WhatsApp. Where needed, provide
+opt-in phone-book lookup and minimal matched-name synchronization to the own PC.
+The question explained that native lookup may add SDK-compatible Expo Contacts;
+this equivalent Android-and-PC choice authorizes that dependency if it is needed.
+Confirm its exact version/target first. No other dependency or SDK/toolchain
+installation, license acceptance or real contact read is authorized.
 
-Default proposal is opt-in on-device display lookup, no full address-book upload,
-no contact-book data sent to AI and a truthful WhatsApp-name fallback. This is a
-proposal, not a completed user choice. Any PC synchronization needs explicit user
-selection, minimal matched data and a separate display alias, not an overwrite of
-canonical conversation/context names. Match verified phone identities, never
-ambiguous suffixes or globally shared LIDs. Define toggle-off/cache deletion and
-permission-denial behavior. Do not read actual contacts during development.
+Keep the on/off control and define toggle-off/cache deletion, denial and fallback.
+Only the resolved name for the current AI-permitted conversation may accompany its
+model context. Never send the full address book, unmatched entries or unrelated
+contact names to AI. Never-reply/no-AI and global model consent still apply before
+context construction. Use a separate sourced alias with stable precedence, not
+unconditional overwrites from incoming push names. Match verified phone identities,
+never ambiguous suffixes or globally shared LIDs. Do not create inbox chats merely
+by importing contacts. No actual address book is read during development.
 
 ### AI reply punctuation
 
@@ -67,10 +71,29 @@ rather than a send-only mutation. Retain existing validation and limits after
 transformation. Add focused tests for repeated/spaced/unspaced em dashes, sequence
 components and unaffected owner/source data. No extra model call is needed.
 
+### One owner instructions prompt
+
+The owner requested a simple editable master/profile prompt for their name,
+personality/tone and any facts they choose to add. Include one bounded plain-text
+field per WhatsApp profile, synchronized through the independent PC service and
+used for future AI replies under existing consent. No birthdate/demographic forms,
+automatic extraction, private-history profiling or full Batch2 writing-profile/
+session/memory implementation. Explain that this field and the current permitted
+contact name are sent with eligible AI requests. Do not claim the model already
+knows them; the inspected current prompt uses generic participant roles.
+
+Plan storage/API revisioning, strict input limits and true context-budget
+accounting. Define effects on in-flight generation and old drafts/queued AI work so
+an instructions edit cannot silently rewrite approved text or bypass safety checks.
+Permission/never-reply/source-expiry/unknown-send enforcement stays in backend
+code, not merely this user-editable prompt. Use invented profile instructions in
+tests. Preserve the full earlier style-extraction handoff for later Batch2.
+
 ## Planning and verification
 
 Task34 records user choices, examines current send/outbox/receipt/contact paths
-and authors a bounded implementation plan, including the AI punctuation rule. Update the existing approved contract,
+and authors a bounded implementation plan, including AI punctuation, resolved
+current-contact names and the plain-text owner instructions field. Update the existing approved contract,
 requirements and relevant feature docs once the data flow is settled. Create
 self-contained implementation packets with non-overlapping ownership before
 launching writers. Reuse current charcoal/blue/light UI, not new visual exploration.

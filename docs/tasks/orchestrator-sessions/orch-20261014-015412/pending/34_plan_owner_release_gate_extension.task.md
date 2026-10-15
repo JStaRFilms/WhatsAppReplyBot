@@ -12,17 +12,24 @@ and requirements docs, completed28–31 and the actual source/types/tests. Use u
 
 Define the narrow implementation and review plan for the owner's added nonblocking
 send UX, truthful WhatsApp receipt ticks, opt-in contact-book display names and
-automatic AI em-dash replacement with comma plus space.
+automatic AI em-dash replacement with comma plus space, and one editable owner
+instructions prompt per WhatsApp profile.
 Do not treat the existing original-baseline review32 as acceptance of new work.
 
 ## Scope
 
-First record the user's contact lookup/sync and dependency choices. Inspect current
+Record the owner's selected WhatsApp-first/minimal phone-name sync across Android
+and PC, with the current permitted contact name available to AI. The described
+Android-and-PC option conditionally permits SDK-compatible Expo Contacts if needed;
+confirm exact version/target, prefer existing WhatsApp data, never install during
+this docs-only task. Add the requested simple per-profile owner instructions field. Inspect current
 composer busy guards and perform/refresh sequencing, durable request/outbox/transport
 bindings and receipt events, contact-name ingestion, native/web storage and build
 constraints. Locate one typed AI prose boundary for punctuation normalization
-before draft persistence/review/send, without mutating owner/source text or IDs. Resolve intent ordering, pending/unknown UX and monotonic scoped
-receipt correlation. Choose the minimum supported contact permission/data flow.
+before draft persistence/review/send, without mutating owner/source text or IDs.
+Resolve intent ordering, pending/unknown UX and monotonic scoped receipt correlation.
+Choose the minimum supported contact permission/data flow, owner-prompt storage/API
+revisioning, context budgeting and in-flight/old-draft invalidation semantics.
 Reuse selected UI and prior safety logic. No product code changes in this task.
 
 ## Definition of done
@@ -51,10 +58,15 @@ No new design direction or Batch2 context work. Parent owns commits and integrat
 
 ## Dependencies and verification
 
-Contact-source/privacy/dependency answer is pending. Review32 is independently
-running read-only against74f26af; do not change its baseline or claim it covers the
-extension. No implementation writer launches before this scoped plan is ready.
+Contact/source/privacy choice is recorded in Release_Gate_Extension.md. Review32
+returned one P2; parent reproduced and fixed Assistant read-feedback persistence in
+dc99aa6. All93 mobile tests and mobile types pass. Earlier parent250 workspace
+tests/types and132 browser checks passed before that narrow fix. None proves native
+mic/keyboard or real receipt/contact behavior. No implementation writer launches
+before this scoped plan is ready. Missing incoming messages were separately reported
+as an unproven ingestion issue, not permission to run live diagnostics or repair it.
 
 ## Execution
 
-Not launched. Waiting for the contact-source/dependency choice.
+Ready to launch. Scope and contact/AI choices are now recorded. Parent owns source,
+master plan, board, task status and commits. This architect writes docs only.

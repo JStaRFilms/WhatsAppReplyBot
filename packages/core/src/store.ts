@@ -137,6 +137,9 @@ export class SqliteStore {
   setComposer(accountId:string,conversationId:string,clientId:string,hasText:boolean): void {
     this.db.prepare('INSERT INTO composer_holds VALUES(?,?,?,?) ON CONFLICT(account_id,conversation_id,client_id) DO UPDATE SET has_text=excluded.has_text').run(accountId,conversationId,clientId,hasText?1:0);
   }
+  clearComposers(accountId:string): void {
+    this.db.prepare('DELETE FROM composer_holds WHERE account_id=?').run(accountId);
+  }
   hasComposer(accountId:string,conversationId:string): boolean {
     return !!this.db.prepare('SELECT 1 FROM composer_holds WHERE account_id=? AND conversation_id=? AND has_text=1 LIMIT 1').get(accountId,conversationId);
   }

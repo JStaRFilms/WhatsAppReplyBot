@@ -2,17 +2,26 @@ import { createContext, use, useEffect, useMemo, useSyncExternalStore, type Reac
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { z } from 'zod';
 import { useApp } from './app-state';
+const pendingWrites=new Map<string,Promise<void>>();
 class LocalDraftStore {
   private values: Record<string,string> = {};
   private keys: string[] = [];
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private writes = Promise.resolve();
+  private disposed = false;
+  private generation = 0;
   ready = false;
   constructor(private readonly key: string,private readonly failed: () => void) {}
   async load(): Promise<void> {
-    try { const saved = await AsyncStorage.getItem(this.key); if(saved) this.values = z.record(z.string(),z.string().max(4000)).parse(JSON.parse(saved)); }
-    catch { this.failed(); }
+    const generation=++this.generation;
+    this.disposed=false;
+    try {
+      await pendingWrites.get(this.key);
+      if(this.disposed || generation!==this.generation)return;
+      const saved=await AsyncStorage.getItem(this.key);
+      if(this.disposed || generation!==this.generation)return;
+      if(saved)this.values=z.record(z.string(),z.string().max(4000)).parse(JSON.parse(saved));
+    } catch { if(this.disposed || generation!==this.generation)return;this.failed(); }
     this.keys = Object.keys(this.values); this.ready = true; this.emit();
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -20,22 +29,25 @@ class LocalDraftStore {
   ids = () => this.keys;
   private emit() { for(const listener of this.listeners) listener(); }
   set(id: string,text: string): void {
-    if(!this.ready) return;
+    if(!this.ready || this.disposed) return;
     const existed = !!this.values[id];
     if(text) this.values[id] = text; else delete this.values[id];
     if(existed !== !!text) this.keys = Object.keys(this.values);
     this.emit(); clearTimeout(this.timer); this.timer = setTimeout(()=>this.persist(),250);
   }
   private persist(): void {
+    if(!this.ready)return;
     const json = JSON.stringify(this.values);
-    this.writes = this.writes.then(()=>AsyncStorage.setItem(this.key,json)).catch(()=>this.failed());
+    const write=(pendingWrites.get(this.key) ?? Promise.resolve()).then(()=>AsyncStorage.setItem(this.key,json)).catch(()=>{if(!this.disposed)this.failed();});
+    pendingWrites.set(this.key,write);
+    void write.finally(()=>{if(pendingWrites.get(this.key)===write)pendingWrites.delete(this.key);});
   }
-  dispose(): void { clearTimeout(this.timer); if(this.ready)this.persist(); }
+  dispose(): void { this.disposed=true;this.generation++;clearTimeout(this.timer);if(this.ready)this.persist();this.ready=false; }
 }
 const Context = createContext<LocalDraftStore | null>(null);
 export function LocalDraftProvider({children}:{children:ReactNode}) {
-  const {baseUrl,snapshot,reportError}=useApp();
-  const key='replybot-drafts:'+baseUrl+':'+(snapshot?.accountId ?? 'unconnected');
+  const {baseUrl,acceptedScope,reportError}=useApp();
+  const key='replybot-drafts:'+baseUrl+':'+(acceptedScope?.accountId ?? 'unconnected');
   const store=useMemo(()=>new LocalDraftStore(key,()=>reportError('Your draft could not be saved on this device.')),[key]);
   useEffect(()=>{void store.load();return()=>store.dispose();},[store]);
   return <Context value={store}>{children}</Context>;

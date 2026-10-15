@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import { ensureService, inspectService, stopOwned } from '../launcher-service.mjs';
 
 const token = 'synthetic-owner-token';
-const identity = { service: 'otherme-backend', protocol: 1, accountId: 'whatsapp-owner', demo: false, whatsapp: 'connected',rootId:'synthetic-root',instanceId:'synthetic-instance' };
+const identity = { service: 'otherme-backend', protocol: 2, accountId: 'whatsapp-owner', profileScope: { profileId: 'original', accountId: 'whatsapp-owner', revision: 0 }, demo: false, whatsapp: 'connected',rootId:'synthetic-root',instanceId:'synthetic-instance' };
 async function fake(handler) {
   const server = http.createServer(handler);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -28,7 +28,7 @@ test('occupied port attaches only with matching token, live account and launcher
   } finally { await service.close(); }
 });
 test('unverified, demo, wrong account, bad token and redirect services cannot be attached or replaced', async () => {
-  for (const body of [{ ...identity, service: 'another' }, { ...identity, demo: true }, { ...identity, accountId: 'another' }, { ...identity, protocol: 2 }, null, 'redirect']) {
+  for (const body of [{ ...identity, service: 'another' }, { ...identity, demo: true }, { ...identity, accountId: 'another' }, { ...identity, protocol: 1 }, null, 'redirect']) {
     const service = await fake((_req, res) => {
       if (body === null) res.writeHead(401).end();
       else if (body === 'redirect') res.writeHead(302, { location: 'http://127.0.0.1:3210' }).end();
@@ -77,7 +77,7 @@ test('pairing QR arriving after launcher exit is never written or opened',async(
   const source=readFileSync(new URL('../start-otherme.mjs',import.meta.url),'utf8');
   const code=source.slice(source.indexOf('async function showPairing()'),source.indexOf('async function stop()'));
   let resolveQR,waiting;const response=new Promise(resolve=>resolveQR=resolve);const reached=new Promise(resolve=>waiting=resolve);let writes=0,opens=0;
-  const context={pairing:false,stopping:false,rootId:identity.rootId,serviceIdentity:identity,readToken:()=>token,
+  const context={pairing:false,stopping:false,restarting:undefined,rootId:identity.rootId,serviceIdentity:identity,readToken:()=>token,
     inspectService:async(_port,_token,expected)=>{assert.equal(expected.rootId,identity.rootId);assert.equal(expected.instanceId,identity.instanceId);return identity;},
     fetch:async url=>url.endsWith('/connect') ? {ok:true} : {ok:true,json:()=>{waiting();return response;}},
     randomUUID:()=> 'synthetic',AbortSignal,console:{info(){}},runtime:'synthetic',qrPath:'synthetic.png',Buffer,

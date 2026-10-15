@@ -27,7 +27,32 @@ function outboxState(components: Component[]): Outbox['state'] {
 }
 
 export class Workflow {
+  private suspended = false;
   private readonly lanes = new Map<string, Promise<void>>();
+  hasActiveHandoff(): boolean {
+    return this.store.outboxes(this.accountId).some(o => o.components.some(p => p.state === 'dispatching'));
+  }
+  async drain(): Promise<void> { await Promise.allSettled(this.lanes.values()); }
+  suspendAccount(freeze = true): void {
+    if (this.hasActiveHandoff()) throw new DomainError('profile_handoff_active', 409);
+    this.suspended = freeze;
+    this.store.transaction(() => {
+      this.store.saveModelConsent(this.accountId, false);
+      this.store.clearComposers(this.accountId);
+      for (const c of this.store.conversations(this.accountId)) {
+        const pause = pauseState(c);
+        pause.indefinite = true; pause.composing = false; pause.typingUntil = null;
+        pause.until = null; pause.catchUpMessageId = null; pause.sending = false;
+        this.invalidate({ ...c, control: 'manual', pause }, true);
+      }
+      // invalidate deliberately preserves manual work during ordinary owner actions.
+      // A profile transition instead cancels every unsent component, regardless of origin.
+      for (const outbox of this.store.outboxes(this.accountId)) {
+        for (const part of outbox.components) if (part.state === 'queued') this.release(outbox, part, 'cancelled');
+        outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
+      }
+    });
+  }
   private readonly changes = new Set<(conversationId: string) => void>();
   constructor(readonly store: SqliteStore, readonly accountId: string, private readonly clock = Date.now,
     private readonly sleep = (ms: number, signal: AbortSignal): Promise<void> => wait(ms, undefined, { signal })) {}
@@ -93,6 +118,7 @@ export class Workflow {
     });
   }
   private request<T>(requestId: string, payload: unknown, schema: z.ZodType<T>, operation: () => T): T {
+    if (this.suspended) throw new DomainError('profile_transition_in_progress', 409);
     if (!requestId || requestId.length > 128) throw new DomainError('invalid_request_id', 422);
     return this.store.transaction(() => {
       const saved = this.store.request(this.accountId, requestId);
@@ -444,6 +470,7 @@ export class Workflow {
       () => this.queue(this.takeOver(this.conversation(conversationId)), action, requestId, 'owner_manual', 'owner_written', quotedMessageId));
   }
   private fresh(outbox: Outbox): void {
+    if (this.suspended) throw new DomainError('profile_transition_in_progress', 409);
     const c = this.conversation(outbox.conversationId);
     if (outbox.origin === 'owner_manual') {
       if (outbox.action.kind === 'text_sequence' && c.workflowVersion !== outbox.workflowVersion) throw new DomainError('stale_delivery');
@@ -570,9 +597,9 @@ export class Workflow {
       unsubscribe(); options.signal?.removeEventListener('abort',abort);
     }
   }
-  recover(): void {
+  recover(preserveHandovers = false): void {
     this.store.transaction(() => {
-      const handedOver = new Set(this.store.drafts(this.accountId).filter(d => d.state === 'needs_owner').map(d => d.conversationId));
+      const handedOver = new Set(this.store.drafts(this.accountId).filter(d => !preserveHandovers && d.state === 'needs_owner').map(d => d.conversationId));
       for (const id of handedOver) {
         const c = this.conversation(id);
         if (c.control === 'assistant_allowed') this.resolveHandovers(c.id);

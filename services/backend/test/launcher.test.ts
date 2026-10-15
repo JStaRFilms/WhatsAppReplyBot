@@ -29,6 +29,6 @@ test('launcher identity requires owner auth and exposes neither snapshot nor pai
     assert.equal((await app.inject({ url: '/v1/launcher', headers: { authorization: 'Bearer wrong-token' } })).statusCode, 401);
     const response = await app.inject({ url: '/v1/launcher', headers: { authorization: 'Bearer synthetic-owner-token' } });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json(), { service: 'otherme-backend', protocol: 1, accountId: 'whatsapp-owner', demo: false, whatsapp: 'disconnected', rootId:'synthetic-root',instanceId:'synthetic-instance' });
+    assert.deepEqual(response.json(), { service: 'otherme-backend', protocol: 2, accountId: 'whatsapp-owner', profileScope: { profileId: 'original', accountId: 'whatsapp-owner', revision: 0 }, demo: false, whatsapp: 'disconnected', rootId:'synthetic-root',instanceId:'synthetic-instance' });
   } finally { await app.close(); }
 });

@@ -14,11 +14,16 @@ export const WhatsAppStatus = z.object({
 });
 export type WhatsAppStatus = z.infer<typeof WhatsAppStatus>;
 export class WhatsAppAdapter {
+  private readonly loadAuth = useMultiFileAuthState;
+  private readonly makeSocket = makeWASocket;
   private socket: ReturnType<typeof makeWASocket> | undefined;
   private verifiedSocket: ReturnType<typeof makeWASocket> | undefined;
   private status: WhatsAppStatus = { state: 'disconnected', qr: null, error: null, historyMessages: 0 };
   private starting: Promise<void> | undefined;
   private stopped = false;
+  private sealed = false;
+  private generation = 0;
+  private stopping: Promise<void> | undefined;
   private reconnect: ReturnType<typeof setTimeout> | undefined;
   private openedAt = 0;
   private events: Promise<void> = Promise.resolve();
@@ -27,21 +32,28 @@ export class WhatsAppAdapter {
   private readonly presenceLanes = new Map<string, Promise<void>>();
   constructor(private readonly flow: Workflow, private readonly authDir: string,
     private readonly incoming: (message: Message) => Promise<void>,private readonly onConnectionLost?:()=>void,
-    private readonly clock = Date.now) {}
+    private readonly clock = Date.now, private readonly requireOwnerLock = false) {}
   snapshot(): WhatsAppStatus { return { ...this.status }; }
   requireReady(): void { if (this.status.state !== 'connected' || !this.socket || this.verifiedSocket !== this.socket) throw new DomainError('whatsapp_not_connected', 503); }
   async start(): Promise<void> {
+    if (this.sealed || this.stopping) throw new DomainError('profile_transition_in_progress', 409);
     if (this.starting) return this.starting;
     if (this.socket && ['connecting','connected','qr'].includes(this.status.state)) return;
     this.stopped = false;
-    this.starting = this.connect();
+    clearTimeout(this.reconnect);
+    this.starting = this.connect(this.generation);
     try { await this.starting; } finally { this.starting = undefined; }
   }
-  private async connect(): Promise<void> {
+  private async connect(generation: number): Promise<void> {
+    if (this.requireOwnerLock) {
+      try { z.object({ owner: z.string().min(1) }).parse(JSON.parse(readFileSync(join(this.authDir, 'owner-identity.json'), 'utf8'))); }
+      catch { throw new DomainError('owner_identity_required', 409); }
+    }
     mkdirSync(this.authDir, { recursive: true, mode: 0o700 });
-    const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
+    const { state, saveCreds } = await this.loadAuth(this.authDir);
+    if (this.stopped || this.sealed || generation !== this.generation) return;
     this.status = { ...this.status, state: 'connecting', qr: null, error: null };
-    const socket = makeWASocket({ auth: state, logger: pino({ level: 'silent' }),
+    const socket = this.makeSocket({ auth: state, logger: pino({ level: 'silent' }),
       browser: ['Otherme','Chrome','1.0'], markOnlineOnConnect: false, syncFullHistory: false,
       generateHighQualityLinkPreview: false, emitOwnEvents: true, maxMsgRetryCount: 0,
       enableRecentMessageCache: false, enableAutoSessionRecreation: false,
@@ -52,9 +64,11 @@ export class WhatsAppAdapter {
       },
     });
     this.socket = socket;
-    socket.ev.on('creds.update', () => { this.enqueue(async () => { await saveCreds(); }); });
+    socket.ev.on('creds.update', () => { this.enqueue(async () => {
+      if (!this.stopped && this.socket === socket && generation === this.generation) await saveCreds();
+    }); });
     socket.ev.on('connection.update', update => {
-      if (this.socket !== socket) return;
+      if (this.stopped || this.socket !== socket || generation !== this.generation) return;
       if (update.qr) {
         const qr = update.qr;
         this.enqueue(async () => { const image = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
@@ -65,10 +79,17 @@ export class WhatsAppAdapter {
         if (!me) { this.fail('WhatsApp did not provide an owner identity.'); socket.end(new Error('identity_missing')); return; }
         const owner = jidNormalizedUser(me);
         const path = join(this.authDir, 'owner-identity.json');
-        if (existsSync(path) && z.object({ owner: z.string() }).parse(JSON.parse(readFileSync(path,'utf8'))).owner !== owner) {
-          this.fail('This session belongs to a different owner. Account history was not mixed.'); this.stopped = true; socket.end(new Error('owner_mismatch')); return;
+        try {
+          if (existsSync(path)) {
+            if (z.object({ owner: z.string().min(1) }).parse(JSON.parse(readFileSync(path,'utf8'))).owner !== owner) throw new Error('owner_mismatch');
+          } else {
+            if (this.requireOwnerLock) throw new Error('owner_identity_required');
+            writeFileSync(path, JSON.stringify({ owner }), { mode: 0o600, flag: 'wx' });
+          }
+        } catch {
+          this.fail('Owner identity could not be verified. Account history was not mixed.');
+          this.stopped = true; this.verifiedSocket = undefined; socket.end(new Error('owner_mismatch')); return;
         }
-        if (!existsSync(path)) writeFileSync(path, JSON.stringify({ owner }), { mode: 0o600 });
         this.connectionLife = new AbortController();
         this.verifiedSocket = socket;
         this.openedAt = this.clock(); this.status = { ...this.status, state: 'connected', qr: null, error: null };
@@ -134,7 +155,7 @@ export class WhatsAppAdapter {
     });
   }
   private enqueueData(socket: ReturnType<typeof makeWASocket>, operation: () => Promise<void>): void {
-    this.enqueue(async () => { if (this.socket === socket && this.verifiedSocket === socket) await operation(); });
+    this.enqueue(async () => { if (!this.stopped && this.socket === socket && this.verifiedSocket === socket) await operation(); });
   }
   private erase(chat: string, transportId: string): void {
     const message = this.flow.store.messages(this.flow.accountId,chat).find(m => m.transportId === transportId);
@@ -205,6 +226,7 @@ export class WhatsAppAdapter {
     },reactor.fromMe === true);
   }
   private async receive(raw: WAMessage, source: Message['source']): Promise<void> {
+    if (this.stopped || this.sealed) return;
     if (!raw.key.remoteJid || !directJid(raw.key.remoteJid)) return;
     const reaction = normalizeMessageContent(raw.message)?.reactionMessage;
     if (reaction?.key) {
@@ -365,10 +387,21 @@ export class WhatsAppAdapter {
       }});
     } finally { finishPresence(); }
   }
-  async stop(): Promise<void> {
-    this.stopped = true; clearTimeout(this.reconnect);this.connectionLife.abort();this.clearPresence();this.onConnectionLost?.();
+  quiesce(): Promise<void> { this.sealed = true; return this.stop(); }
+  stop(): Promise<void> {
+    if (this.stopping) return this.stopping;
+    if (this.stopped && !this.socket && !this.starting) return this.events;
+    this.stopped = true; this.generation++;
+    clearTimeout(this.reconnect); this.connectionLife.abort(); this.clearPresence(); this.onConnectionLost?.();
     const socket = this.socket; this.socket = undefined; this.verifiedSocket = undefined;
     socket?.end(new Error('Owner disconnected'));
-    await this.events; this.status = { ...this.status, state: 'disconnected', qr: null };
+    const work = (async () => {
+      await this.starting;
+      await this.events;
+      await Promise.allSettled(this.presenceLanes.values());
+      this.status = { ...this.status, state: 'disconnected', qr: null };
+    })();
+    this.stopping = work.finally(() => { this.stopping = undefined; });
+    return this.stopping;
   }
 }

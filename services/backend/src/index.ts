@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { z } from 'zod';
+import { ProfileRegistry, profilePaths, bounded } from './profiles.ts';
 import { networkInterfaces } from 'node:os';
 import { SqliteStore } from '@replybot/core';
 import { createApp } from './server.ts';
@@ -19,14 +21,38 @@ const lan = process.argv.includes('--lan');
 const remote = process.argv.includes('--enable-openrouter');
 if (remote && !process.env.OPENROUTER_API_KEY) throw new Error('Set OPENROUTER_API_KEY in the backend .env before enabling OpenRouter.');
 const apiKey = process.env.OPENROUTER_API_KEY ?? '';
-const store = new SqliteStore(join(runtime, live ? 'whatsapp.sqlite' : 'demo.sqlite'));
-const accountId = live ? 'whatsapp-owner' : DEMO_ACCOUNT;
+const registry = live ? new ProfileRegistry(runtime) : undefined;
+const profileScope = registry?.scope() ?? { profileId: 'original', accountId: DEMO_ACCOUNT, revision: 0 };
+const paths = profilePaths(runtime, profileScope.profileId);
+mkdirSync(dirname(paths.database), { recursive: true, mode: 0o700 });
+const store = new SqliteStore(live ? paths.database : join(runtime, 'demo.sqlite'));
+const accountId = profileScope.accountId;
+const rootId = rootIdentifier(fileURLToPath(new URL('../../../',import.meta.url)));
+const instanceId = process.env.OTHERME_LAUNCH_INSTANCE_ID || randomUUID();
+const activationId = process.env.OTHERME_PROFILE_OPERATION;
+const activation = !!(registry && activationId && process.connected && registry.acknowledged(activationId)
+  && registry.current()?.state === 'restarting' && registry.current()?.targetProfileId === profileScope.profileId);
+if (activationId && !activation) throw new Error('invalid_profile_activation');
+const owningLauncher = !!(process.connected && process.env.OTHERME_LAUNCH_INSTANCE_ID);
+async function notifyQuiesced(requestId: string): Promise<void> {
+  const acknowledge = z.object({ type: z.literal('otherme-profile-ack'), requestId: z.literal(requestId), rootId: z.literal(rootId), instanceId: z.literal(instanceId) });
+  let listener: ((message: unknown) => void) | undefined;
+  try {
+    await bounded(new Promise<void>((resolve, reject) => {
+      listener = message => { if (acknowledge.safeParse(message).success && registry?.acknowledged(requestId)) resolve(); };
+      process.on('message', listener);
+      if (!process.connected || !process.send) return reject(new Error('launcher_ipc_unavailable'));
+      process.send({ type: 'otherme-profile-quiesced', requestId, rootId, instanceId, profileScope }, error => { if (error) reject(new Error('launcher_ipc_unavailable')); });
+    }), 5000, 'launcher_ack_timeout');
+  } finally { if (listener) process.off('message', listener); }
+}
 const addresses = Object.entries(networkInterfaces()).flatMap(([name, entries]) =>
   (entries ?? []).filter(i => !i.internal && i.family === 'IPv4' && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address)).map(i => ({ name, address: i.address })));
-const app = createApp({ store, token,
-  launcher:{rootId:rootIdentifier(fileURLToPath(new URL('../../../',import.meta.url))),instanceId:process.env.OTHERME_LAUNCH_INSTANCE_ID || randomUUID()},
+const app = createApp({ store, token, accountId, profileScope,
+  ...(registry ? { profiles: { registry, activation, ...(owningLauncher ? { onQuiesced: operation => notifyQuiesced(operation.requestId) } : {}) } } : {}),
+  launcher:{rootId,instanceId},
   allowedOrigins: lan ? addresses.map(i => 'http://'+i.address+':8081') : [],
-  ...(live ? { whatsapp: { authDir: join(runtime,'whatsapp-auth') } } : {}),
+  ...(live ? { whatsapp: { authDir: paths.auth, requireOwnerLock: registry?.requiresOwnerLock(profileScope.profileId) ?? false } } : {}),
   ...(remote ? { remoteModel: { generate: (context,visuals) => new OpenRouterClient({
     apiKey, allowRemote: true, ownerConsent: store.modelConsent(accountId),
     appName:process.env.OPENROUTER_APP_NAME || 'Otherme',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
@@ -36,6 +62,7 @@ const app = createApp({ store, token,
   }).transcribe(bytes,guard) } } : {}),
 });
 await app.listen({ host: lan ? '0.0.0.0' : '127.0.0.1', port: 3210 });
+if (activation && registry && activationId) registry.complete(activationId, profileScope);
 console.info((live ? 'Live' : 'Demo')+' backend ready. Pair through Settings or the Otherme launcher.');
 if (lan) for (const { name, address } of addresses) console.info('Phone service address: http://'+address+':3210 ('+name+'). Owner token required.');
 let closing: Promise<void> | undefined;
@@ -47,11 +74,11 @@ if (process.send) {
   });
   process.on('disconnect', () => { void close(); });
 }
-if (live && process.argv.includes('--restore-pairing')) {
-  const authDir = join(runtime, 'whatsapp-auth');
+if (live && !activation && !registry?.blocked() && process.argv.includes('--restore-pairing')) {
+  const authDir = paths.auth;
   try {
     if (hasSavedPairing(authDir)) {
-      const result = await app.inject({ method: 'POST', url: '/v1/whatsapp/connect', headers: { authorization: 'Bearer '+token },
+      const result = await app.inject({ method: 'POST', url: '/v1/whatsapp/connect', headers: { authorization: 'Bearer '+token, 'x-otherme-profile': profileScope.profileId, 'x-otherme-revision': String(profileScope.revision) },
         payload: { requestId: 'launcher-restore-'+randomBytes(12).toString('hex'), confirm: true } });
       if (result.statusCode !== 200) throw new Error('pairing_restore_failed');
       console.info('Saved WhatsApp pairing requested. Check connection status on the phone.');

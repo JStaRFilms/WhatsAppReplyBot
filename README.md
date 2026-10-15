@@ -4,7 +4,10 @@ WhatsApp-like Expo client, Windows Node backend, SQLite and OpenRouter GPT-6 Lun
 
 ## Daily use on this PC and Android
 
-Install `.runtime/releases/Otherme-0.1.0.apk` on your Android phone. Double-click
+Install `.runtime/releases/Otherme-0.1.1.apk` over the existing Android app without
+uninstalling it, then restart the PC launcher with Q and reopen `Otherme.cmd`.
+The updated APK and backend must be used together; old clients fail closed rather
+than accessing a different profile. Double-click
 `Otherme.cmd` on this PC and keep its status window open. The APK has embedded JS;
 Metro and Expo Go are not needed. The launcher uses this PC's Node24 and existing
 project dependencies, not a portable installer for other computers.
@@ -20,6 +23,13 @@ The approved release certificate and APK contents are verified. Phone launch,
 microphone/camera/speaker and background behavior still need owner checks.
 Signing secrets stay in ignored `.env` and `.runtime/signing/`; back up both.
 See `docs/features/Daily_Use_Build.md` for build evidence and limitations.
+
+Settings now has **Use another number**, **Return to preserved profile**, and
+**Repair this number**, each with explicit confirmation. A changed profile starts
+disconnected with AI off. Original history is preserved separately. If prompted,
+select **Continue with this profile**, then use Connect WhatsApp to pair it.
+The regular inbox hides contact-only rows; search can still find them. Bottom tabs
+now include the Android navigation inset. See `docs/features/Account_Switching.md`.
 
 ## Development live connection
 
@@ -142,7 +152,7 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-133 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
+177 focused safety tests, strict typechecks and Android/web exports pass. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with
 no page errors. Owner pairing, synthetic text generation and a paid synthetic
 image-recognition request and a synthetic speech-transcription request are verified.

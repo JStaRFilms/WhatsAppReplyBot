@@ -7,7 +7,9 @@ import { parseEnv } from 'node:util';
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
-import { ensureService, inspectService, stopOwned } from './launcher-service.mjs';
+import { ensureService, inspectService, stopOwned, restartOwned } from './launcher-service.mjs';
+import { tsImport } from 'tsx/esm/api';
+const { ProfileRegistry } = await tsImport('../services/backend/src/profiles.ts', import.meta.url);
 import { rootIdentifier } from '../services/backend/src/launcher-startup.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -17,29 +19,64 @@ const lockPath = join(runtime, 'launcher.lock');
 const qrPath = join(runtime, 'pairing-qr-'+process.pid+'.png');
 const readToken = () => existsSync(tokenPath) ? readFileSync(tokenPath, 'utf8').trim() : '';
 const rootId=rootIdentifier(root);
-const instanceId=randomUUID();
+let instanceId=randomUUID();
+const registry = new ProfileRegistry(runtime);
 let serviceIdentity;
 let child, lock, input, timer;
 let stopping = false;
 let pairing = false;
+let restarting;
+let backendExited = () => {};
+function spawnBackend(operationId) {
+  const require = createRequire(join(root, 'services/backend/package.json'));
+  const local = existsSync(join(root, '.env')) ? parseEnv(readFileSync(join(root, '.env'), 'utf8')) : {};
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.startsWith('OTHERME_SIGNING_') || key === 'OTHERME_PROFILE_OPERATION') delete env[key];
+  env.OTHERME_LAUNCH_INSTANCE_ID = instanceId;
+  if (operationId) env.OTHERME_PROFILE_OPERATION = operationId;
+  for (const [key, value] of Object.entries(local)) if (/^(OPENROUTER_|FFMPEG_PATH$)/.test(key)) env[key] = value;
+  const spawned = fork(join(root, 'services/backend/src/index.ts'), ['--live', '--enable-openrouter', '--lan', ...(!operationId ? ['--restore-pairing'] : [])], {
+    cwd: join(root, 'services/backend'), env, execArgv: ['--import', pathToFileURL(require.resolve('tsx')).href],
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true,
+  });
+  child = spawned;
+  spawned.on('message', message => {
+    if (stopping || restarting || spawned !== child || !serviceIdentity || !message || message.type !== 'otherme-profile-quiesced'
+      || message.rootId !== rootId || message.instanceId !== serviceIdentity.instanceId || typeof message.requestId !== 'string') return;
+    const sourceIdentity = serviceIdentity;
+    instanceId = randomUUID();
+    restarting = restartOwned({ child: spawned, identity: sourceIdentity, port: 3210, readToken, registry,
+      requestId: message.requestId, instanceId, start: () => spawnBackend(message.requestId) }).then(result => {
+      serviceIdentity = result.identity;
+      console.info('Profile changed. WhatsApp is disconnected and AI is off. Connect in Settings when ready.');
+    }).catch(() => { console.error('Profile restart blocked. No account was automatically reconnected. Check Settings operation status.'); })
+      .finally(() => { restarting = undefined; if (child?.exitCode !== null) backendExited(); });
+  });
+  spawned.once('exit', () => { if (!restarting && spawned === child) backendExited(); });
+  return spawned;
+}
 async function showPairing() {
-  if (pairing || stopping) return;
+  if (pairing || stopping || restarting) return;
   pairing = true;
   try {
     const token = readToken();
-    if (!serviceIdentity || !await inspectService(3210, token,{rootId,instanceId:serviceIdentity.instanceId})) throw new Error('Service is offline.');
-    if(stopping)return;
-    const headers = { authorization: 'Bearer '+token, 'content-type': 'application/json' };
+    const pairingIdentity = serviceIdentity;
+    const current = () => !stopping && !restarting && serviceIdentity === pairingIdentity;
+    if (!pairingIdentity || !await inspectService(3210, token,{rootId,instanceId:pairingIdentity.instanceId,profileScope:pairingIdentity.profileScope})) throw new Error('Service is offline.');
+    if(!current())return;
+    const headers = { authorization: 'Bearer '+token, 'content-type': 'application/json',
+      'X-Otherme-Profile': pairingIdentity.profileScope.profileId, 'X-Otherme-Revision': String(pairingIdentity.profileScope.revision) };
     const response = await fetch('http://127.0.0.1:3210/v1/whatsapp/connect', {
       method: 'POST', headers, body: JSON.stringify({ requestId: randomUUID(), confirm: true }), signal: AbortSignal.timeout(15000), redirect: 'error',
     });
+    if (!current()) return;
     if (!response.ok) throw new Error('Pairing request failed. Check phone Settings.');
     console.info('Waiting for pairing QR. Keep it private. Scan with original WhatsApp > Linked devices.');
-    for (let i = 0; i < 30 && !stopping; i++) {
+    for (let i = 0; i < 30 && current(); i++) {
       const state = await fetch('http://127.0.0.1:3210/v1/whatsapp', { headers, signal: AbortSignal.timeout(2500), redirect: 'error' });
       if (!state.ok) throw new Error('Pairing status unavailable.');
       const status = await state.json();
-      if(stopping)return;
+      if(!current())return;
       if (status.state === 'connected') { console.info('WhatsApp connected.'); return; }
       if (typeof status.qr === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(status.qr) && status.qr.length < 100000) {
         mkdirSync(runtime, { recursive: true });
@@ -61,6 +98,7 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   clearInterval(timer); input?.close();
+  await restarting;
   if (child) {
     console.info('Stopping this launcher\'s backend gracefully. Waiting for active work...');
     await stopOwned(child);
@@ -73,17 +111,7 @@ try {
     mkdirSync(runtime, { recursive: true });
     try { lock = openSync(lockPath, 'wx', 0o600); }
     catch { throw new Error('Another launcher is open or its lock remains after a crash. Close it first. If no launcher or backend is running, remove .runtime/launcher.lock and retry.'); }
-    const require = createRequire(join(root, 'services/backend/package.json'));
-    const local = existsSync(join(root, '.env')) ? parseEnv(readFileSync(join(root, '.env'), 'utf8')) : {};
-    const env = { ...process.env };
-    for (const key of Object.keys(env)) if (key.startsWith('OTHERME_SIGNING_')) delete env[key];
-    env.OTHERME_LAUNCH_INSTANCE_ID=instanceId;
-    for (const [key, value] of Object.entries(local)) if (/^(OPENROUTER_|FFMPEG_PATH$)/.test(key)) env[key] = value;
-    child = fork(join(root, 'services/backend/src/index.ts'), ['--live', '--enable-openrouter', '--lan', '--restore-pairing'], {
-      cwd: join(root, 'services/backend'), env, execArgv: ['--import', pathToFileURL(require.resolve('tsx')).href],
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true,
-    });
-    return child;
+    return spawnBackend();
   } });
   serviceIdentity=service.identity;
   console.info(service.owned ? 'Backend ready. Saved pairing is restored when available.' : 'Verified existing backend. This window will not stop that service.');
@@ -111,7 +139,7 @@ try {
     });
     input.once('close', resolve);
     process.once('SIGINT', resolve); process.once('SIGTERM', resolve);
-    child?.once('exit', () => { console.info('Backend stopped.'); resolve(); });
+    backendExited = () => { console.info('Backend stopped.'); resolve(); };
   });
   await stop();
 } catch (error) {
@@ -121,5 +149,9 @@ try {
 } finally {
   clearInterval(timer); input?.close();
   if (existsSync(qrPath)) unlinkSync(qrPath);
-  if (lock !== undefined) { closeSync(lock); unlinkSync(lockPath); }
+  if (lock !== undefined) {
+    closeSync(lock);
+    if (!child || child.exitCode !== null || child.signalCode !== null) unlinkSync(lockPath);
+    else console.error('Backend exit was not verified. Launcher lock retained.');
+  }
 }

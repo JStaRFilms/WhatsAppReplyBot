@@ -14,7 +14,7 @@ export const ChatRow = memo(function ChatRow({ conversation: c, last, pending, p
     <Avatar name={c.name} unread={unread}/><View style={{ flex: 1, gap: 7 }}>
       <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 17, color: palette.text }}>{c.name}</Text>
       <Text numberOfLines={1} style={{ fontFamily: fonts.regular, fontSize: 14, color: pending ? palette.accent : palette.muted }}>
-        {localDraft ? 'Your draft' : last?.text || (last?.media ? last.media.kind.toUpperCase() : 'No messages')}
+        {localDraft ? 'Your draft' : last ? (last.text || (last.media ? last.media.kind.toUpperCase() : 'Message')) : 'Start conversation'}
       </Text>
     </View>
     <View style={{ alignItems: 'flex-end', gap: 7 }}>

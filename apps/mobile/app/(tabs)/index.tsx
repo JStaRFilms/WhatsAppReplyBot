@@ -44,7 +44,8 @@ export default function Chats() {
     return () => { focused.current = false; };
   },[data,filter]));
   const chats = useMemo(() => data.sorted.filter(c => c.name.toLowerCase().includes(query))
-    .filter(c => filter === 'all' || (filter === 'needs' ? data.needs.has(c.id) : data.pending.has(c.id)||localIds.has(c.id))),[data,query,filter,localIds]);
+    .filter(c => filter === 'all' || (filter === 'needs' ? data.needs.has(c.id) : data.pending.has(c.id)||localIds.has(c.id)))
+    .filter(c => query.length > 0 || filter !== 'all' || data.last.has(c.id) || localIds.has(c.id)),[data,query,filter,localIds]);
   const open = useCallback((id: string) => { void history.load(id).catch(() => {}); router.push({pathname:'/conversation/[id]',params:{id}}); },[router,history]);
   const renderItem = useCallback<ListRenderItem<Conversation>>(({ item }) => <ChatRow conversation={item} last={data.last.get(item.id)}
     pending={data.pending.has(item.id)} localDraft={localIds.has(item.id)} unread={snapshot?.unreadCounts[item.id] ?? 0} palette={palette} onOpen={open}/>,[data,palette,open,localIds,snapshot?.unreadCounts]);

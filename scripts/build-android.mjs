@@ -41,7 +41,7 @@ try {
   run(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', gradle], join(mobile, 'android'), signingEnv);
   const output = join(root, '.runtime/releases');
   mkdirSync(output, { recursive: true });
-  const apk = join(output, 'Otherme-0.1.0.apk');
+  const apk = join(output, 'Otherme-0.1.1.apk');
   const built = join(root, '.runtime/native/app/outputs/apk/release/app-release.apk');
   run(process.execPath, [join(root, 'scripts/verify-apk.mjs'), built, '--signing-env-file', signingEnvFile], root, env);
   copyFileSync(built, apk);

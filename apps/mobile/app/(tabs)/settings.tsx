@@ -4,6 +4,7 @@ import { Text, TextInput, View } from 'react-native';
 import { Page, Button } from '../../components/ui';
 import { useApp } from '../../lib/app-state';
 import { WhatsAppConnection } from '../../components/whatsapp-connection';
+import { ProfileControls } from '../../components/profile-controls';
 import { fonts } from '../../lib/theme';
 export default function Settings() {
   const { palette, themeChoice, setTheme, baseUrl, connect, status, snapshot, perform } = useApp();
@@ -28,6 +29,7 @@ export default function Settings() {
     <Button label={status === 'connecting' ? 'Connecting…' : 'Connect'} disabled={status === 'connecting'} onPress={() => { void connect(url, token || undefined); }}/>
     <Text selectable style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Phone token: .runtime/owner-token.txt on your PC. Use trusted Wi-Fi.</Text>
     <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 5 }}/>
+    <ProfileControls/>
     <WhatsAppConnection/>
     <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Model</Text>
     <Text style={{ fontFamily: fonts.regular, fontSize: 14, lineHeight: 22, color: palette.muted }}>

@@ -1,4 +1,6 @@
 import { Stack } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Settings from './(tabs)/settings';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
@@ -18,8 +20,13 @@ function Navigation() {
     contentStyle: { backgroundColor: palette.background }, headerBackTitle: 'Chats',
   }}><Stack.Screen name="(tabs)" options={{ headerShown: false }}/><Stack.Screen name="conversation/[id]" options={{ title: 'Conversation' }}/></Stack></>;
 }
+function SessionNavigation() {
+  const { acceptedScope, sessionKey, dark } = useApp();
+  if (!acceptedScope) return <SafeAreaView key={sessionKey} style={{ flex: 1 }}><StatusBar style={dark ? 'light' : 'dark'}/><Settings/></SafeAreaView>;
+  return <LocalDraftProvider key={sessionKey}><Navigation key={sessionKey}/></LocalDraftProvider>;
+}
 export default function Root() {
   const [loaded, error] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
   if (!loaded && !error) return null;
-  return <AppProvider><LocalDraftProvider><Navigation/></LocalDraftProvider></AppProvider>;
+  return <AppProvider><SessionNavigation/></AppProvider>;
 }

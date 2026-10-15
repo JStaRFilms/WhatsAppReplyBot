@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { values, positionals } = parseArgs({ options: { 'signing-env-file': { type: 'string' } }, allowPositionals: true });
 const signingEnvFile = resolve(values['signing-env-file'] || join(root, '.env'));
-const apk = resolve(positionals[0] || join(root, '.runtime/releases/Otherme-0.1.0.apk'));
+const apk = resolve(positionals[0] || join(root, '.runtime/releases/Otherme-0.1.1.apk'));
 const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
 const tools = join(sdk, 'build-tools/36.0.0');
 const expected = '6DDE749B5E7131A7D1B1272B3857254BF43EB7A1B1E639DBC6472C935C75E93E';
@@ -20,6 +20,7 @@ try {
   const badging = execFileSync(join(tools, 'aapt2.exe'), ['dump', 'badging', apk], { encoding: 'utf8' });
   check(/package: name='com\.jstarstudios\.otherme'/.test(badging), 'Wrong application ID.');
   check(/application-label:'Otherme'/.test(badging), 'Wrong public name.');
+  check(/versionCode='2'/.test(badging) && /versionName='0\.1\.1'/.test(badging), 'Wrong release version; update must be 0.1.1/code2.');
   for (const permission of ['INTERNET', 'RECORD_AUDIO', 'CAMERA']) check(badging.includes('android.permission.'+permission), 'Missing '+permission+' permission.');
   check(!badging.includes('application-debuggable'), 'APK is debuggable.');
   const manifest = execFileSync(join(tools, 'aapt2.exe'), ['dump', 'xmltree', '--file', 'AndroidManifest.xml', apk], { encoding: 'utf8' });

@@ -3,7 +3,8 @@ import cors from '@fastify/cors';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Action, OwnerAction, DomainError, Workflow, aiAccess, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
-import { ClientSnapshot } from '@replybot/core/api';
+import { ClientSnapshot, ProfileTransitionInput, type ProfileScope, type ProfileOperation } from '@replybot/core/api';
+import { ProfileRegistry, bounded } from './profiles.ts';
 import { assistantTurn, attention } from './assistant.ts';
 import { draftGenerator, type RemoteModel } from './draft-model.ts';
 import { WhatsAppAdapter } from './whatsapp.ts';
@@ -16,16 +17,27 @@ import { registerImageUploads } from './image-uploads.ts';
 const Request = z.object({ requestId: z.string().min(1).max(96) });
 const Id = z.object({ id: z.string().min(1).max(128) });
 const localOrigin = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-export function createApp(options: { store: SqliteStore; token: string; now?: () => number; seed?: boolean; remoteModel?: RemoteModel; whatsapp?: { authDir: string }; allowedOrigins?: string[]; launcher?: { rootId:string; instanceId:string } }) {
+export function createApp(options: { store: SqliteStore; token: string; accountId?: string; profileScope?: ProfileScope;
+  profiles?: { registry: ProfileRegistry; onQuiesced?: (operation: ProfileOperation) => Promise<void>; activation?: boolean; drainTimeoutMs?: number };
+  now?: () => number; seed?: boolean; remoteModel?: RemoteModel; whatsapp?: { authDir: string; requireOwnerLock?: boolean }; allowedOrigins?: string[]; launcher?: { rootId:string; instanceId:string } }) {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const now = options.now ?? Date.now;
-  const accountId = options.whatsapp ? 'whatsapp-owner' : DEMO_ACCOUNT;
+  const accountId = options.accountId ?? (options.whatsapp ? 'whatsapp-owner' : DEMO_ACCOUNT);
+  const scope = Object.freeze(options.profileScope ?? { profileId: 'original', accountId, revision: 0 });
+  if (scope.accountId !== accountId) throw new Error('profile_account_mismatch');
+  const registry = options.profiles?.registry;
+  let gated = registry?.blocked() ?? false;
+  const admitted = new Map<string, { promise: Promise<void>; resolve: () => void }>();
+  let transitionWork: Promise<void> | undefined;
+  const blocked = () => gated || (registry?.blocked() ?? false);
   const flow = new Workflow(options.store, accountId, now);
   if (!options.whatsapp && options.seed !== false) seedDemo(options.store, now());
-  flow.recover();
+  flow.recover(gated || options.profiles?.activation);
+  if (gated || options.profiles?.activation) flow.suspendAccount(!options.profiles?.activation);
+  if (options.profiles?.activation) gated = false;
   const allowedOrigin = (origin: string) => localOrigin(origin) || (options.allowedOrigins ?? []).includes(origin);
   const replyWindow=new ReplyWindow(async(message,isCurrent)=>{
-    if(!isCurrent() || whatsapp && (whatsapp.snapshot().state!=='connected' || !options.remoteModel || !options.store.modelConsent(accountId)))return;
+    if(blocked() || !isCurrent() || whatsapp && (whatsapp.snapshot().state!=='connected' || !options.remoteModel || !options.store.modelConsent(accountId)))return;
     const c=flow.conversation(message.conversationId);
     const grant=options.store.grants(accountId,c.id).find(g=>g.state==='active');
     const decision=automaticDecision(c,options.store.conversations(accountId),accountId,now(),message.source,grant);
@@ -33,15 +45,15 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     let draft;
     try{draft=await generateDraft(c.id,'window-'+message.id+':'+c.workflowVersion);}
     catch(error){if(error instanceof DomainError && ['stale_workflow','stale_draft','ai_access_denied','model_consent_revoked'].includes(error.code))return;throw error;}
-    if(!isCurrent() || whatsapp && whatsapp.snapshot().state!=='connected')return;
+    if(blocked() || !isCurrent() || whatsapp && whatsapp.snapshot().state!=='connected')return;
     const current=flow.conversation(c.id);const allowance=options.store.grants(accountId,c.id).find(g=>g.state==='active');
     const latest=options.store.draft(accountId,draft.id);
     if(automaticDecision(current,options.store.conversations(accountId),accountId,now(),message.source,allowance)==='auto'
       && latest?.state==='pending' && !latest.edited)await dispatch(flow.autoSend(latest.id,'window-auto-'+latest.id).id);
   },5000,(message,isCurrent)=>whatsapp?.beginPresence(message.conversationId,isCurrent) ?? (()=>{}));
   const whatsapp=options.whatsapp ? new WhatsAppAdapter(flow,options.whatsapp.authDir,async message=>{
-    if(options.remoteModel && options.store.modelConsent(accountId))await replyWindow.enqueue(message);
-  },()=>replyWindow.clear(),now) : undefined;
+    if(!blocked() && options.remoteModel && options.store.modelConsent(accountId))await replyWindow.enqueue(message);
+  },()=>replyWindow.clear(),now,options.whatsapp.requireOwnerLock) : undefined;
   const media=new MediaService(async message=>{
     const upload=options.store.sentImageUpload(accountId,message.conversationId,message.transportId);
     if(upload)return Buffer.from(upload.bytes);
@@ -79,6 +91,28 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     const expected = Buffer.from(options.token);
     if (!provided.length || provided.length !== expected.length || !timingSafeEqual(provided, expected))
       return reply.code(401).send({ error: 'owner_auth_required' });
+    const path = request.url.split('?')[0];
+    if (path === '/v1/session' || path === '/v1/launcher' || /^\/v1\/profile-operations\/[^/]+$/.test(path ?? '')) return;
+    if (options.profileScope) {
+      const profile = request.headers['x-otherme-profile']; const revision = request.headers['x-otherme-revision'];
+      if (typeof profile !== 'string' || typeof revision !== 'string' || !/^\d+$/.test(revision))
+        return reply.code(426).send({ error: 'client_upgrade_required' });
+      // Only an exact recorded transition may use its original source scope.
+      if (path !== '/v1/profile-transitions') {
+        if (blocked()) return reply.code(409).send({ error: 'profile_transition_in_progress' });
+        if (profile !== scope.profileId || Number(revision) !== scope.revision)
+          return reply.code(409).send({ error: 'profile_scope_changed' });
+      }
+      reply.header('X-Otherme-Profile', scope.profileId).header('X-Otherme-Revision', String(scope.revision));
+    }
+    if (path !== '/v1/profile-transitions') {
+      let resolve = () => {};
+      const promise = new Promise<void>(done => { resolve = done; });
+      admitted.set(request.id, { promise, resolve });
+    }
+  });
+  app.addHook('onResponse', async request => {
+    admitted.get(request.id)?.resolve(); admitted.delete(request.id);
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof DomainError) return reply.code(error.status).send({ error: error.code });
@@ -87,7 +121,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   registerImageUploads(app,flow);
   registerAudioUploads(app,flow);
-  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
+  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), profileScope:scope, serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
     modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
     lastMessages: options.store.lastMessages(accountId),
     latestTenIds: latestTen(options.store.conversations(accountId), accountId, now()) });
@@ -97,8 +131,59 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   // Minimal authenticated status for the Windows launcher. Never return chat data or pairing secrets.
   app.get('/v1/launcher', async () => {
     if(!options.launcher)throw new DomainError('launcher_identity_unavailable',503);
-    return {service:'otherme-backend',protocol:1,accountId,...options.launcher,
+    return {service:'otherme-backend',protocol:2,accountId,profileScope:scope,...options.launcher,
       demo:!whatsapp,whatsapp:whatsapp?.snapshot().state ?? 'disconnected'};
+  });
+  app.get('/v1/session', async () => ({ protocol: 2, scope,
+    label: registry?.list().find(p => p.profileId === scope.profileId)?.label ?? 'Original account', transition: registry?.current() ?? null }));
+  app.get('/v1/profile-operations/:requestId', async request => {
+    if (!registry) throw new DomainError('profile_operation_not_found', 404);
+    return registry.operation(z.object({ requestId: z.string() }).parse(request.params).requestId);
+  });
+  app.get('/v1/profiles', async () => ({ profiles: registry?.list() ?? [{ profileId: scope.profileId, accountId, label: 'Original account', active: true }] }));
+  app.post('/v1/profile-transitions', async (request, reply) => {
+    const input = ProfileTransitionInput.parse(request.body);
+    if (!registry) throw new DomainError('launcher_restart_required', 409);
+    const profile = request.headers['x-otherme-profile']; const revision = request.headers['x-otherme-revision'];
+    if (typeof profile !== 'string' || typeof revision !== 'string' || !/^\d+$/.test(revision)) throw new DomainError('client_upgrade_required', 426);
+    const replay = registry.replay(input, profile, Number(revision));
+    if (replay) return reply.code(202).send({ operation: replay });
+    if (!options.profiles?.onQuiesced) throw new DomainError('launcher_restart_required', 409);
+    if (blocked()) throw new DomainError('profile_transition_in_progress', 409);
+    if (profile !== scope.profileId || Number(revision) !== scope.revision) throw new DomainError('profile_scope_changed', 409);
+    // Admission closes before the handoff check, with no await before suspension.
+    gated = true;
+    let operation: ProfileOperation;
+    try {
+      if (flow.hasActiveHandoff()) throw new DomainError('profile_handoff_active', 409);
+      operation = registry.begin(input, scope);
+      flow.suspendAccount();
+    } catch (error) {
+      if (registry.current()?.requestId === input.requestId) {
+        // A journal rename may have succeeded even if the caller lost its write
+        // acknowledgement. Once durable, this operation must stay stopped.
+        replyWindow.clear(); clearInterval(timer); void whatsapp?.quiesce().catch(() => {});
+        try { flow.suspendAccount(); } finally { registry.update(input.requestId, 'failed', 'profile_suspend_failed'); }
+      } else gated = registry.blocked();
+      throw error;
+    }
+    replyWindow.clear(); clearInterval(timer);
+    const socketStopped = whatsapp?.quiesce();
+    const responseFinished = new Promise<void>(resolve => { reply.raw.once('finish', resolve); });
+    transitionWork = (async () => {
+      try {
+        await bounded(Promise.all([socketStopped, replyWindow.close(), flow.drain(),
+          Promise.allSettled(catchUps.values()), Promise.all([...admitted.values()].map(a => a.promise)), responseFinished]),
+        options.profiles?.drainTimeoutMs ?? 15000, 'profile_drain_timeout');
+        const quiesced = registry.update(input.requestId, 'restarting');
+        await options.profiles?.onQuiesced?.(quiesced);
+      } catch (error) {
+        const code = error instanceof Error && ['profile_drain_timeout', 'launcher_ack_timeout', 'launcher_ipc_unavailable'].includes(error.message)
+          ? error.message : 'profile_transition_failed';
+        registry.update(input.requestId, 'failed', code);
+      }
+    })();
+    return reply.code(202).send({ operation });
   });
   app.post('/v1/local-provision', async request => {
     z.object({ confirmLocalDemo: z.literal(true) }).strict().parse(request.body);
@@ -221,6 +306,7 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
   });
   const catchUps = new Map<string,Promise<void>>();
   const timer = setInterval(() => {
+    if (blocked()) return;
     for (const job of flow.expirePauses()) {
       if (catchUps.size >= 4 || catchUps.has(job.conversationId)) continue;
       if (whatsapp && (!options.remoteModel || !options.store.modelConsent(accountId))) continue;
@@ -235,6 +321,11 @@ export function createApp(options: { store: SqliteStore; token: string; now?: ()
     }
   },1000);
   timer.unref();
-  app.addHook('onClose', async () => { clearInterval(timer);await replyWindow.close(); await Promise.allSettled(catchUps.values()); await whatsapp?.stop(); audio.close(); options.store.close(); });
+  app.addHook('onClose', async () => {
+    gated = true; clearInterval(timer);
+    await whatsapp?.quiesce(); await replyWindow.close(); await Promise.allSettled(catchUps.values()); await flow.drain();
+    await transitionWork;
+    audio.close(); options.store.close();
+  });
   return app;
 }

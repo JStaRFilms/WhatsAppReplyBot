@@ -1,6 +1,32 @@
 import { z } from 'zod';
 import { Snapshot, Message, Proposal } from './contracts.ts';
+export const ProfileScope = z.object({
+  profileId: z.string().min(1), accountId: z.string().min(1), revision: z.number().int().nonnegative(),
+}).strict();
+export type ProfileScope = z.infer<typeof ProfileScope>;
+export const ProfileDescriptor = z.object({ profileId: z.string(), accountId: z.string(), label: z.string(), active: z.boolean() }).strict();
+export type ProfileDescriptor = z.infer<typeof ProfileDescriptor>;
+export const ProfileOperation = z.object({
+  requestId: z.string(), kind: z.enum(['create','activate','repair']),
+  state: z.enum(['pending','quiescing','restarting','completed','failed']), sourceScope: ProfileScope,
+  targetProfileId: z.string().nullable(), resultScope: ProfileScope.nullable(), error: z.string().nullable(),
+}).strict();
+export type ProfileOperation = z.infer<typeof ProfileOperation>;
+export const SessionDiscovery = z.object({ protocol: z.literal(2), scope: ProfileScope, label: z.string(), transition: ProfileOperation.nullable() }).strict();
+export type SessionDiscovery = z.infer<typeof SessionDiscovery>;
+export const ProfileList = z.object({ profiles: z.array(ProfileDescriptor) }).strict();
+export type ProfileList = z.infer<typeof ProfileList>;
+const TransitionRequest = z.object({ requestId: z.string().min(1).max(96).regex(/^[A-Za-z0-9_-]+$/), confirm: z.literal(true) });
+export const ProfileTransitionInput = z.discriminatedUnion('kind', [
+  TransitionRequest.extend({ kind: z.literal('create'), label: z.string().min(1).max(80) }).strict(),
+  TransitionRequest.extend({ kind: z.literal('activate'), profileId: z.string().min(1) }).strict(),
+  TransitionRequest.extend({ kind: z.literal('repair') }).strict(),
+]);
+export type ProfileTransitionInput = z.infer<typeof ProfileTransitionInput>;
+export const ProfileTransitionResult = z.object({ operation: ProfileOperation }).strict();
+export type ProfileTransitionResult = z.infer<typeof ProfileTransitionResult>;
 export const ClientSnapshot = Snapshot.extend({
+  profileScope: ProfileScope.default({ profileId: 'original', accountId: 'whatsapp-owner', revision: 0 }),
   serverTime:z.number().default(0),
   lastMessages: z.array(Message), latestTenIds: z.array(z.string()), modelConsent: z.boolean(), unreadCounts: z.record(z.string(),z.number().int().nonnegative()).default({}),
   historyVersions:z.record(z.string(),z.number().int().nonnegative()).default({}),

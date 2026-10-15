@@ -73,6 +73,13 @@ account access, provider requests, real sends and deployment remain gated.
 | 16 | Signed Android APK and click-to-start Windows launcher | coder | vibe-build | 14/15, owner approval | completed, signed ARM64/x86_64 APK verified,133tests/types and launcher lifecycle pass; physical-phone checks remain |
 | 17 | Otherme UI designer handoff brief | worker | design handoff | owner final name clarification | completed, delivered docs/design/Otherme_UI_Brief.md |
 | 18 | Review daily-use signing and launcher | reviewer | vibe-build | 16 | completed, QR shutdown and checkout/instance blockers fixed with regressions |
+| 19 | Plan separate-account switching and same-owner repair | architect | vibe-build | owner approval | completed, immutable runtime plus verified launcher restart |
+| 20 | Android tab insets and contact-only inbox filtering | coder | vibe-build | owner screenshots | completed in signed0.1.1; syntheticinset/contacttests pass |
+| 21 | Profile registry/scope and safe backend restart | coder | vibe-build | 19 | completed, separateDBs and failclosedrequests |
+| 22 | Mobile profile controls/client revocation | coder | vibe-build | 19sharedcontract | completed,45mobiletests; localdraft/mediaisolation |
+| 23 | Astra logo exploration and voting image | designer | logo exploration | owner image request | delivered, A isfrontrunner, iconunchanged |
+| 24 | Focused profile integration review | reviewer | vibe-build | 20/21/22 | completed, discoveryrevisionP1fixed;177checks/typespass |
+| 25 | Signed profile update0.1.1/code2 | worker | vibe-build | 24 | completed, actualAPKverified withsamecert, originalliveaccountunswitched |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

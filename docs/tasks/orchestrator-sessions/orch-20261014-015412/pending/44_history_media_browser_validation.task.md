@@ -2,7 +2,7 @@
 
 ## Agent setup and status
 
-Persona worker, Takomi Luna High, Build validation. requiredCapabilities=[write-code] only for ignored synthetic harness/artifacts, product source read-only. Pending authored packet, no launch or execution ID assigned. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every command explicitly cd there or use absolute project paths. Use unslop/scoped instructions. Parent owns task records/status, source fixes, commits and release. No agent launches.
+Persona worker, Takomi Sol High for round 2, Build validation. Required capability is write-code only for ignored synthetic artifacts. Product source is read-only. Round 1 was Luna High and partial. The follow-up uses Sol High for the remaining stateful browser cases. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every command explicitly cd there or use absolute project paths. Use unslop/scoped instructions. Parent owns task records/status, source fixes, commits and release. No agent launches.
 
 Read docs/Coding_Guidelines.md, History_and_Media_Reliability_Scope, History_and_Media_Implementation_Plan, original37/38/39 and accepted41/42/43 handoffs/source/types/tests. Read only documented synthetic ui-task31/ui-task37 harnesses if useful. Do not treat39's unchanged69f01fd results as coverage of this new source.
 
@@ -58,9 +58,52 @@ calls/page/console errors,59 focused source tests, but failed photo opening and
 left several required cases untested. No full44 acceptance count.
 Parent independent diagnostic confirmed source layout maps2087 versus actual4496
 content position for the visible photo.47 now fixes the bounded shared geometry;
-R1 freeze ends only for that confirmed correction. See `docs/issues/Photo_Visibility_After_History_Reflow.md`.38/33 stay held. After47 acceptance, delegate a fresh44 r2 with
-original brief, R1 findings, actual47 response and all remaining coverage; new
-clientRequestId/taskId, never send to old childThread. No r2 launched yet.
+R1 freeze ends only for that confirmed correction. See `docs/issues/Photo_Visibility_After_History_Reflow.md`.38/33 stay held. Correction 47 is accepted as `eb8a242009af59230c50108529f960db5c549196`.
+Parent independently confirmed the old-hook regression failure and passed all
+440 source/packaging tests and workspace types. Round 2 uses a fresh delegated
+task with this original brief, R1 findings, the actual 47 response and every
+remaining case. Do not send to the previous child thread.
+
+## Round 2 instructions
+
+Running Takomi Sol High on frozen product
+`eb8a242009af59230c50108529f960db5c549196`. No source writer.
+Round 2 T3 task ID is
+`node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-integrated-history-media-browser-20261015-r2`.
+Client request ID is `otherme-integrated-history-media-browser-20261015-r2`.
+Use `.runtime/ui-task44/r2/` for the harness, export, results and handoff. Preserve
+all round 1 and parent diagnostic artifacts. Export from apps/mobile with
+`EXPO_PUBLIC_DESKTOP=1 node ../../scripts/mobile-node.cjs node_modules/expo/bin/cli export --platform web --output-dir ../../.runtime/ui-task44/r2/web --max-workers 2`.
+Adjust harness module paths from the actual r2 directory, not guessed old paths.
+
+Do not stop after the photo retry. Map every required bullet above to concrete
+assertions and evidence, or report the exact remaining blocker. Partial counts do
+not accept 44. Assert actual viewport-intersecting source rows at viewed POST time,
+not merely that posted IDs are inbound or fewer than mounted rows. At least one
+photo must move without a per-row size change after paging. Check real rectangles
+and offset deltas, retained editor/input nodes, held source registration and current
+geometry after prepend/replacement/resize. No new acknowledgment from old geometry,
+old-window bottom, viewer or background. Keep unseen newest unread.
+
+Complete omitted R1 cases: quote and Draft View bounded around-source navigation,
+missing source, verified alias UI and retired-alias read-only behavior, held refresh
+with injected newest data and anchor measurement, pending send plus newer text and
+quote, receipt truth and reload no-replay, two-client revision and late read safety,
+photo reopen/foreground/reload byte reuse, current-version-only bytes, image denial,
+deletion, expiry, view-once, offline lease, namespace/profile change and stale delayed
+completion. Exercise video close/background/invalidation and audio ownership.
+A busy/preparing recorder can be stubbed through the synthetic public handle. Do
+not call any real microphone, camera, gallery or contacts API. Do not claim these
+stubs establish native recording behavior. Keep genuine unsupported codec results.
+
+Use route-handler registration promises before releasing held requests. A request
+event alone is not proof the resolver exists. Wait for meaningful readiness, not
+an arbitrary short count. Do not weaken a valid assertion to avoid a product bug.
+Return reproducible commands, exact candidate/export input hashes, named coverage,
+API and byte/metadata counts, geometry, selected screenshots, errors and limits.
+All networks stay intercepted and outside origins blocked. Close owned browser
+and ephemeral server in finally. No background watchers, paid/live calls, final
+build or source changes. 38 and 33 remain held until parent acceptance.
 
 ## Safety limits
 

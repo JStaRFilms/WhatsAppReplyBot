@@ -86,9 +86,22 @@ Running Takomi Sol High as sole source writer after terminal partial 44 round 1.
 T3 task ID is
 `node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-history-geometry-fix-20261015-r1`.
 Client request ID is `otherme-history-geometry-fix-20261015-r1`.
-No browser worker, final review or release build is active. After parent acceptance,
-44 round 2 exports the corrected source and finishes the required browser cases.
-The existing combined review 38 and signed artifact task 33 follow.
+Completed and parent accepted as `eb8a242009af59230c50108529f960db5c549196`.
+Parent inspected source and fixture changes, independently reproduced the regression
+against the old Git hook, then passed all serialized suites. Counts are 94 core,
+109 backend, 208 mobile and 29 packaging, total 440. All workspace types and diff
+checks passed. No product correction was needed after the delegate result.
+
+Source files are the scroll hook and conversation screen. Tests add five focused
+visibility cases and correct stable-cache fixtures in composer-lifecycle and
+interactions. Supported viewport and row measurements refresh a coherent batch;
+source navigation shares its coordinates. Page, client, scroll and layout guards
+reject old callbacks. Visibility and viewed acknowledgment stay suspended pending
+measurement. Ref identity, editor focus and bounded retry behavior have tests.
+
+Task 44 round 2 now exports this candidate and completes the remaining browser
+cases. The existing combined review 38 and signed artifact task 33 follow. This
+source acceptance does not claim browser or native hardware acceptance.
 
 ## Safety
 

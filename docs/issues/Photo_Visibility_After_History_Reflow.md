@@ -47,6 +47,25 @@ moves from content y 2087 to 4496 without a new per-row layout event. It must pa
 afterward and reject stale measurements. Check media visibility and actual visible
 inbound IDs, then run the existing mobile tests and typechecks.
 
-This is a targeted correction, not another generic review. Task 44 round 2 must
-export the corrected source and finish the remaining checks. The existing combined
+## Source correction accepted
+
+The parent accepted correction `eb8a242009af59230c50108529f960db5c549196` after
+inspecting the diff and rerunning checks. Stable turn and source refs use supported
+RN `measureInWindow` methods relative to the measured scroll viewport. A coherent
+batch refreshes source navigation coordinates and visible rows. Pending geometry
+suspends visibility and viewed acknowledgment. Current page, client, offset and
+layout checks reject old callbacks; retries are bounded.
+
+The parent independently loaded the previous hook from Git into the new regression
+without changing working source. It failed with `old-coordinate` instead of `photo`.
+The corrected full serialized suites passed 94 core, 109 backend and 208 mobile
+tests. Packaging passed 29 tests. All three workspace typechecks and diff checks
+passed. Total source and packaging acceptance is 440 tests.
+
+The fixture changes make `HistoryCache.get` snapshots stable, as production and
+`useSyncExternalStore` require. They do not relax assertions or production rules.
+No dependency, cache, backend, native setting or version changed.
+
+This accepts source correction 47, not browser task 44. Round 2 must export this
+new candidate and finish every remaining browser case. The existing combined
 review 38 and artifact task 33 stay held. Native acceptance remains separate.

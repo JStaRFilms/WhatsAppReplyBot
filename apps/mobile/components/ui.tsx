@@ -31,10 +31,18 @@ export function Page({ children, scroll = true }: { children: ReactNode; scroll?
   </View>;
 }
 export function ServiceStrip() {
-  const { status, palette, snapshot } = useApp();
+  const { pcStatus, palette, snapshot, snapshotFresh, acceptedScope, profileBusy } = useApp();
+  const cached=snapshot && !snapshotFresh?' · Cached data':'';
+  const label=pcStatus==='connecting'?'Refreshing PC'+cached
+    :pcStatus==='auth-required'?'PC authentication needed'+cached
+    :pcStatus!=='authenticated'?'PC unavailable'+cached
+    :!acceptedScope?'Connected to PC · '+(profileBusy?'Profile change pending':'Review profile to continue')
+    :!snapshotFresh?'Connected to PC · Cached data'
+    :snapshot?.demo?'Connected to PC · Preview · WhatsApp not linked · AI '+(snapshot.modelConsent?'enabled':'paused')
+    :'Connected to PC · WhatsApp '+(snapshot?.connection ?? 'unknown')+' · AI '+(snapshot?.modelConsent?'enabled':'paused');
   return <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
-    <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>
-      {status === 'online' && snapshot && !snapshot.demo ? 'WhatsApp '+snapshot.connection+' · AI '+(snapshot.modelConsent ? 'enabled' : 'paused') : status === 'online' ? snapshot?.model === 'openai/gpt-6-luna' ? 'Preview · AI '+(snapshot.modelConsent ? 'enabled' : 'paused') : 'Preview · WhatsApp not linked' : status === 'connecting' ? 'Connecting…' : 'Service offline'}
+    <Text accessibilityLiveRegion="polite" style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>
+      {label}
     </Text>
   </View>;
 }
@@ -56,10 +64,10 @@ export function Button({ label, onPress, secondary = false, disabled = false, st
   </Pressable>;
 }
 export function EmptyConnection() {
-  const { connect, baseUrl, palette, status } = useApp();
+  const { connect, baseUrl, palette, pcStatus, hasSavedCredential } = useApp();
   return <View style={{ paddingVertical: 28, gap: 16 }}>
     <Text style={{ color: palette.text, fontFamily: fonts.semibold, fontSize: 20 }}>Connect to your PC</Text>
-    <Text selectable style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 14, lineHeight: 22 }}>Enter your PC address and service token in Settings.</Text>
-    <Button label={status === 'connecting' ? 'Connecting…' : 'Connect'} disabled={status === 'connecting'} onPress={() => { void connect(baseUrl); }}/>
+    <Text selectable style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 14, lineHeight: 22 }}>{hasSavedCredential?'Reconnect using the saved PC connection. WhatsApp linking is separate.':'Enter your PC address and service token in Settings.'}</Text>
+    <Button label={pcStatus === 'connecting' ? 'Connecting to PC…' : pcStatus==='authenticated'?'Connected to PC':'Reconnect to PC'} disabled={pcStatus === 'connecting' || pcStatus==='authenticated'} onPress={() => { void connect(baseUrl); }}/>
   </View>;
 }

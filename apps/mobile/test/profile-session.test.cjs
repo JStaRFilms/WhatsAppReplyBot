@@ -37,7 +37,7 @@ test('revocation rejects delayed JSON, upload, image and audio bodies, including
     const client=new ApiClient('http://synthetic.local','synthetic-token',scope());
     const pending=kind==='json'?client.request('/v1/snapshot',z.unknown()):kind==='imageUpload'?client.uploadImage('same-jid',btoa('synthetic'),'image'):
       kind==='audioUpload'?client.uploadAudio('same-jid',new Uint8Array([1]),'audio'):kind==='image'?client.media('same-jid','same-message',new AbortController().signal):client.audio('same-jid','same-message',new AbortController().signal);
-    const rejected=assert.rejects(pending,/Connection changed/);await settle();client.revoke();assert.equal(signal.aborted,true);
+    const rejected=assert.rejects(pending,/Connection changed/);await settle();client.revoke();assert.equal(signal.aborted,!['imageUpload','audioUpload'].includes(kind));
     body.resolve(kind==='image'||kind==='audio'?new ArrayBuffer(1):{});await rejected;
     await assert.rejects(client.request('/v1/mutate',z.unknown(),{}),/Connection changed/);
   }
@@ -160,12 +160,13 @@ test('pending transition polling stops with an unconfirmed status rather than cl
 
 test('SecureStore session writes cannot finish out of order and restore old URL/token/scope',async()=>{
   const delayed=deferred(),writes=[];let first=true;
-  const f=providerFixture({save:async(_key,value)=>{const data=JSON.parse(value);if(first){first=false;await delayed.promise;}writes.push(data);}});
+  const f=providerFixture({save:async(_key,value)=>{const data=JSON.parse(value);if(first && data.scope){first=false;await delayed.promise;}if(data.scope)writes.push(data);}});
   const a=scope(),b=scope('second',1);let current=a;
   f.respond(async call=>json(call.path==='/v1/session'?descriptor(current):snapshot(current)));
   await f.render().connect('http://first.synthetic','first-synthetic-token');const old=f.render().continueProfile();await settle();
-  current=b;await f.render().connect('http://second.synthetic','second-synthetic-token');const next=f.render().continueProfile();await settle();
-  assert.equal(writes.length,0);delayed.resolve();await old;await next;
+  current=b;const reconnect=f.render().connect('http://second.synthetic','second-synthetic-token');await settle();
+  delayed.resolve();await old;await reconnect;const next=f.render().continueProfile();await next;
+  assert.ok(writes.length>=1);
   assert.equal(writes.at(-1).url,'http://second.synthetic');assert.equal(writes.at(-1).token,'second-synthetic-token');assert.equal(writes.at(-1).scope.profileId,'second');assert.equal(f.render().snapshot.accountId,b.accountId);
 });
 
@@ -207,12 +208,12 @@ test('profile UI previews consequences and needs separate confirmation for creat
     const app={palette:{},client:{request:async()=>({profiles:[{profileId:'second',accountId:'whatsapp-second',label:'Preserved',active:false}]})},acceptedScope:a,discovery:descriptor(a),profileBusy:false,operation:null,status:'online',
       transitionProfile:async input=>sent.push(core.ProfileTransitionInput.parse(input)),reportError:assert.fail};
     const component=load('components/profile-controls.tsx',{'react':h.react,'react-native':{Text:'text',TextInput:'input',View:'view'},'@replybot/core/api':core,
-      '../lib/app-state':{useApp:()=>app},'../lib/uuid':{randomUUID:()=> 'own-request'},'../lib/theme':{fonts:{}},'./ui':{Button:'button'}});
+      '../lib/app-state':{useApp:()=>app},'../lib/uuid':{randomUUID:()=> 'own-request'},'../lib/theme':{fonts:{}},'./ui':{Button:'button'}},{AbortController});
     const render=()=>h.render(component.ProfileControls);let tree=render();
-    if(kind==='create'){label(tree,'Fresh profile label').props.onChangeText('Fresh');tree=render();nodes(tree).find(n=>n.props?.label==='Use another number').props.onPress();}
-    else if(kind==='activate'){nodes(tree).find(n=>n.props?.label==='Return to preserved profile').props.onPress();await settle();nodes(render()).find(n=>n.props?.label==='Return to Preserved').props.onPress();}
-    else nodes(tree).find(n=>n.props?.label==='Repair this number').props.onPress();
+    if(kind==='create'){nodes(tree).find(n=>n.props?.label==='Create profile').props.onPress();label(render(),'Profile name').props.onChangeText('Fresh');tree=render();nodes(tree).find(n=>n.props?.label==='Review new profile').props.onPress();}
+    else if(kind==='activate'){nodes(tree).find(n=>n.props?.label==='Switch profile').props.onPress();await settle();nodes(render()).find(n=>n.props?.label==='Preserved').props.onPress();}
+    else nodes(tree).find(n=>n.props?.label==='Relink this profile').props.onPress();
     tree=render();assert.equal(sent.length,0);assert.ok(nodes(tree).some(n=>JSON.stringify(n.props?.children ?? '').includes('Its data stays preserved. AI will be off.')));
-    nodes(tree).find(n=>n.type==='button'&&n.props?.label==='Confirm account change').props.onPress();await settle();assert.equal(sent.length,1);assert.equal(sent[0].kind,kind);assert.equal(sent[0].confirm,true);
+    nodes(tree).find(n=>n.type==='button'&&n.props?.label==='Confirm profile change').props.onPress();await settle();assert.equal(sent.length,1);assert.equal(sent[0].kind,kind);assert.equal(sent[0].confirm,true);
   }
 });

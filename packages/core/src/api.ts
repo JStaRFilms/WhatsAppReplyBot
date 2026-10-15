@@ -12,7 +12,11 @@ export const ProfileOperation = z.object({
   targetProfileId: z.string().nullable(), resultScope: ProfileScope.nullable(), error: z.string().nullable(),
 }).strict();
 export type ProfileOperation = z.infer<typeof ProfileOperation>;
-export const SessionDiscovery = z.object({ protocol: z.literal(2), scope: ProfileScope, label: z.string(), transition: ProfileOperation.nullable() }).strict();
+export const PcDisplay = z.object({ requestId: z.string().min(1).max(96), state: z.enum(['requested', 'ready', 'unavailable', 'expired']) }).strict();
+export type PcDisplay = z.infer<typeof PcDisplay>;
+export const SessionDiscovery = z.object({ protocol: z.literal(2), scope: ProfileScope, label: z.string(), transition: ProfileOperation.nullable(),
+  capabilities: z.object({ pcQrDisplay: z.boolean().optional(), desktopBrowser: z.boolean().optional() }).strict().optional(),
+}).strict();
 export type SessionDiscovery = z.infer<typeof SessionDiscovery>;
 export const ProfileList = z.object({ profiles: z.array(ProfileDescriptor) }).strict();
 export type ProfileList = z.infer<typeof ProfileList>;

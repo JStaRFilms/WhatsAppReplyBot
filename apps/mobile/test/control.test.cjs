@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {load,hooks,nodes,label,deferred}=require('./render-harness.cjs');
 const {z}=require('zod');
 const {core,apiFixture}=require('./profile-fixture.cjs');
-const {sameScope,ApiError}=apiFixture(()=>assert.fail('No network'));
+const {sameScope,ApiError,ReadError}=apiFixture(()=>assert.fail('No network'));
 const Conversation=z.object({id:z.string(),accountId:z.string(),workflowVersion:z.number(),control:z.string(),kind:z.string(),mode:z.string()});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const conversation=(workflowVersion,control='manual',accountId='account')=>({id:'chat',accountId,workflowVersion,control,kind:'direct',mode:'auto_reply'});
@@ -14,12 +14,13 @@ function providerFixture() {
   class ApiClient {
     constructor(baseUrl,token,scope){this.baseUrl=baseUrl;this.token=token;this.scope=scope;}
     revoke(){}
+    abortReads(){}
     session(){return Promise.resolve(discovered);}
     request(path,schema,payload){calls.push({client:this,path,payload});return Promise.resolve(handle(this,path,payload)).then(data=>schema.parse ? schema.parse(data) : data);}
   }
-  const component=load('lib/app-state.tsx',{'react':h.react,'react-native':{useColorScheme:()=> 'light'},'expo-constants':{},'zod':require('zod'),
-    '@replybot/core/contracts':{Conversation},'@replybot/core/api':{...core,ClientSnapshot:{}},'./api':{ApiClient,ApiError,sameScope},'./history-cache':{HistoryCache:class{}},'./audio-lane':{stopPlayback(){}},
-    './client-clock':{ClientClock:class{calibrate(){}}},'./storage':{readSetting:async()=>null,saveSetting:async()=>{},getClientId:async()=> 'synthetic'},'./theme':{palettes:{dark:{},light:{}}}}, {URL,Map,setInterval:()=>0,clearInterval(){}});
+  const component=load('lib/app-state.tsx',{'react':h.react,'react-native':{useColorScheme:()=> 'light',AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},'expo-constants':{},'zod':require('zod'),
+    '@replybot/core/contracts':{Conversation},'@replybot/core/api':{...core,ClientSnapshot:{}},'./api':{ApiClient,ApiError,ReadError,sameScope},'./history-cache':{HistoryCache:class{}},'./audio-lane':{stopPlayback(){}},
+    './client-clock':{ClientClock:class{calibrate(){}}},'./storage':{readSetting:async()=>null,saveSetting:async()=>{},getClientId:async()=> 'synthetic'},'./theme':{palettes:{dark:{},light:{}}}}, {URL,Map,AbortController,setTimeout,clearTimeout,setInterval:()=>0,clearInterval(){}});
   const render=()=>h.render(()=>component.AppProvider({children:null})).props.value;
   return{calls,render,respond:fn=>{handle=fn;},connect:async(c,url='http://synthetic.local')=>{
     discovered={protocol:2,scope:profileScope(c),label:'Synthetic',transition:null};

@@ -63,9 +63,11 @@ change, expiry, error or exit. P remains manual fallback. Settings polling alone
 must not cause popups. Browser may render QR locally without requesting a second
 viewer. Shared DTO changes, if needed, are owned by backend slice only.
 
-Optional session discovery capability metadata may advertise `pcQrDisplay` and
-`desktopBrowser` booleans while protocol2 remains backward compatible. Capability
-absence means use honest fallback, not optimistic success. UI slice must not edit
+Optional session discovery capability metadata advertises `pcQrDisplay` and
+`desktopBrowser` booleans only for GET `/v1/session?capabilities=1`. The new client
+opts in. The plain route retains its exact legacy response for strict protocol2
+clients. Missing metadata from an older service still means an honest fallback,
+not optimistic success. Query-bearing session404 responses still require upgrade. UI slice must not edit
 core DTOs concurrently. Backend author records any finalized shape deviation here
 or in its handoff before integration.
 

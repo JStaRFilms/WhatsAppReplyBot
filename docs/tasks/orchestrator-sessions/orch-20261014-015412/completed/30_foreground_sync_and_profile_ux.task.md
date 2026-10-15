@@ -48,4 +48,20 @@ one desktop/APK release. Do not claim success from mocks as hardware proof.
 
 Running as a T3-owned task with Takomi Sol High.
 Task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-sync-profile-batch1-20261015-r1`.
-Parent owns acceptance and source-scoped commits; no live actions are authorized.
+Source handoff accepted for integration. Parent independently reran all87 mobile
+tests and mobile typecheck successfully. Core60 tests also pass with the
+transformation-enabled Node runner. A strip-only invocation rejected existing
+TypeScript parameter properties before running the tests; that was a runner error,
+not an application failure.
+
+Parent found and fixed one concrete cross-slice contract mismatch. Backend29
+requires `?capabilities=1` to preserve the exact legacy session response. The
+client now opts in and still classifies session404 as upgrade-required. The new
+regression failed before the fix and passes after it; it also covers a legacy
+response without metadata. Additive core PcDisplay/discovery DTOs are committed
+with this client dependency. Backend use of those DTOs remains owned by29.
+
+Read recovery, cached-state labels, saved credentials, profile isolation and
+confirmed create/switch/link/relink are covered synthetically. No live actions,
+real credentials, phone or production ports were used. Hardware resume, pairing
+and viewer behavior remain owner acceptance checks. Parent owns scoped commit.

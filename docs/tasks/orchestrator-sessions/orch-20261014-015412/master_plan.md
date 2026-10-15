@@ -84,7 +84,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 27 | Reconcile design/context references and plan the next batch | architect / designer | vibe-genesis | owner requested plan only | Completed and owner-approved with foreground sync, persistent keyboard and browser-desktop additions |
 | 28 | Mic cancellation and persistent chat keyboard | coder | vibe-build | approved contract | Source handoff accepted, parent41 focused tests/types pass; physical acceptance remains |
 | 29 | Launcher lifecycle, explicit PC QR and browser host | coder | vibe-build | approved contract | Running with exclusive backend/launcher ownership |
-| 30 | Foreground sync and profile/service UX | coder | vibe-build | approved contract, optional29 fields | Running with exclusive controller/profile ownership |
+| 30 | Foreground sync and profile/service UX | coder | vibe-build | approved contract, optional29 fields | Source handoff accepted; parent87 mobile/60 core tests/types pass; capability opt-in integrated |
 | 31 | Approved native/browser visual integration | coder | vibe-build | 28/30 functional handoff | Planned after functional work |
 | 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Planned after integration |
 | 33 | Built desktop assets and signed Android update | worker | vibe-build | 32/source freeze | Planned after acceptance |

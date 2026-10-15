@@ -44,18 +44,21 @@ export class ApiError extends Error {
 export function sameScope(a: ProfileScope | null | undefined, b: ProfileScope | null | undefined): boolean {
   return !!a && !!b && a.profileId === b.profileId && a.accountId === b.accountId && a.revision === b.revision;
 }
+export class ReadError extends Error {}
 export class ApiClient {
   readonly scope: ProfileScope | undefined;
   private revoked = false;
-  private readonly requests = new Set<AbortController>();
+  private readonly requests = new Map<AbortController, boolean>();
   constructor(readonly baseUrl: string, private readonly token: string, scope?: ProfileScope,
     private readonly invalidScope?: (error: ApiError) => void) {
     this.scope = scope ? Object.freeze(ProfileScope.parse(scope)) : undefined;
   }
   revoke(): void {
     this.revoked = true;
-    for (const request of this.requests) request.abort();
-    this.requests.clear();
+    this.abortReads();
+  }
+  abortReads(): void {
+    for (const [request, read] of this.requests) if (read) request.abort();
   }
   assertActive(): void {
     if (this.revoked) throw new Error('Connection changed. Try again.');
@@ -76,19 +79,30 @@ export class ApiClient {
     const cancel = () => abort.abort();
     init.signal?.addEventListener('abort',cancel,{once:true});
     if(init.signal?.aborted) abort.abort();
-    this.requests.add(abort);
+    const readOnly = init.method === undefined || init.method === 'GET';
+    this.requests.set(abort,readOnly);
     const timeout = setTimeout(()=>abort.abort(),10000);
+    const interrupted = () => readOnly
+      ? new ReadError('Could not refresh from the Windows service. Showing cached data, if available.')
+      : new Error('The Windows service did not acknowledge this request. No action was retried.');
     const check = () => {
       this.assertActive();
-      if (abort.signal.aborted) throw new Error('The Windows service did not acknowledge this request. No action was retried.');
+      if (abort.signal.aborted) throw interrupted();
     };
+    let rejectAbort: (()=>void) | undefined;
+    const aborted = new Promise<never>((_resolve,reject)=>{
+      rejectAbort=()=>reject(interrupted());
+      abort.signal.addEventListener('abort',rejectAbort,{once:true});
+      if(abort.signal.aborted)rejectAbort();
+    });
+    const wait = <T,>(work: Promise<T>): Promise<T> => Promise.race([work,aborted]);
     try {
-      const response = await fetch(this.baseUrl.replace(/\/$/,'')+path,{...init,signal:abort.signal});
+      const response = await wait(fetch(this.baseUrl.replace(/\/$/,'')+path,{...init,signal:abort.signal}));
       check();
       if (!response.ok) {
-        const upgradeRequired = response.status === 426 || (path === '/v1/session' && response.status === 404);
+        const upgradeRequired = response.status === 426 || (path.split('?')[0] === '/v1/session' && response.status === 404);
         let code = upgradeRequired ? 'client_upgrade_required' : 'service_error';
-        const parsed = Failure.safeParse(await response.json().catch(()=>null));
+        const parsed = Failure.safeParse(await wait(response.json().catch(()=>null)));
         check();
         if (parsed.success && !upgradeRequired) code = parsed.data.error;
         const error = new ApiError(code);
@@ -104,39 +118,42 @@ export class ApiClient {
         const error = new ApiError('profile_scope_changed');
         this.invalidScope?.(error); this.revoke(); throw error;
       }
-      const result: unknown = read === 'json' ? await response.json() : {
-        mime:response.headers.get('Content-Type')?.split(';')[0], bytes:new Uint8Array(await response.arrayBuffer()),
+      const result: unknown = read === 'json' ? await wait(response.json()) : {
+        mime:response.headers.get('Content-Type')?.split(';')[0], bytes:new Uint8Array(await wait(response.arrayBuffer())),
       };
       check();
       return result;
     } catch (error) {
       if (error instanceof ApiError) throw error;
       check();
+      if (readOnly) throw new ReadError('Could not reach the Windows service to refresh. Showing cached data, if available.');
       throw new Error('The Windows service is unreachable. No action was acknowledged.');
     } finally {
       clearTimeout(timeout);
+      if(rejectAbort)abort.signal.removeEventListener('abort',rejectAbort);
       init.signal?.removeEventListener('abort',cancel);
       this.requests.delete(abort);
     }
   }
-  async request<T>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>): Promise<T> {
+  async request<T>(path: string, schema: z.ZodType<T>, payload?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     this.requireScope();
     const result = await this.fetchResponse(path,{
       method:payload === undefined ? 'GET' : 'POST',headers:this.headers('application/json'),
+      ...(payload === undefined ? {signal} : {}),
       ...(payload === undefined ? {} : {body:JSON.stringify({requestId:randomUUID(),...payload})}),
     },'json');
     this.assertActive();
     return schema.parse(result);
   }
-  async session(): Promise<SessionDiscovery> {
-    const result = await this.fetchResponse('/v1/session',{headers:this.headers()},'json');
+  async session(signal?: AbortSignal): Promise<SessionDiscovery> {
+    const result = await this.fetchResponse('/v1/session?capabilities=1',{headers:this.headers(),signal},'json');
     this.assertActive();
     const parsed = SessionDiscovery.safeParse(result);
     if (!parsed.success) throw new ApiError('client_upgrade_required');
     return parsed.data;
   }
-  async operation(requestId: string): Promise<ProfileOperation> {
-    const result=await this.fetchResponse('/v1/profile-operations/'+encodeURIComponent(requestId),{headers:this.headers()},'json');
+  async operation(requestId: string, signal?: AbortSignal): Promise<ProfileOperation> {
+    const result=await this.fetchResponse('/v1/profile-operations/'+encodeURIComponent(requestId),{headers:this.headers(),signal},'json');
     this.assertActive();return ProfileOperation.parse(result);
   }
   async uploadImage(conversationId:string,base64:string,requestId:string):Promise<z.infer<typeof ImageUpload>> {

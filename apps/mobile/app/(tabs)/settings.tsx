@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { Text, TextInput, View } from 'react-native';
 import { Page, Button } from '../../components/ui';
@@ -7,7 +7,7 @@ import { WhatsAppConnection } from '../../components/whatsapp-connection';
 import { ProfileControls } from '../../components/profile-controls';
 import { fonts } from '../../lib/theme';
 export default function Settings() {
-  const { palette, themeChoice, setTheme, baseUrl, connect, status, snapshot, perform } = useApp();
+  const { palette, themeChoice, setTheme, baseUrl, connect, status, pcStatus, hasSavedCredential, snapshot, perform } = useApp();
   const [modelBusy, setModelBusy] = useState(false); const modelLock = useRef(false);
   const changeModelConsent = async () => {
     if (modelLock.current || !snapshot) return; modelLock.current = true; setModelBusy(true);
@@ -15,19 +15,20 @@ export default function Settings() {
     finally { modelLock.current = false; setModelBusy(false); }
   };
   const [url, setUrl] = useState(baseUrl); const [token, setToken] = useState('');
+  useEffect(()=>setUrl(baseUrl),[baseUrl]);
+  const sameAddress=url.trim().replace(/\/$/,'')===baseUrl;
+  const connected=pcStatus==='authenticated' && sameAddress && !token.trim();
   const input = { color: palette.text, fontFamily: fonts.regular, fontSize: 15, backgroundColor: palette.surface,
     borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14 };
   return <Page>
-    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Appearance</Text>
-    <View style={{ flexDirection: 'row', gap: 8 }}>{(['system','light','dark'] as const).map(choice =>
-      <Button key={choice} label={choice.charAt(0).toUpperCase()+choice.slice(1)} secondary={themeChoice !== choice} onPress={() => setTheme(choice)}/>)}</View>
-    <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 5 }}/>
-    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Windows service</Text>
+    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>PC service</Text>
+    <Text style={{fontFamily:fonts.regular,fontSize:13,lineHeight:20,color:palette.muted}}>Windows keeps working while this app is closed. Returning refreshes its current status.</Text>
     <TextInput accessibilityLabel="Service address" autoCapitalize="none" autoCorrect={false} value={url} onChangeText={setUrl} style={input}/>
     <TextInput accessibilityLabel="Service token" autoCapitalize="none" autoCorrect={false} secureTextEntry value={token} onChangeText={setToken}
-      placeholder="Service token" placeholderTextColor={palette.muted} style={input}/>
-    <Button label={status === 'connecting' ? 'Connecting…' : 'Connect'} disabled={status === 'connecting'} onPress={() => { void connect(url, token || undefined); }}/>
-    <Text selectable style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Phone token: .runtime/owner-token.txt on your PC. Use trusted Wi-Fi.</Text>
+      placeholder={hasSavedCredential && sameAddress?'Saved service token, leave blank to reuse':'Service token'} placeholderTextColor={palette.muted} style={input}/>
+    <Button label={pcStatus==='connecting'?'Connecting to PC…':connected?'Connected to PC':pcStatus==='auth-required'?'Update PC connection':hasSavedCredential && sameAddress?'Reconnect to PC':'Connect to PC'}
+      disabled={pcStatus==='connecting' || connected} onPress={() => { void connect(url, token || undefined).finally(()=>setToken('')); }}/>
+    <Text selectable style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>{pcStatus==='auth-required'?'The saved service token was not accepted. Check the service address and token on your PC.':hasSavedCredential?'The saved service token is reused. Linking WhatsApp does not need it again.':'Enter the service token from your PC once. Use trusted Wi-Fi.'}</Text>
     <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 5 }}/>
     <ProfileControls/>
     <WhatsAppConnection/>
@@ -40,5 +41,9 @@ export default function Settings() {
       <Button label={modelBusy ? 'Applying…' : snapshot.modelConsent ? 'Pause AI' : 'Enable AI'} secondary={snapshot.modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
     </>}
     <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Images, stickers, GIFs and voice notes are supported. View-once, deleted and expired media stay private.</Text>
+    <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 5 }}/>
+    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Appearance</Text>
+    <View style={{ flexDirection: 'row', gap: 8 }}>{(['system','light','dark'] as const).map(choice =>
+      <Button key={choice} label={choice.charAt(0).toUpperCase()+choice.slice(1)} secondary={themeChoice !== choice} onPress={() => setTheme(choice)}/>)}</View>
   </Page>;
 }

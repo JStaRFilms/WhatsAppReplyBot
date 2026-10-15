@@ -91,7 +91,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Accepted docs; single atomic name import and approved build target clarified |
 | 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Pending investigation only; no live diagnostics or automatic release scope |
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |
-| 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Pending, sole mobile writer |
+| 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Running Sol High after b8b4f58; includes explicit Draft reply feedback |
 | 38 | Review combined extended release | reviewer | vibe-build | 36/37 integration and parent validation | Pending, no concurrent source writers |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 

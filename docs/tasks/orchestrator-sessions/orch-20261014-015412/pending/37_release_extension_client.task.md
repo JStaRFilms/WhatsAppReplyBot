@@ -142,6 +142,16 @@ Depends on36 integrated source/DTOs, no concurrent shared writer. Parent confirm
 
 38 reviews the integrated changes plus32's original findings and dc99aa6 response.33 is blocked until source review/validation and confirmed release targets. No delegation ID exists yet; parent records the exact ID after launch.35 missing-incoming investigation is not part of this packet.
 
+## Execution
+
+Running after accepted backend commit b8b4f58. Sole mobile writer, provider takomi,
+model openai-codex/gpt-6.1-sol, thinking high.
+T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-release-extension-client-20261015-r1`.
+Client request ID: otherme-release-extension-client-20261015-r1.
+Scope includes the subsequent explicit Draft reply feedback request. Exact native
+install target/command and no-WRITE permission constraint above are authorized.
+No final build until38/parent source freeze; no actual contacts/device access.
+
 ## Limits
 
 No .env/token/auth/signing/actual SQLite/runtime reads, live backend/WhatsApp/profile/model action, phone/device input, actual recording/contact read, service control, OS viewers, quota, final builds, SDK/toolchain/license install, outside-project writes or Git stage/commit/push. Dependency installation is only the conditional Expo Contacts step after explicit version/target confirmation. Synthetic disposable ports/stores only, not3210/8081/8083. Only documented `.runtime/ui-task31` synthetic artifacts may be inspected. Preserve previous authored context/style prompt; no Batch2 implementation or unrelated ingestion repair.

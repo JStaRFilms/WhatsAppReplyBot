@@ -87,6 +87,14 @@ Additional history/media boundaries from the owner's later approval:
   Exact native dependency, file limits and actual artifact permissions must be
   approved/verified, not assumed. No hidden microphone or spontaneous focus resume.
 
+41 parent acceptance added a regression for the same verified physical event
+arriving live versus replay/backfill on aliases. It failed first as a conflict,
+then exposed replay incorrectly treated as read. Source32fe269 keeps known arrival
+classes equivalent while unknown/actor differences remain strict, preserves both
+physical source labels, and deduplicates unread by actual acknowledgment.22 focused
+and342 workspace tests/all types pass after correction. Keep this in the combined
+review; this is not an actual live-incident/root-cause claim or separate review loop.
+
 ## Later economical ASR requirement
 
 Read ASR_Cost_Review.md, completed45 and accepted46 handoff. Owner selected exact

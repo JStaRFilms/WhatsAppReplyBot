@@ -33,6 +33,11 @@ New bounded helpers/components:
 
 No package/app config/lock/version/native/script/core/backend/docs/status changes. If finalized41 contracts cannot support the behavior, report to parent instead of editing shared exports. No source writes while41/43/44 or another mobile writer is active.
 
+41 accepted source32fe269 and actual contract handoff is
+ docs/features/History_and_Media_Backend_Handoff.md. Parent342 workspace tests and
+all types passed, including known-arrival duplicate/unread regression.46 now runs
+on that source, so await its final handoff too.41 is not an active writer anymore.
+
 ## Required history behavior
 
 1. Request `/v1/session?capabilities=1&historyMedia=1` and consume optional historyPaging/privateMediaCache plus exported HistoryPage/HistoryGroup/MediaSource schemas. Old backends ignore the extra query and return old flags. Missing flags means honest legacy latest-window/photo-preview fallback, not optimistic video/viewer success. Preserve scoped immutable ApiClient revocation and test strict37 discovery compatibility.

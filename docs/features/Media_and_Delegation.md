@@ -22,6 +22,32 @@ Animation samples are labeled partial, and download failures remain explicit
 limitations rather than invented descriptions. Existing remote-context consent
 covers images; permission/consent/version are rechecked around asynchronous work.
 
+## Proposed owner-view cache and viewer amendment
+
+The media flow above describes the existing implementation, not a permanent ban
+on the newly requested cache. The owner subsequently approved reuse of Otherme's
+own authenticated downloads and tappable full-screen picture/ordinary video
+viewing. Task40's
+[History_and_Media_Implementation_Plan.md](History_and_Media_Implementation_Plan.md)
+proposes41 backend source/version/variant contracts,42 private client byte reuse
+and photo viewing, and43 separately approved foreground video. None is implemented
+by this amendment. No original WhatsApp/gallery storage read is authorized.
+
+Owner display preparation must no longer create AI frames as a side effect.
+Existing AI image limits/consent/never-reply/source checks remain. Ordinary video
+is owner-display only, bounded10MiB/300 seconds, with honest unsupported codec
+states and no video send/AI/background/PiP. Private client cache uses current
+source leases and100MiB/200-entry total bounds, not a public server archive.
+Known delete/expiry/view-once/denial/profile revocation blocks access and queues
+ordinary purge; offline bytes are not fresh authorization or secure erase.
+
+The proposed exact expo-video57.0.5 dependency/config changes require separate
+approval. Contacts consent does not cover Video. Public package/API checks found
+an independently PiP-enabled Android library activity;43 must override it and33
+must inspect the actual merged manifest.41/42 remain independent of that install.
+Existing38 owns combined source review after integrated validation44;33 stays held.
+No live source/media request, installation, build or device action occurred in40.
+
 ## Delegation flow and data
 
 Grant maxUnits and expiresAt become nullable. Null means unlimited count or no

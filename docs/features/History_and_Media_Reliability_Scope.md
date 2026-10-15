@@ -76,6 +76,18 @@ version/permissions before proposing an install. Prior authorization covered Exp
 Contacts only. Any necessary Expo Video install requires separate exact-target
 approval, no toolchain upgrade or silent second dependency.
 
+## Later cached-first opening requirement
+
+Owner added Cached_Chat_and_Draft_Opening.md while40 was running. It is part of42
+and44 acceptance: known chat/draft bodies paint before background source reads,
+without losing edits or weakening source/scope/server revision checks. Reuse
+bounded session caches, no persistent full-history mirror or model warming.
+Parent accepted40 with these corrections: verified derived LID unknown-kind is not
+a permanent AI veto after explicit canonical Resume; explicit privacy/hold/unknown
+restrictions remain. Old-mapping read upgrade preserves existing manual work.
+Full-image variant uses bounded JPEG85 rather than oversized PNG. No source is
+implemented yet by these planning changes.
+
 ## Planning, ownership and release
 
 40 authors the bounded implementation/data/API/cache policy plan and41+ packets,
@@ -90,3 +102,26 @@ delete/profile invalidation, viewer lifecycle and bounded video handling. Existi
 send/draft/receipt/name/prompt safety remains. Revalidate integrated browser UI and
 one focused source review38 before33 artifacts. Real phone/media/mic/keyboard/
 receipt behavior remains owner acceptance, not mock or web proof.
+
+## Proposed implementation handoff40
+
+[History_and_Media_Implementation_Plan.md](History_and_Media_Implementation_Plan.md)
+is the executable proposal, not implemented behavior. Pending41 owns verified
+logical reads/recovery/paging and owner-display source/content contracts.42 owns
+mobile paging, exact-visible unread, private cache and full-screen photos.43 is a
+serial video continuation after42 and separate exact Expo Video approval.44
+validates the integrated browser candidate. No task was launched by40.
+
+The plan keeps physical record/request/outbox IDs and restrictive alias policy,
+uses fenced keyset pages plus source epochs, and separates owner bytes from AI
+frames. Private download storage is capped at100MiB/200 entries across namespaces,
+with current-source leases, expiry/purge and honest offline/OS limits. Proposed
+expo-video57.0.5 public APIs/package integrity were checked without installation.
+Its library fullscreen activity declares PiP independently of the app plugin, so
+43 includes a narrow manifest override and33 must verify the merged artifact.
+
+Acceptance of40 and completion of39's frozen-source export both precede any new
+product writer. Existing38 receives the plan's combined review supplement and
+41..44 evidence; its original packet/status are unchanged.33 remains held. Parent
+records execution IDs, decisions and commits. All prior authored future context/
+style and pending-send/draft/receipt/name/prompt handoffs remain in force.

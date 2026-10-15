@@ -127,8 +127,45 @@ version/target confirmation before install. Planning performed no installations.
 Release33 is blocked on implementation36/37 and focused review38 plus parent
 validation. Review32's original baseline is not extension acceptance. Native
 mic/keyboard, real contacts/receipts and PC behavior remain owner acceptance checks.
-The separately reported missing incoming messages remain investigation35, not an
-authorized speculative repair within this release plan.
+The separately reported missing incoming messages were investigated in35. The
+owner subsequently approved the three confirmed local fixes and cached/tappable
+photo/video viewing. The amendment below supersedes the earlier investigation-only
+boundary, not the prohibition on live diagnostics or speculative upstream repair.
+
+### Approved history and media amendment, proposed implementation
+
+[History_and_Media_Reliability_Scope.md](features/History_and_Media_Reliability_Scope.md)
+records the owner authority. Task40's
+[implementation plan](features/History_and_Media_Implementation_Plan.md) defines
+pending41..44. No history/media code is implemented by these documents.
+
+- Read verified same-account alias history and real quote sources together without
+  migrating records, rebinding requests/outboxes or broadening any member's AI
+  permissions. Preserve grants, holds, tombstones and unknown accounting.
+- Repair verified partial blank/full content without resurrecting restricted
+  sources, creating owner activity or triggering historical generation/send.
+- Page older already-stored messages with bounded keysets/cache. Preserve the
+  viewport and local typing; bottom of an old window cannot clear newest unread.
+  Only actually visible incoming IDs get app-view acknowledgment. No full WA sync.
+- Reuse only Otherme-authenticated downloaded bytes in bounded private client
+  storage. Current-source validation gates display; known deletion, expiry,
+  view-once, denial and profile revocation stop access and queue ordinary purge.
+  No gallery/original WhatsApp storage access, token URLs or secure-erase promise.
+- Add a source-anchored full-screen photo viewer and ordinary explicit foreground
+  video viewing/playback. No video send/AI/background/PiP or media export/share.
+  The proposed exact expo-video57.0.5 install/config targets need separate parent/
+  user approval; Contacts consent does not authorize it. History/cache/photo work
+  stays separable. No module installation occurred in40.
+
+No product writer starts until40 is accepted and frozen69f01fd browser39 finishes
+its preview export.41 owns core/backend contracts,42 mobile history/cache/photos,
+43 the separately gated video continuation,44 integrated browser validation.
+Existing38 reviews the combined source, not an added generic review loop.33 stays
+held on all new implementation, dependency decisions, validation/review and freeze.
+Prior320 tests/types are69f01fd baseline evidence only. No live DB repair/migration,
+reset, relink, download, paid request, phone action or final build is authorized by
+this amendment. Preserve the full future context/style handoffs and existing
+pending-send/draft/receipt/name/prompt constraints.
 
 ## Product and feasibility are different deliverables
 

@@ -44,4 +44,9 @@ approximate time and text/photo/voice classification, not private content.
 
 ## Execution
 
-Pending. Not a release blocker unless a defect is confirmed and scoped by parent.
+Running read-only with provider takomi, openai-codex/gpt-6.1-sol, thinking medium.
+T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-missing-incoming-investigation-20261015-r1`.
+Client request ID: otherme-missing-incoming-investigation-20261015-r1.
+Inspect immutable release399cc99 and candidate69f01fd baselines. Another worker
+writes only ignored synthetic browser artifacts. No product writer is active.
+Not a release blocker unless a defect is confirmed and separately scoped by parent.

@@ -89,11 +89,11 @@ account access, provider requests, real sends and deployment remain gated.
 | 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Review returned P2 Assistant read feedback; parent reproduced/fixed,93 mobile tests/types pass; extension review still required |
 | 33 | Built desktop assets and signed Android update | worker | vibe-build | 36/37/38 and source freeze | Held for extended release gate; sole approved C:/Otherme-build target |
 | 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Accepted docs; single atomic name import and approved build target clarified |
-| 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Pending investigation only; no live diagnostics or automatic release scope |
+| 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Running read-only Sol Medium against399cc99/69f01fd; no live diagnostics/automatic release scope |
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |
 | 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Implementation returned; parent320 tests/types pass; browser39 validation pending |
 | 38 | Review combined extended release | reviewer | vibe-build | 36/37,39 and parent validation | Pending, no concurrent source writers |
-| 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Ready, preview-only synthetic geometry/interactions |
+| 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Running Luna High, preview-only against69f01fd; no product edits |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

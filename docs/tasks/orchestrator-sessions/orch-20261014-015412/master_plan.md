@@ -91,19 +91,19 @@ account access, provider requests, real sends and deployment remain gated.
 | 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Accepted docs; single atomic name import and approved build target clarified |
 | 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Investigation complete; owner approved all three history fixes, now scoped by40 |
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |
-| 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Implementation returned; parent320 tests/types pass; browser39 validation pending |
-| 38 | Review combined extended release | reviewer | vibe-build | 36/37,39 and parent validation | Pending, no concurrent source writers |
+| 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Complete69f01fd;39 baseline and accepted44 final browser evidence; source38/hardware separate |
+| 38 | Review combined extended release | reviewer | vibe-build |36/37/41–49 integrated and44 accepted | Running Sol High read-only,399cc99..2453912, parent452 tests/types and108 full browser checks pass |
 | 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Complete; parent36 checks/18 screenshots pass after fixture wait correction;69f01fd baseline only |
 | 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Complete; parent accepted with cached-first/policy/manual-work/JPEG corrections in30f4f15 |
 | 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Complete, source32fe269; parent22 focused/342 workspace tests and all types pass |
 | 42 | Paged/cache-first chats, private media reuse and photo viewer | coder | vibe-build |41 and46 accepted contracts | Complete061c4d7; parent404 serialized-suite/packaging tests, all types, local ack lifecycle regression fixed |
 | 43 | Foreground video player and disabled-background/PiP config | coder | vibe-build |42 accepted, exact module approved | Complete4f2b428; parent435 serialized-suite/packaging tests and all types pass |
-| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43/46 plus47/48/49 corrections | Blocked, r3 primary88 pass and7 supplements pass; intermittent thumbnail availability unresolved,49 diagnoses |
+| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43/46 plus47/48/49 corrections | Complete on2453912, independent parent full91+17 browser checks, all14 actual viewed sets exact |
 | 45 | Audit ASR prices/routes and repeat paid work | architect | vibe-build | read-only frozen69f01fd | Complete; selected WhisperTurbo via same OpenRouter key,7 fake assertions, parent public catalog check |
 | 46 | Dedicated economical STT and durable reuse/attempt protection | coder | vibe-build |41 accepted,45 findings | Complete, source402e804; parent363 workspace tests/all types pass, no paid/live change |
 | 47 | Correct bounded actual row visibility after history reflow | coder | vibe-build |44 R1 confirmed blocker | Complete eb8a242, source440 tests/types pass; r2 exposes additional warm/resize/editor failures assigned48 |
 | 48 | Correct warm geometry, focused editor anchors and foreground photo recovery | coder | vibe-build |47 plus44 r2 confirmed failures | Complete35cba0c; parent449 tests/types and27 isolated browser checks pass |
-| 49 | Diagnose and correct thumbnail cancellation availability | coder | vibe-build |48 plus44 r3 recorded failures | Running Sol High; capture actual cause before source edits, no broad retry or URI-stability assumption |
+| 49 | Diagnose and correct thumbnail cancellation availability | coder | vibe-build |48 plus44 r3 recorded failures | Complete2453912, deterministic purge/ownership red-green; parent452 tests/types and full browser acceptance |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

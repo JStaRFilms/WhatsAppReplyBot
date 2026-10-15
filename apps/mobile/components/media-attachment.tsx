@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import type { Message } from '@replybot/core/contracts';
@@ -24,19 +24,24 @@ export function MediaAttachment({message,visible=false,onOpen}:{message:Message;
   const allowed=supported && !media?.viewOnce && media?.access!=='expired' && !expired
     && (media?.expiresAt===null || (media?.expiresAt ?? 0)>clock.now());
   const privateCache=discovery?.capabilities?.privateMediaCache===true;
-  useLayoutEffect(()=>()=>handle?.release(),[handle]);
+  const committed=useRef<MediaHandle | undefined>(undefined);
+  useLayoutEffect(()=>{committed.current=handle;return()=>{committed.current=undefined;handle?.release();};},[handle]);
   useLayoutEffect(()=>{if(handle && !valid)handle.release();},[handle,valid]);
   useEffect(()=>{
     setLease(null);setLegacy(null);setFailed(false);
     if(!allowed){if(media && privateCache && (media.viewOnce || media.access==='expired' || expired || media.expiresAt!==null && media.expiresAt<=clock.now()))mediaCache.invalidate(message);return;}
     if(!visible || media?.fixture || media?.kind==='video')return;
-    const controller=new AbortController();let active=true;
+    const controller=new AbortController();let active=true,acquired:MediaHandle | undefined;
     if(privateCache){
       void mediaCache.acquire(message,'preview','thumbnail',controller.signal).then(handle=>{
-        if(active && !controller.signal.aborted)setLease({client,identity,handle});else handle.release();
+        if(active && !controller.signal.aborted){acquired=handle;setLease({client,identity,handle});}else handle.release();
       }).catch(()=>{if(active)setFailed(true);});
     }else void client.media(message.conversationId,message.id,controller.signal).then(uri=>{if(active)setLegacy({client,identity,uri});}).catch(()=>{if(active)setFailed(true);});
-    return()=>{active=false;controller.abort();};
+    return()=>{active=false;controller.abort();
+      // Layout cleanup owns committed leases. A discarded state update never
+      // reaches that cleanup, so the acquiring effect still owns its handle.
+      if(acquired && acquired!==committed.current)acquired.release();
+    };
   },[client,mediaCache,identity,media?.kind,media?.viewOnce,media?.access,media?.fixture,media?.expiresAt,attempt,visible,privateCache,allowed]);
   useEffect(()=>{
     setExpired(false);if(media?.expiresAt===null || media?.expiresAt===undefined)return;

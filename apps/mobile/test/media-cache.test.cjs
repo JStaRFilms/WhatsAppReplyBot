@@ -76,6 +76,20 @@ test('a canceled last download waiter cannot poison or delete a new current shar
   gates[1].resolve();const handles=await Promise.all([current,joined]);assert.ok(handles.every(handle=>handle.getSnapshot()));handles.forEach(handle=>handle.release());f.close();
 });
 
+test('canceling an old storage write cannot mark current authorized bytes for source-wide purge',async()=>{
+  const f=fixture(),writing=deferred(),resume=deferred(),write=f.saved.storage.write;let writes=0;
+  f.saved.storage.write=async(...args)=>{if(++writes===1){writing.resolve();await resume.promise;}return write(...args);};
+  const abort=new AbortController(),old=f.cache.acquire(reference(),'preview','thumbnail',abort.signal).catch(error=>error);
+  await writing.promise;abort.abort();
+  const current=f.cache.acquire(reference(),'preview','thumbnail').catch(error=>error);
+  await settle();resume.resolve();assert.ok(await old instanceof Error);
+  const handle=await current;assert.ok(!(handle instanceof Error),handle.message);assert.equal(handle.getSnapshot(),true);
+  assert.equal(f.calls.filter(call=>call[0]==='binary').length,1,'Cancellation does not revoke a completed authorized write');
+  assert.ok([...f.saved.records.values()].every(record=>!record.pendingPurge));
+  const joined=await f.cache.acquire(reference(),'preview','thumbnail');handle.release();assert.equal(joined.getSnapshot(),true);
+  joined.release();assert.equal(f.cache.slots,0);f.close();
+});
+
 test('same source requests coalesce metadata/content; cancellation of one consumer does not revoke another lease',async()=>{
   const f=fixture(),held=f.hold(),abort=new AbortController();const a=f.cache.acquire(reference(),'preview','thumbnail',abort.signal),b=f.cache.acquire(reference(),'preview','thumbnail');
   await settle();abort.abort();held.resolve();await assert.rejects(a);const handle=await b;

@@ -214,7 +214,10 @@ export class MediaCache {
           record={key,size:result.bytes.length,mime:MediaRecordSchema.shape.mime.parse(result.mime),usedAt:this.clock.now(),expiresAt:current.source.expiresAt,pendingPurge:false};
           const completeRecord=record;
           await onDisk(async()=>{check();if(abort.signal.aborted)throw new Error('Media read cancelled.');await this.room(completeRecord);check();
-            await this.storage.write(completeRecord,result.bytes);check();if(abort.signal.aborted || current.deadline<=this.monotonic()){await this.remove(completeRecord);throw new Error('Media validation ended during storage.');}
+            await this.storage.write(completeRecord,result.bytes);check();if(current.deadline<=this.monotonic()){await this.remove(completeRecord);throw new Error('Media validation ended during storage.');}
+            // Canceling a consumer does not revoke the completed, authorized record.
+            // Purging this shared key would also deny its current replacement.
+            if(abort.signal.aborted)throw new Error('Media read cancelled.');
             resource.value=await this.storage.read(completeRecord);});
           validation=current;
         }

@@ -16,8 +16,9 @@ function fixture(kind='viewer'){
   const component=load(kind==='viewer'?'components/media-viewer.tsx':'components/media-attachment.tsx',modules,{AbortController,setTimeout:()=>1,clearTimeout(){},
     window:{addEventListener:(key,fn)=>keys.set(key,fn),removeEventListener:key=>keys.delete(key)}});
   const props={message:photo,canPlay:()=>true,visible:kind!=='thumbnail',onClose:()=>events.push({kind:'close'}),onOpen:message=>events.push({kind:'open',id:message.id})};
-  const render=()=>h.commit(()=>tree=kind==='viewer'?component.MediaViewer(props):component.MediaAttachment(props));
-  return {h,app,props,requests,response,events,handle,keys,render,invalidate:()=>{valid=false;return render();}};
+  const draw=()=>tree=kind==='viewer'?component.MediaViewer(props):component.MediaAttachment(props);
+  const render=()=>h.commit(draw);
+  return {h,app,props,requests,response,events,handle,keys,draw,render,invalidate:()=>{valid=false;return render();}};
 }
 test('explicit photo viewer requests only image, fits private local URI, respects safe areas and closes on back/Escape',async()=>{
   const f=fixture();f.render();assert.equal(f.requests.length,1);assert.equal(f.requests[0][1],'image');assert.equal(f.requests[0][2],'viewer');
@@ -50,6 +51,20 @@ test('only measured visible thumbnails acquire handles; offscreen, covered and n
   f.response.resolve(f.handle);await settle();let tree=f.render();label(tree,'Open image').props.onPress();assert.equal(f.events.find(event=>event.kind==='open').id,photo.id);
   f.props.visible=false;tree=f.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);assert.equal(f.events.find(event=>event.kind==='release').images,0);f.h.unmount();
   const changed=fixture('thumbnail');changed.props.visible=true;changed.render();changed.response.resolve(changed.handle);await settle();changed.render();changed.app.client={};tree=changed.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);changed.h.unmount();
+});
+test('an acquired thumbnail awaiting its first React commit is released on unmount',async()=>{
+  const f=fixture('thumbnail');f.props.visible=true;f.render();
+  f.response.resolve(f.handle);await settle();
+  f.h.unmount();assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+});
+test('a thumbnail resolved between an offscreen render and passive cleanup cannot lose its owner',async()=>{
+  const f=fixture('thumbnail');f.props.visible=true;f.render();
+  f.props.visible=false;const hidden=f.h.render(f.draw);
+  assert.equal(nodes(hidden).filter(node=>node.type==='image').length,0);
+  // Deliver after the offscreen render, before its passive cancellation.
+  f.response.resolve(f.handle);await settle();f.h.flush();f.render();
+  assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+  f.h.unmount();assert.equal(f.events.filter(event=>event.kind==='release').length,1);
 });
 test('video offers explicit Open without metadata, binary, thumbnail or legacy-AI-access prefetch',()=>{
   const f=fixture('thumbnail');f.props.visible=true;f.props.message={...photo,media:{...photo.media,kind:'video',access:'unsupported'}};

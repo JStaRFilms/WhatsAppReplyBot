@@ -6,8 +6,9 @@ Task35 completed read-only investigation against release399cc99 and candidate
 69f01fd. It found reproducible source defects, not the proven cause of the owner's
 actual missing messages. No real DB, auth, logs, contact/message content, API,
 phone or service was inspected. No source repair, live history request, reset or
-relink was performed. Fix scope requires an owner decision; this report alone
-does not alter the release gate or the frozen browser-validation source.
+relink was performed. Owner subsequently approved all three identified history changes and requested
+cached/tappable image/video viewing.40 now plans that release extension. No code
+fix or live repair has yet occurred; browser39 stays on frozen69f01fd.
 
 ## Owner report
 
@@ -83,8 +84,8 @@ assertions. A direct mobile-cache import hit React Native Flow syntax; the
 repository transpiling test harness then passed. No tracked files or persistent
 diagnostic script changed. Parent's independent alias-store assertion also passed.
 
-Ask whether to include only the verified identity-history fix, both identity and
-blank-recovery fixes, or defer them. Keep100-message pagination separate unless
-explicitly requested. The smallest optional incident detail is approximate local
+Owner decision is now recorded: fix the identity split, blank recovery and local
+older-message paging. Implementation needs40's scoped plan and tests, not live data
+access or full upstream history sync. The smallest optional incident detail is approximate local
 date/time, timezone and text/photo/voice classification. No private content,
 contact details, screenshot, auth data or real diagnostic access is requested.

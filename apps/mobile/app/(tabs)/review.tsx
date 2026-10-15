@@ -23,7 +23,7 @@ export default function Review() {
     {drafts.map(d => {
       const c = snapshot.conversations.find(c => c.id === d.conversationId); if (!c) return null;
       return <View key={d.id} style={{ gap: 12, paddingBottom: 16, borderBottomWidth: 1, borderColor: palette.border }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={'Open '+c.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56 }} onPress={() => { void history.load(c.id).catch(() => {}); router.push({ pathname: '/conversation/[id]', params: { id: c.id } }); }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={'Open '+c.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56 }} onPress={() => { void history.load(c.id).catch(() => {}); router.push({ pathname: '/conversation/[id]', params: { id: c.id, draftId:d.id } }); }}>
           <Avatar name={c.name} size={40}/><Text style={{ flex: 1, fontFamily: fonts.semibold, fontSize: 17, color: palette.text }}>{c.name}</Text>
         </Pressable>
         <DraftCard draft={d}/>

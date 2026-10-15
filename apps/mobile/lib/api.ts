@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { randomUUID } from './uuid';
 import { Conversation, Draft, Outbox, Message, ImageUpload, AudioUpload } from '@replybot/core/contracts';
-import { ProfileScope, ProfileOperation, SessionDiscovery } from '@replybot/core/api';
+import { ProfileScope, ProfileOperation, SessionDiscovery, MediaSource, type MediaVariant } from '@replybot/core/api';
 export const PauseResult = z.object({ acknowledged: z.literal(true), conversation: Conversation });
 export const DecisionResult = z.object({ draft: Draft.nullable().optional(), outbox: Outbox.nullable().optional(), simulated: z.boolean().optional() });
 export const SendResult = z.object({ simulated: z.boolean(), outbox: Outbox });
@@ -76,7 +76,7 @@ export class ApiClient {
     this.assertActive();
     if (!this.scope) throw new Error('Review the active account before continuing.');
   }
-  private async fetchResponse(path: string, init: RequestInit, read: 'json' | 'bytes'): Promise<unknown> {
+  private async fetchResponse(path: string, init: RequestInit, read: 'json' | 'bytes', byteLimit?: number, expectedVersion?: string): Promise<unknown> {
     this.assertActive();
     const abort = new AbortController();
     const cancel = () => abort.abort();
@@ -84,7 +84,7 @@ export class ApiClient {
     if(init.signal?.aborted) abort.abort();
     const readOnly = init.method === undefined || init.method === 'GET';
     this.requests.set(abort,readOnly);
-    const timeout = setTimeout(()=>abort.abort(),10000);
+    const timeout = setTimeout(()=>abort.abort(),expectedVersion ? 45000 : 10000);
     const interrupted = () => readOnly
       ? new ReadError('Could not refresh from the Windows service. Showing cached data, if available.')
       : new UnconfirmedMutationError();
@@ -121,8 +121,19 @@ export class ApiClient {
         const error = new ApiError('profile_scope_changed');
         this.invalidScope?.(error); this.revoke(); throw error;
       }
+      if (expectedVersion && (response.headers.get('X-Otherme-Media-Version') !== expectedVersion
+        || profile !== this.scope?.profileId || revision !== String(this.scope?.revision))) throw new Error('Media source changed.');
+      const length = Number(response.headers.get('Content-Length'));
+      if (byteLimit && length > byteLimit) throw new Error('Media exceeds its size limit.');
       const result: unknown = read === 'json' ? await wait(response.json()) : {
-        mime:response.headers.get('Content-Type')?.split(';')[0], bytes:new Uint8Array(await wait(response.arrayBuffer())),
+        mime:response.headers.get('Content-Type')?.split(';')[0], bytes:await (async()=>{
+          if (!byteLimit || !response.body?.getReader) return new Uint8Array(await wait(response.arrayBuffer()));
+          const reader=response.body.getReader(), bytes=new Uint8Array(byteLimit);let size=0;
+          try { for (;;) { const part=await wait(reader.read());if(part.done)break;
+            if(size+part.value.byteLength>byteLimit)throw new Error('Media exceeds its size limit.');bytes.set(part.value,size);size+=part.value.byteLength; }
+          } finally { await reader.cancel().catch(()=>{}); }
+          return bytes.subarray(0,size);
+        })(),
       };
       check();
       return result;
@@ -154,7 +165,7 @@ export class ApiClient {
     }
   }
   async session(signal?: AbortSignal): Promise<SessionDiscovery> {
-    const result = await this.fetchResponse('/v1/session?capabilities=1',{headers:this.headers(),signal},'json');
+    const result = await this.fetchResponse('/v1/session?capabilities=1&historyMedia=1',{headers:this.headers(),signal},'json');
     this.assertActive();
     const parsed = SessionDiscovery.safeParse(result);
     if (!parsed.success) throw new ApiError('client_upgrade_required');
@@ -200,6 +211,19 @@ export class ApiClient {
     if(bytes.length>4*1024*1024)throw new Error('Media too large');
     let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
     return 'data:'+mime+';base64,'+btoa(binary);
+  }
+  async mediaSource(conversationId:string,messageId:string,variant:MediaVariant,signal?:AbortSignal):Promise<MediaSource> {
+    return this.request('/v1/conversations/'+encodeURIComponent(conversationId)+'/media/'+encodeURIComponent(messageId)+'/source?variant='+variant,MediaSource,undefined,signal);
+  }
+  async mediaContent(source:MediaSource,signal:AbortSignal):Promise<{mime:string;bytes:Uint8Array<ArrayBuffer>}> {
+    this.requireScope();
+    const result=await this.fetchResponse('/v1/conversations/'+encodeURIComponent(source.conversationId)+'/media/'+encodeURIComponent(source.messageId)
+      +'/content?variant='+source.variant+'&sourceVersion='+source.sourceVersion,{headers:this.headers(),signal},'bytes',source.maxBytes,source.sourceVersion);
+    this.assertActive();
+    const parsed=z.object({mime:z.string(),bytes:z.instanceof(Uint8Array)}).parse(result);
+    if(parsed.mime!==source.mime || !parsed.bytes.length || parsed.bytes.length>source.maxBytes)throw new Error('Invalid media content.');
+    if(!(parsed.bytes.buffer instanceof ArrayBuffer))throw new Error('Invalid media buffer.');
+    return {mime:parsed.mime,bytes:new Uint8Array(parsed.bytes.buffer,parsed.bytes.byteOffset,parsed.bytes.byteLength)};
   }
   static async provision(baseUrl: string): Promise<string> {
     const response = await fetch(baseUrl.replace(/\/$/,'')+'/v1/local-provision', {

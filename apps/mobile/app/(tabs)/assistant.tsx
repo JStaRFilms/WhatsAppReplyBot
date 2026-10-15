@@ -63,7 +63,7 @@ export default function Assistant() {
               </View>}
               {!!t.result?.draftId && <Button label="Open draft" secondary onPress={() => {
                 const draft = snapshot.drafts.find(d => d.id === t.result?.draftId);
-                if (draft) router.push({ pathname: '/conversation/[id]', params: { id: draft.conversationId } });
+                if (draft) router.push({ pathname: '/conversation/[id]', params: { id: draft.conversationId, draftId:draft.id } });
               }}/>}
               {t.result?.candidates.map(c => <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={'Draft for '+c.name} style={{ minHeight: 48, justifyContent: 'center' }} onPress={() => { void send('draft for '+c.name); }}>
                 <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: palette.accent }}>{c.name}</Text>

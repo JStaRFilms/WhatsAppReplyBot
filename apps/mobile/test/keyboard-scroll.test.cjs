@@ -85,6 +85,35 @@ test('saved position is chat/history scoped, not shared across profile caches; o
   const count = f.moves.length; oldLatest(); f.frame(); assert.equal(f.moves.length, count);
 });
 
+test('measured real-row anchors survive prepend, edge eviction, row height and viewport resize',()=>{
+  let anchor;const history={pin:(_id,value)=>{anchor=value;},anchor:()=>anchor,get:()=>({hasNewer:true})};
+  const f=scrollFixture(history);f.layout();f.scrolled(600);
+  f.render().onRowLayout('real-1',100,100);f.render().onRowLayout('real-2',200,100);f.render().onRowLayout('real-3',300,700);
+  f.render().onScrollBeginDrag();f.scrolled(123);f.render().onScrollEndDrag();
+  assert.deepEqual(Array.from(f.render().visibleIds),['real-1','real-2','real-3']);assert.equal(anchor.id,'real-1');assert.equal(anchor.offset,-23);
+  f.render().preserve();f.render().onRowLayout('real-1',500,100);f.render().onRowLayout('real-2',600,100);f.render().onRowLayout('real-3',700,700);
+  f.render().onContentSizeChange(320,1400);f.frame();assert.equal(f.moves.at(-1),523);assert.equal(f.render().settled,false);
+  f.scrolled(523,400,1400);assert.equal(f.render().settled,true);assert.equal(anchor.offset,-23);
+  f.render().onRowLayout('real-1',560,100);f.frame();assert.equal(f.moves.at(-1),583);f.scrolled(583,400,1460);
+  f.render().onLayout({nativeEvent:{layout:{height:250}}});f.frame();assert.equal(f.moves.at(-1),583);
+  f.render().retainRows(['real-1','real-3']);assert.ok(!f.render().visibleIds.includes('real-2'));
+});
+
+test('only measured intersections are visible, drag and reposition are unsettled, and callbacks from an old scope cannot publish rows',()=>{
+  const f=scrollFixture();f.layout();f.scrolled(600);f.render().onRowLayout('mounted-above',0,100);f.render().onRowLayout('actual',590,100);f.render().onRowLayout('below',1100,100);
+  assert.deepEqual(Array.from(f.render().visibleIds),['actual']);f.render().onScrollBeginDrag();assert.equal(f.render().settled,false);f.render().onScrollEndDrag();
+  const old=f.render(),stale=old.onRowLayout;f.scope({});f.render();f.h.flush();stale('wrong-profile',0,100);
+  old.onScroll({nativeEvent:{contentOffset:{y:900},layoutMeasurement:{height:400},contentSize:{height:1300}}});old.onContentSizeChange(320,1500);old.onLayout({nativeEvent:{layout:{height:300}}});
+  assert.deepEqual(Array.from(f.render().visibleIds),[]);assert.equal(f.render().position.offset,0);
+});
+
+test('source/card locating clamps to the measured viewport and row layout cannot override an explicit pending target',()=>{
+  const f=scrollFixture();f.layout();f.scrolled(600);f.render().onScrollBeginDrag();f.scrolled(100);f.render().onScrollEndDrag();
+  f.render().onRowLayout('source',900,100);f.render().preserve();f.render().locate(980);f.render().onRowLayout('source',900,100);f.frame();assert.equal(f.moves.at(-1),600);
+  f.scrolled(600);assert.equal(f.render().settled,true);f.render().locate(0);f.frame();f.scrolled(0);assert.equal(f.render().settled,true);
+  f.render().locate(0);f.frame();assert.equal(f.render().settled,true);assert.equal(f.counts().dismissed,0);
+});
+
 test('Page avoids native keyboard using measured screen offset and reveals focused review inputs after keyboard show', () => {
   for (const os of ['android', 'ios', 'web']) {
     const h = hooks(), frames = new Map(), listeners = new Map(), reveals = []; let serial = 0;

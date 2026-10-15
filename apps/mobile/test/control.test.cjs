@@ -8,7 +8,7 @@ const Conversation=z.object({id:z.string(),accountId:z.string(),workflowVersion:
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const conversation=(workflowVersion,control='manual',accountId='account')=>({id:'chat',accountId,workflowVersion,control,kind:'direct',mode:'auto_reply'});
 const profileScope=c=>({profileId:c.accountId,accountId:c.accountId,revision:0});
-const snapshot=c=>({profileScope:profileScope(c),accountId:c.accountId,serverTime:1,conversations:[c]});
+const snapshot=c=>({drafts:[],profileScope:profileScope(c),accountId:c.accountId,serverTime:1,conversations:[c]});
 function providerFixture() {
   const h=hooks();const calls=[];let handle,discovered;
   class ApiClient {
@@ -19,7 +19,7 @@ function providerFixture() {
     request(path,schema,payload){calls.push({client:this,path,payload});return Promise.resolve(handle(this,path,payload)).then(data=>schema.parse ? schema.parse(data) : data);}
   }
   const component=load('lib/app-state.tsx',{'react':h.react,'react-native':{useColorScheme:()=> 'light',AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},'expo-constants':{},'zod':require('zod'),
-    '@replybot/core/contracts':{Conversation},'@replybot/core/api':{...core,ClientSnapshot:{}},'./api':{ApiClient,ApiError,ReadError,sameScope},'./history-cache':{HistoryCache:class{}},'./pending-intents':require('./pending-fixture.cjs').pendingModule({ApiError},require('./pending-fixture.cjs').memoryStorage()),'./audio-lane':{stopPlayback(){}},
+    '@replybot/core/contracts':{Conversation},'@replybot/core/api':{...core,ClientSnapshot:{}},'./api':{ApiClient,ApiError,ReadError,sameScope},'./history-cache':{HistoryCache:class{dispose(){}configure(){}}},'./media-cache':{MediaCache:class{dispose(){}setForeground(){}}},'./pending-intents':require('./pending-fixture.cjs').pendingModule({ApiError},require('./pending-fixture.cjs').memoryStorage()),'./audio-lane':{stopPlayback(){}},
     './client-clock':{ClientClock:class{calibrate(){}}},'./storage':{readSetting:async()=>null,saveSetting:async()=>{},getClientId:async()=> 'synthetic'},'./theme':{palettes:{dark:{},light:{}}}}, {URL,Map,AbortController,setTimeout,clearTimeout,setInterval:()=>0,clearInterval(){}});
   const render=()=>h.render(()=>component.AppProvider({children:null})).props.value;
   return{calls,render,respond:fn=>{handle=fn;},connect:async(c,url='http://synthetic.local')=>{

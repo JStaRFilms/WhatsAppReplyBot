@@ -1,0 +1,57 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {load,nodes,label,deferred}=require('./render-harness.cjs');
+const {lifecycleHooks}=require('./lifecycle-harness.cjs');
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+const photo={id:'source',conversationId:'physical',transportId:'transport-source',accountId:'synthetic',media:{kind:'image',access:'available',expiresAt:null,viewOnce:false,fixture:null}};
+function fixture(kind='viewer'){
+  const h=lifecycleHooks(),response=deferred(),events=[],keys=new Map(),requests=[];let tree,valid=true,released=false;
+  const handle={uri:'blob:private-synthetic',sourceVersion:'a'.repeat(64),expiresAt:null,mime:'image/jpeg',size:3,getSnapshot:()=>valid,subscribe:()=>()=>{},
+    release(){if(released)return;released=true;events.push({kind:'release',images:nodes(tree).filter(node=>node.type==='image').length});}};
+  const app={client:{},palette:{},clock:{now:()=>100},discovery:{capabilities:{privateMediaCache:true}},
+    mediaCache:{acquire:(...args)=>{requests.push(args);return response.promise;},subscribe:()=>()=>{},getNotice:()=>null,invalidate(){valid=false;events.push({kind:'invalidate'});}}};
+  const native={Modal:'modal',View:'view',Text:'text',Pressable:'pressable',ActivityIndicator:'spinner',PanResponder:{create:handlers=>({panHandlers:handlers})}};
+  const modules={react:h.react,'react-native':native,'expo-image':{Image:'image'},'../lib/app-state':{useApp:()=>app},'../lib/theme':{fonts:{}},
+    'react-native-safe-area-context':{useSafeAreaInsets:()=>({top:11,bottom:22,left:3,right:4})},'../assets/demo-image.png':1,'../assets/demo-sticker.webp':2,'../assets/demo-clock.gif':3};
+  const component=load(kind==='viewer'?'components/media-viewer.tsx':'components/media-attachment.tsx',modules,{AbortController,setTimeout:()=>1,clearTimeout(){},
+    window:{addEventListener:(key,fn)=>keys.set(key,fn),removeEventListener:key=>keys.delete(key)}});
+  const props={message:photo,visible:kind!=='thumbnail',onClose:()=>events.push({kind:'close'}),onOpen:message=>events.push({kind:'open',id:message.id})};
+  const render=()=>h.commit(()=>tree=kind==='viewer'?component.MediaViewer(props):component.MediaAttachment(props));
+  return {h,app,props,requests,response,events,handle,keys,render,invalidate:()=>{valid=false;return render();}};
+}
+test('explicit photo viewer requests only image, fits private local URI, respects safe areas and closes on back/Escape',async()=>{
+  const f=fixture();f.render();assert.equal(f.requests.length,1);assert.equal(f.requests[0][1],'image');assert.equal(f.requests[0][2],'viewer');
+  f.response.resolve(f.handle);await settle();const tree=f.render(),image=label(tree,'Full-screen photo');assert.equal(image.props.source.uri,'blob:private-synthetic');assert.equal(image.props.cachePolicy,'none');assert.equal(image.props.contentFit,'contain');
+  const layout=nodes(tree).find(node=>node.type==='view');assert.equal(layout.props.style.paddingTop,11);assert.equal(layout.props.style.paddingBottom,22);assert.equal(layout.props.style.paddingLeft,3);
+  label(tree,'Close photo').props.onPress();tree.props.onRequestClose();f.keys.get('keydown')({key:'Escape',preventDefault(){}});assert.equal(f.events.filter(event=>event.kind==='close').length,3);
+  assert.ok(label(tree,'Close photo').props.style.minHeight>=48);f.h.unmount();assert.equal(f.keys.size,0);assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+});
+test('zoom, reset, bounded pan and two-touch pinch stay between 1x and 3x',async()=>{
+  const f=fixture();f.render();f.response.resolve(f.handle);await settle();f.render();
+  label(f.render(),'Photo viewing area').props.onLayout({nativeEvent:{layout:{width:320,height:400}}});
+  for(let n=0;n<10;n++)label(f.render(),'Zoom in').props.onPress();let image=label(f.render(),'Full-screen photo');assert.equal(image.props.style.transform[2].scale,3);
+  let area=label(f.render(),'Photo viewing area');area.props.onPanResponderGrant({nativeEvent:{touches:[]}});area.props.onPanResponderMove({nativeEvent:{touches:[]}},{dx:9999,dy:-9999});
+  image=label(f.render(),'Full-screen photo');assert.equal(image.props.style.transform[0].translateX,320);assert.equal(image.props.style.transform[1].translateY,-400);
+  label(f.render(),'Reset zoom').props.onPress();image=label(f.render(),'Full-screen photo');assert.equal(image.props.style.transform[2].scale,1);assert.equal(image.props.style.transform[0].translateX,0);
+  area=label(f.render(),'Photo viewing area');area.props.onPanResponderGrant({nativeEvent:{touches:[{pageX:0,pageY:0},{pageX:100,pageY:0}]}});
+  area.props.onPanResponderMove({nativeEvent:{touches:[{pageX:0,pageY:0},{pageX:200,pageY:0}]}},{dx:0,dy:0});assert.equal(label(f.render(),'Full-screen photo').props.style.transform[2].scale,2);
+  for(let n=0;n<10;n++)label(f.render(),'Zoom out').props.onPress();assert.equal(label(f.render(),'Full-screen photo').props.style.transform[2].scale,1);f.h.unmount();
+});
+test('source denial removes decoded image before release and close; late route/profile completion releases without publishing',async()=>{
+  const f=fixture();f.render();f.response.resolve(f.handle);await settle();f.render();const invalid=f.invalidate();assert.equal(nodes(invalid).filter(node=>node.type==='image').length,0);
+  assert.equal(f.events.find(event=>event.kind==='release').images,0);assert.equal(f.events.filter(event=>event.kind==='close').length,1);f.h.unmount();
+  const late=fixture();late.render();late.h.unmount();assert.equal(late.requests[0][3].aborted,true);late.response.resolve(late.handle);await settle();assert.equal(late.events.filter(event=>event.kind==='release').length,1);
+});
+test('sticker/animation viewing requests its bounded preview, never full image or any model/upload operation',async()=>{
+  const f=fixture();f.props.message={...photo,media:{...photo.media,kind:'gif'}};f.render();assert.equal(f.requests[0][1],'preview');assert.match(nodes(f.render()).find(node=>node.props?.accessibilityRole==='header').props.children,/Bounded/);f.h.unmount();f.response.resolve(f.handle);await settle();
+});
+test('only measured visible thumbnails acquire handles; offscreen, covered and new-scope renders remove decoded pixels before release',async()=>{
+  const f=fixture('thumbnail');f.render();assert.equal(f.requests.length,0);f.props.visible=true;f.render();assert.equal(f.requests.length,1);assert.equal(f.requests[0][1],'preview');
+  f.response.resolve(f.handle);await settle();let tree=f.render();label(tree,'Open image').props.onPress();assert.equal(f.events.find(event=>event.kind==='open').id,photo.id);
+  f.props.visible=false;tree=f.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);assert.equal(f.events.find(event=>event.kind==='release').images,0);f.h.unmount();
+  const changed=fixture('thumbnail');changed.props.visible=true;changed.render();changed.response.resolve(changed.handle);await settle();changed.render();changed.app.client={};tree=changed.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);changed.h.unmount();
+});
+test('known view-once/expiry unmounts a thumbnail and requests invalidation without reading binary again',async()=>{
+  const f=fixture('thumbnail');f.props.visible=true;f.render();f.response.resolve(f.handle);await settle();f.render();
+  f.props.message={...photo,media:{...photo.media,viewOnce:true}};const tree=f.render();assert.equal(nodes(tree).filter(node=>node.type==='image').length,0);assert.ok(f.events.some(event=>event.kind==='invalidate'));assert.equal(f.requests.length,1);f.h.unmount();
+});

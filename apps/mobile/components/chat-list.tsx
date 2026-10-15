@@ -21,6 +21,10 @@ export function ChatList({ active, wide = false, selectedId }: { active: boolean
   const account = useRef<string | undefined>(undefined);
   const data = useMemo(() => {
     const last = new Map(snapshot?.lastMessages.map(m => [m.conversationId,m]));
+    for(const group of snapshot?.historyGroups ?? []){
+      const message=snapshot?.lastMessages.find(message=>message.id===group.lastMessageId);
+      if(message)last.set(group.id,message);
+    }
     const pending = new Set(snapshot?.drafts.filter(d => d.state === 'pending').map(d => d.conversationId));
     const needs = new Set(snapshot?.drafts.filter(d => d.state === 'needs_owner').map(d => d.conversationId));
     const activity: Record<Filter,string[]> = {
@@ -28,9 +32,16 @@ export function ChatList({ active, wide = false, selectedId }: { active: boolean
       drafts: snapshot?.drafts.filter(d => d.state === 'pending').map(d => d.id+':'+d.revision) ?? [],
       needs: snapshot?.drafts.filter(d => d.state === 'needs_owner').map(d => d.id) ?? [],
     };
-    const sorted = [...(snapshot?.conversations ?? [])].sort((a,b) => b.lastHumanActivityAt-a.lastHumanActivityAt);
-    return { last, pending, needs, activity, sorted, pendingCount: activity.drafts.length };
-  },[snapshot]);
+    const local=new Set(localIds),originalLocal=new Set<string>();
+    for(const group of snapshot?.historyGroups ?? []){
+      if(group.memberIds.some(id=>localIds.has(id))){local.add(group.id);if(!localIds.has(group.id))originalLocal.add(group.id);}
+      if(group.memberIds.some(id=>pending.has(id)))pending.add(group.id);
+      if(group.memberIds.some(id=>needs.has(id)))needs.add(group.id);
+    }
+    const retired=new Set(snapshot?.historyGroups?.flatMap(group=>group.memberIds.filter(id=>id!==group.id)) ?? []);
+    const sorted = [...(snapshot?.conversations ?? [])].filter(conversation=>!retired.has(conversation.id)).sort((a,b) => b.lastHumanActivityAt-a.lastHumanActivityAt);
+    return { last, pending, needs, activity, sorted, local, originalLocal, pendingCount: activity.drafts.length };
+  },[snapshot,localIds]);
   useEffect(() => {
     if (account.current !== snapshot?.accountId) {
       account.current = snapshot?.accountId;
@@ -44,13 +55,13 @@ export function ChatList({ active, wide = false, selectedId }: { active: boolean
     return () => { focused.current = false; };
   },[active,data,filter]);
   const chats = useMemo(() => data.sorted.filter(c => c.name.toLowerCase().includes(query))
-    .filter(c => filter === 'all' || (filter === 'needs' ? data.needs.has(c.id) : data.pending.has(c.id)||localIds.has(c.id)))
-    .filter(c => query.length > 0 || filter !== 'all' || data.last.has(c.id) || localIds.has(c.id)),[data,query,filter,localIds]);
+    .filter(c => filter === 'all' || (filter === 'needs' ? data.needs.has(c.id) : data.pending.has(c.id)||data.local.has(c.id)))
+    .filter(c => query.length > 0 || filter !== 'all' || data.last.has(c.id) || data.local.has(c.id)),[data,query,filter,localIds]);
   const open = useCallback((id: string) => { void history.load(id).catch(() => {}); const route = {pathname:'/conversation/[id]' as const,params:{id}};
     if (wide) router.replace(route); else router.push(route);
   },[router,history,wide]);
   const renderItem = useCallback<ListRenderItem<Conversation>>(({ item }) => <ChatRow conversation={item} last={data.last.get(item.id)}
-    pending={data.pending.has(item.id)} localDraft={localIds.has(item.id)} unread={snapshot?.unreadCounts[item.id] ?? 0} palette={palette} onOpen={open} selected={selectedId === item.id}/>,[data,palette,open,localIds,snapshot?.unreadCounts,selectedId]);
+    pending={data.pending.has(item.id)} localDraft={data.local.has(item.id)} originalLocalDraft={data.originalLocal.has(item.id)} unread={snapshot?.unreadCounts[item.id] ?? 0} palette={palette} onOpen={open} selected={selectedId === item.id}/>,[data,palette,open,localIds,snapshot?.unreadCounts,selectedId]);
   if (!snapshot) return <Page title="Otherme"><EmptyConnection/></Page>;
   return <Page title="Otherme" scroll={false}>
     <View style={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 8 }}>

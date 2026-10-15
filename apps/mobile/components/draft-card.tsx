@@ -7,13 +7,13 @@ import { fonts } from '../lib/theme';
 import { Button } from './ui';
 import { OutboxStatus } from './outgoing-status';
 
-export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocus, onSent }: {
-  draft: Draft; onEditorFocus?: (target: number | null) => void; onSent?: () => void;
+export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocus, onSent, sourceReady=true }: {
+  draft: Draft; sourceReady?:boolean; onEditorFocus?: (target: number | null) => void; onSent?: () => void;
 }) {
   const { palette, mutate, status, client } = useApp();
   const [acknowledged,setAcknowledged]=useState<{client:typeof client;id:string;revision:number;draft?:Draft | null;outbox?:Outbox | null;simulated?:boolean} | null>(null);
   const local=acknowledged?.client===client && acknowledged?.id===provided.id && acknowledged.revision>=provided.revision ? acknowledged : null;
-  const draft=local?.draft && local.draft.revision>=provided.revision && provided.state==='pending' ? local.draft : provided;
+  const draft=local?.draft && (local.draft.revision>provided.revision || provided.state==='pending') ? local.draft : provided;
   const scope=useRef({client,id:provided.id});
   if(scope.current.client!==client || scope.current.id!==provided.id)scope.current={client,id:provided.id};
   const alive=useRef(true);
@@ -28,10 +28,10 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
   const [unconfirmed,setUnconfirmed]=useState(false);
   const blocked=busy || unconfirmed;
   const pending = draft.state === 'pending' && !local?.outbox;
-  const title=local?.outbox ? local.outbox.state==='accepted'?'Approved':'Send outcome '+local.outbox.state : draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : 'Dismissed';
+  const title=local?.outbox ? local.outbox.state==='accepted'?'Approved':'Send outcome '+local.outbox.state : draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : draft.state==='resolved' ? 'Resolved' : 'Dismissed';
   useEffect(() => { if (editing) return () => onEditorFocus?.(null); }, [editing, onEditorFocus]);
   const decide = async (operation: 'approve' | 'dismiss' | 'edit' | 'needs_owner') => {
-    if(decisionLock.current || unconfirmed)return;
+    if(decisionLock.current || unconfirmed || !sourceReady)return;
     const source=scope.current;
     decisionLock.current=true;setBusy(true);setDecisionFeedback(null);
     const action: Action | undefined = operation === 'edit' ? { kind: 'text', text, reason: 'Owner edited this draft.' } : undefined;
@@ -71,14 +71,16 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
       </View> : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>
         {'text' in draft.action ? draft.action.text : 'reaction' in draft.action ? 'React '+draft.action.reaction.emoji : draft.action.reason}
       </Text>}
+    {!sourceReady && <Text style={{color:palette.muted,fontSize:12}}>Source context is loading or unavailable. This cached draft is not approval authority.</Text>}
+    {editing && editingRevision!==draft.revision && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>This draft changed on another client. Your unsaved text is kept. Saving requires the original revision and may be rejected.</Text>}
     {decisionFeedback && <Text accessibilityRole="alert" style={{color:palette.danger,fontFamily:fonts.regular,fontSize:13}}>{decisionFeedback}</Text>}
     {local?.outbox && <OutboxStatus outbox={local.outbox} simulated={local.simulated}/>}
-    {draft.state === 'stale' && <Button label="Dismiss" secondary disabled={blocked || status!=='online'} onPress={()=>{void decide('dismiss');}}/>}
-    {draft.state === 'needs_owner' && <Button label="Handled" secondary disabled={blocked || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>}
+    {draft.state === 'stale' && <Button label="Dismiss" secondary disabled={blocked || !sourceReady || status!=='online'} onPress={()=>{void decide('dismiss');}}/>}
+    {draft.state === 'needs_owner' && <Button label="Handled" secondary disabled={blocked || !sourceReady || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>}
     {pending && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      <Button label={editing ? 'Save draft' : 'Send reply'} disabled={blocked || status !== 'online' || (editing && (!text.trim() || text.trim().length>4000))} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
+      <Button label={editing ? 'Save draft' : 'Send reply'} disabled={blocked || !sourceReady || status !== 'online' || (editing && (!text.trim() || text.trim().length>4000))} onPress={() => { void decide(editing ? 'edit' : 'approve'); }}/>
       {!editing && ('text' in draft.action || draft.action.kind==='text_sequence') && <Button label={draft.action.kind==='text_sequence' ? 'Edit as one reply' : 'Edit'} secondary disabled={blocked} onPress={() => { setText(editableText); setEditingRevision(draft.revision); setEditing(true); }}/>}
-      <Button label="Dismiss" secondary disabled={blocked || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>
+      <Button label="Dismiss" secondary disabled={blocked || !sourceReady || status !== 'online'} onPress={() => { void decide('dismiss'); }}/>
     </View>}
   </View>;
 });

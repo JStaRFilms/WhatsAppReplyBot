@@ -2,10 +2,11 @@ import { createContext, use, useCallback, useEffect, useRef, useState, type Reac
 import { AppState, useColorScheme } from 'react-native';
 import Constants from 'expo-constants';
 import { z } from 'zod';
-import { Conversation } from '@replybot/core/contracts';
+import { Conversation, Draft } from '@replybot/core/contracts';
 import { ClientSnapshot, ProfileScope, ProfileOperation, SessionDiscovery, ProfileTransitionInput, ProfileTransitionResult } from '@replybot/core/api';
 import { ApiClient, ApiError, ReadError, sameScope } from './api';
 import { HistoryCache } from './history-cache';
+import { MediaCache } from './media-cache';
 import { PendingIntents } from './pending-intents';
 import { ClientClock } from './client-clock';
 import { stopPlayback } from './audio-lane';
@@ -15,7 +16,7 @@ import { palettes, type Palette, type ThemeChoice } from './theme';
 interface Controller {
   snapshot: ClientSnapshot | null; status: 'offline' | 'connecting' | 'online'; error: string | null;
   pcStatus: 'offline' | 'connecting' | 'authenticated' | 'auth-required'; snapshotFresh: boolean; hasSavedCredential: boolean;
-  palette: Palette; dark: boolean; themeChoice: ThemeChoice; baseUrl: string; client: ApiClient; history: HistoryCache; clock: ClientClock;
+  palette: Palette; dark: boolean; themeChoice: ThemeChoice; baseUrl: string; client: ApiClient; history: HistoryCache; mediaCache: MediaCache; clock: ClientClock;
   acceptedScope: ProfileScope | null; sessionKey: string; discovery: SessionDiscovery | null;
   operation: ProfileOperation | null; profileBusy: boolean; profileNotice: string | null;
   continueProfile: () => Promise<void>; transitionProfile: (input: ProfileTransitionInput) => Promise<void>;
@@ -24,6 +25,7 @@ interface Controller {
   setTheme: (choice: ThemeChoice) => void;
   composer: (id: string,hasText: boolean) => Promise<void>;
   viewed: (id:string,watermark:number) => Promise<void>;
+  viewedMessages: (id:string,messageIds:string[]) => Promise<void>;
   control: (id:string,action:'resume'|'extend'|'indefinite') => Promise<Conversation | undefined>;
   intents: PendingIntents;
   mutate: <T>(path: string, schema: z.ZodType<T>, payload: Record<string, unknown>) => Promise<T>;
@@ -33,7 +35,8 @@ const Context = createContext<Controller | null>(null);
 const SavedSession = z.object({url:z.string().url(),token:z.string(),scope:ProfileScope.optional()});
 type Credentials = z.infer<typeof SavedSession>;
 function sessionState(client: ApiClient, epoch: number) {
-  return { client, epoch, history:new HistoryCache(client), clock:new ClientClock(), intents:new PendingIntents(client,client.scope,epoch), composerQueue:new Map<string,Promise<void>>(), request:0, acceptedRequest:0 };
+  const clock=new ClientClock();
+  return { client, epoch, history:new HistoryCache(client), clock, mediaCache:new MediaCache(client,clock), intents:new PendingIntents(client,client.scope,epoch), composerQueue:new Map<string,Promise<void>>(), request:0, acceptedRequest:0 };
 }
 type SessionState = ReturnType<typeof sessionState>;
 type OwnTransition = {input:ProfileTransitionInput;source:ProfileScope};
@@ -88,7 +91,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // submit work in the gap between discovering a revision and unmounting screens.
   const replaceBinding = (scope: ProfileScope | null): SessionState => {
     active.current.intents.stop();
+    active.current.mediaCache.dispose();
     active.current.client.revoke();
+    active.current.history.dispose();
     stopPlayback();
     const epoch = active.current.epoch+1;
     const saved = credentials.current;
@@ -132,13 +137,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     session.acceptedRequest=request;
+    session.history.configure(latestDiscovery.current?.capabilities?.historyPaging===true,data.historyGroups);
     session.intents.reconcile(data.outbox);
     session.clock.calibrate(data.serverTime);
     setSnapshot(previous=>{
       if (signal.aborted || !current(session) || request < session.acceptedRequest) return previous;
       if (!previous) return data;
       const savedConversations=new Map(previous.conversations.map(c=>[c.id,c]));
-      return {...data,conversations:data.conversations.map(incoming=>{
+      const savedDrafts=new Map(previous.drafts.map(draft=>[draft.id,draft]));
+      return {...data,drafts:data.drafts.map(incoming=>{const saved=savedDrafts.get(incoming.id);return saved && saved.revision>incoming.revision?saved:incoming;}),conversations:data.conversations.map(incoming=>{
         const saved=savedConversations.get(incoming.id);
         return saved && saved.workflowVersion>incoming.workflowVersion ? saved : incoming;
       })};
@@ -216,7 +223,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const authRequired=reason instanceof ApiError && reason.code==='owner_auth_required';
           setPcStatus(authRequired?'auth-required':'offline');
           if(authRequired || reason instanceof ApiError && reason.code==='client_upgrade_required')setPolling(false);
-          if(reason instanceof ApiError && reason.code==='client_upgrade_required') {
+          if(authRequired || reason instanceof ApiError && reason.code==='client_upgrade_required') {
             replaceBinding(null);latestDiscovery.current=null;setDiscovery(null);
           }
           setReadError(reason instanceof Error ? reason.message : 'Could not refresh from the Windows service.');
@@ -271,6 +278,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if(visible===foreground.current)return;
       foreground.current=visible;
       active.current.intents.setForeground(visible);
+      active.current.mediaCache.setForeground(visible);
       readRun.current?.abort.abort();active.current.client.abortReads();
       setSnapshotFresh(false);
       if(visible && credentials.current) {
@@ -280,7 +288,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setStatus('offline');setPcStatus('offline');
       }
     });
-    return()=>{subscription.remove();readRun.current?.abort.abort();active.current.intents.stop();active.current.client.revoke();stopPlayback();};
+    return()=>{subscription.remove();readRun.current?.abort.abort();active.current.intents.stop();active.current.client.revoke();active.current.history.dispose();active.current.mediaCache.dispose(false);stopPlayback();};
   },[refresh]);
   const connect = async (url: string, enteredToken?: string) => {
     const previous=credentials.current;
@@ -343,7 +351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if(connectionEpoch.current===epoch){transitionLock.current=false;pollBudget.current=30;setPolling(true);}
     }
   };
-  const {client,history,clock,composerQueue,intents}=binding;
+  const {client,history,mediaCache,clock,composerQueue,intents}=binding;
   useEffect(()=>{intents.setForeground(foreground.current);void intents.load();},[intents]);
   intents.onMutation=()=>{if(current(binding))void refresh();};
   const composer = useCallback((id:string,hasText:boolean):Promise<void> => {
@@ -363,6 +371,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await client.request('/v1/conversations/'+encodeURIComponent(id)+'/viewed',z.object({viewed:z.boolean()}),{watermark});
     if(current(binding))await refresh();
   },[binding,refresh]);
+  const viewedMessages=useCallback(async(id:string,messageIds:string[])=>{
+    if(!current(binding) || !latestDiscovery.current?.capabilities?.historyPaging || !messageIds.length)return;
+    await client.request('/v1/conversations/'+encodeURIComponent(id)+'/viewed-messages',z.object({viewed:z.boolean()}),{messageIds:[...new Set(messageIds)].slice(0,100)});
+    if(current(binding))void refresh();
+  },[binding,refresh]);
   const control=useCallback(async(id:string,action:'resume'|'extend'|'indefinite'):Promise<Conversation | undefined>=>{
     if(!current(binding))return;
     setError(null);
@@ -377,6 +390,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if(!current(binding))throw new Error('The active account changed. No action was submitted.');
     const result=await client.request(path,schema,payload);
     if(!current(binding))throw new Error('The active account changed. The request outcome is unconfirmed.');
+    // A read started before this result cannot roll it back on a second client.
+    binding.acceptedRequest=binding.request+1;
+    const saved=Draft.safeParse(result);
+    const decision=typeof result==='object' && result!==null && 'draft' in result ? Draft.safeParse(result.draft) : null;
+    const draft=saved.success?saved.data:decision?.success?decision.data:undefined;
+    if(draft)setSnapshot(previous=>current(binding)&&previous ? {...previous,drafts:[...previous.drafts.filter(value=>value.id!==draft.id || value.revision>draft.revision),
+      ...(!previous.drafts.some(value=>value.id===draft.id && value.revision>draft.revision)?[draft]:[])]}:previous);
     void refresh();
     return result;
   };
@@ -388,9 +408,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return current(binding) ? result : undefined;
     } catch(reason){if(current(binding))setError(reason instanceof Error ? reason.message : 'Action failed.');return undefined;}
   };
-  return <Context value={{snapshot,status,error:error ?? readError,pcStatus,snapshotFresh,hasSavedCredential,palette:dark?palettes.dark:palettes.light,dark,themeChoice,baseUrl,client,history,clock,
+  return <Context value={{snapshot,status,error:error ?? readError,pcStatus,snapshotFresh,hasSavedCredential,palette:dark?palettes.dark:palettes.light,dark,themeChoice,baseUrl,client,history,mediaCache,clock,
     acceptedScope:client.scope ?? null,sessionKey:String(binding.epoch)+':'+JSON.stringify(client.scope ?? null),discovery,operation,profileBusy,profileNotice,
-    refresh,connect,continueProfile,transitionProfile,perform,mutate,intents,composer,viewed,control,
+    refresh,connect,continueProfile,transitionProfile,perform,mutate,intents,composer,viewed,viewedMessages,control,
     clearError:()=>{setError(null);setReadError(null);},reportError:message=>{if(current(binding))setError(message);},
     setTheme:choice=>{setThemeChoice(choice);void saveSetting('replybot-theme',choice).catch(()=>setError('Theme preference could not be saved.'));}}}>
     {children}

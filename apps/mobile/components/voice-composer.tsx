@@ -8,7 +8,7 @@ import { useVoiceRecorder } from '../lib/voice-recorder';
 import { useApp } from '../lib/app-state';
 import { AudioPlayback, audioTime } from './audio-playback';
 import { fonts } from '../lib/theme';
-export interface VoiceComposerHandle { pickAudio:()=>void }
+export interface VoiceComposerHandle { pickAudio:()=>void; isBusy:()=>boolean; setViewerBlocked:(blocked:boolean)=>boolean }
 export interface VoiceComposerProps {
   ref?:Ref<VoiceComposerHandle>;children:ReactNode;canSend:boolean;sending:boolean;onSend:()=>void;
   clip:AudioClip | null;disabled:boolean;active:boolean;scope?:object;inactiveReason?:'background'|'chat';beforePick:()=>Promise<void>;
@@ -16,6 +16,7 @@ export interface VoiceComposerProps {
 }
 export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled,active,scope,inactiveReason='chat',beforePick,onClip,onBusyChange}:VoiceComposerProps) {
   const {palette,reportError}=useApp();const [working,setWorking]=useState(false);const [recordingError,setRecordingError]=useState<string | null>(null);const lock=useRef(false);const alive=useRef(true);
+  const viewerBlocked=useRef(false),recordingActive=useRef(false),stopping=useRef(false);
   const activeRef=useRef(active);const operation=useRef(0);const recordingGuard=useRef<()=>boolean>(()=>false);
   const scopeRef=useRef(scope);const cancellation=useRef<string | null>(null);
   if(scopeRef.current!==scope){scopeRef.current=scope;operation.current++;cancellation.current ??= 'connection or profile changed';}
@@ -25,11 +26,13 @@ export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled
   });
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;operation.current++;};},[]);
   useEffect(()=>{onBusyChange(working || recorder.recording);},[working,recorder.recording,onBusyChange]);
-  useEffect(()=>{if(recorder.recording && (!active || cancellation.current!==null))void recorder.stop();},[active,scope,recorder.recording]);
+  const stopRecording=async()=>{if(stopping.current)return;stopping.current=true;try{await recorder.stop();}finally{stopping.current=false;recordingActive.current=false;}};
+  useEffect(()=>{if(recorder.recording && (!active || cancellation.current!==null))void stopRecording();},[active,scope,recorder.recording]);
+  useEffect(()=>{if(!recorder.recording && !lock.current)recordingActive.current=false;},[recorder.recording]);
   async function begin(file:boolean) {
-    if(disabled || !activeRef.current || canSend || clip || lock.current || recorder.recording)return;
+    if(disabled || viewerBlocked.current || !activeRef.current || canSend || clip || lock.current || recorder.recording)return;
     const current=++operation.current;
-    const isCurrent=()=>alive.current && activeRef.current && operation.current===current;
+    const isCurrent=()=>alive.current && activeRef.current && !viewerBlocked.current && operation.current===current;
     lock.current=true;cancellation.current=null;setRecordingError(null);setWorking(true);
     let stage='composer hold';let failed=false;
     try {
@@ -39,7 +42,7 @@ export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled
         const selected=await DocumentPicker.getDocumentAsync({type:'audio/*',multiple:false,copyToCacheDirectory:true,base64:false});
         const asset=selected.assets?.[0];
         if(asset){const picked=clipFromAsset(asset);if(isCurrent())onClip(picked);else picked.release();}
-      }else {stage='microphone setup';recordingGuard.current=isCurrent;await recorder.start(isCurrent);}
+      }else {stage='microphone setup';recordingGuard.current=isCurrent;await recorder.start(isCurrent);recordingActive.current=true;}
     }catch(error){
       failed=true;
       if(alive.current){
@@ -55,7 +58,11 @@ export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled
       }
     }
   }
-  useImperativeHandle(ref,()=>({pickAudio:()=>{void begin(true);}}));
+  useImperativeHandle(ref,()=>({pickAudio:()=>{void begin(true);},
+    isBusy:()=>lock.current || recordingActive.current || recorder.recording || stopping.current,
+    setViewerBlocked:blocked=>{if(blocked && (lock.current || recordingActive.current || recorder.recording || stopping.current))return false;
+      viewerBlocked.current=blocked;if(blocked)operation.current++;return true;},
+  }));
   const blocked=disabled || !active || working || (!canSend && !recorder.canRecord);
   return <>
     {clip && <View style={{paddingHorizontal:16,paddingBottom:6,flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center',justifyContent:'space-between'}}>
@@ -71,7 +78,7 @@ export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled
       <Pressable accessibilityRole="button" accessibilityLabel={recorder.recording ? 'Stop recording' : canSend ? 'Send message' : 'Record voice note'}
         accessibilityState={{disabled:!recorder.recording && blocked,busy:working || sending}}
         disabled={!recorder.recording && blocked}
-        onPress={()=>{if(recorder.recording){void recorder.stop();}else if(canSend){onSend();}else{void begin(false);}}}
+        onPress={()=>{if(recorder.recording){void stopRecording();}else if(canSend){onSend();}else{void begin(false);}}}
         style={{height:48,width:48,flexShrink:0,borderRadius:24,backgroundColor:recorder.recording ? palette.danger : palette.accent,alignItems:'center',justifyContent:'center',opacity:!recorder.recording && blocked ? 0.4 : 1}}>
         {recorder.recording ? <Square color={palette.accentText} size={22}/> : working || sending ? <ActivityIndicator color={palette.accentText}/> : canSend ? <Send color={palette.accentText} size={22}/> : <Mic color={palette.accentText} size={22}/>}
       </Pressable>

@@ -107,10 +107,10 @@ function screenFixture(initialText='') {
   const scrolling=load('lib/conversation-scroll.ts',{'react':h.react,'react-native':native},{WeakMap,Map,...animation});
   const component=load('app/conversation/[id].tsx',{'react':h.react,'react-native':native,'expo-router':{Stack:{Screen:'stack'},useLocalSearchParams:()=>({id:'chat'}),useFocusEffect(){},useRouter:()=>({})},'lucide-react-native':icons,
     '../../lib/uuid':{randomUUID:()=> 'synthetic-request'},'@replybot/core/contracts':contracts,'expo-image':{Image:'image'},
-    '../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
+    '../../components/media-viewer':{MediaViewer:'viewer'},'../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
     '../../components/avatar':{Avatar:'avatar'},'../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
-    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{ApiError:class extends Error{}},'../../lib/pending-intents':{intentVisible:()=>true},'../../lib/media-lease':{releaseImage(){},releaseMedia(){}},'../../components/outgoing-status':{OutboxStatus:'outbox-status'},'../../lib/local-drafts':{useLocalDraft:()=>({text:initialText,setText(){},ready:true})},
+    '../../lib/app-state':{useApp:()=>app},'../../lib/api':{ApiError:class extends Error{}},'../../lib/pending-intents':{intentVisible:()=>true},'../../lib/media-lease':{releaseImage(){},releaseMedia(){}},'../../components/outgoing-status':{OutboxStatus:'outbox-status'},'../../lib/local-drafts':{useLocalDraftIds:()=>[],useLocalDraft:()=>({text:initialText,setText(){},ready:true})},
     '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,
     '../../lib/composer-focus':load('lib/composer-focus.ts',{react:h.react,'react-native':native,'./foreground':{isForeground:()=>true}},animation),'../../lib/foreground':{isForeground:()=>true,useForeground:()=>true}}, {WeakMap,Map,clearTimeout,...animation});
   return{render:()=>h.render(component.default),sends,message,app,h,frame:()=>{const next=[...frames.values()];frames.clear();next.forEach(fn=>fn());}};

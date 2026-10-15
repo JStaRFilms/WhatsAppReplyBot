@@ -24,9 +24,9 @@ function voiceFixture({phase,permission={granted:true},requested={granted:true}}
     'expo-file-system':{File:class{exists=true;delete(){counts.deleted++;}}},'./audio-clip':{clipFromUri:()=>({release(){counts.releasedClips++;}})},
     './foreground':{isForeground:()=>foreground,useForeground:()=>foreground}},globals);
   const component=load('components/voice-composer.tsx',{react:h.react,'react-native':native,'lucide-react-native':{},
-    'expo-document-picker':{},'../lib/audio-clip':{},'../lib/audio-lane':{stopPlayback(){}},'../lib/voice-recorder':hook,
+    'expo-document-picker':{getDocumentAsync:()=>pending.promise},'../lib/audio-clip':{clipFromAsset:()=>({release(){counts.releasedClips++;}})},'../lib/audio-lane':{stopPlayback(){}},'../lib/voice-recorder':hook,
     '../lib/app-state':{useApp:()=>({palette:{},reportError:message=>errors.push(message)})},'./audio-playback':{AudioPlayback:'preview',audioTime:()=> '0:01'},'../lib/theme':{fonts:{}}});
-  const props={children:null,canSend:false,sending:false,clip:null,disabled:false,active:true,scope:{},beforePick:()=>hold.promise,
+  const props={ref:{current:null},children:null,canSend:false,sending:false,clip:null,disabled:false,active:true,scope:{},beforePick:()=>hold.promise,
     onClip:()=>counts.clips++,onBusyChange:value=>busy.push(value)};
   const render=()=>h.commit(()=>component.VoiceComposer(props));
   return {render,props,counts,errors,busy,pending,hold,h,
@@ -49,6 +49,17 @@ test('granted mic survives actual busy/hold/snapshot rerenders and uses no permi
   assert.equal(f.counts.clips,1);assert.equal(f.counts.stops,1);
   f.props.disabled=false;label(f.render(),'Record voice note').props.onPress();await settle();f.render();
   assert.equal(f.counts.starts,2);assert.equal(f.counts.requests,0);f.h.unmount();await settle();assert.equal(f.counts.late,0);
+});
+
+test('viewer exclusion reads synchronous preparation, recording, picker and stop guards before parent busy effects',async()=>{
+  const f=voiceFixture({phase:'prepare'});let tree=f.render();const record=label(tree,'Record voice note').props.onPress;
+  assert.equal(f.props.ref.current.setViewerBlocked(true),true);record();assert.equal(f.counts.checks,0);assert.equal(f.props.ref.current.isBusy(),false);
+  f.props.ref.current.setViewerBlocked(false);record();assert.equal(f.props.ref.current.isBusy(),true);assert.equal(f.props.ref.current.setViewerBlocked(true),false);
+  f.hold.resolve();await settle();assert.equal(f.props.ref.current.setViewerBlocked(true),false);f.pending.resolve();await settle();assert.equal(f.props.ref.current.isBusy(),true);
+  tree=f.render();label(tree,'Stop recording').props.onPress();assert.equal(f.props.ref.current.isBusy(),true);assert.equal(f.props.ref.current.setViewerBlocked(true),false);
+  await settle();f.render();assert.equal(f.props.ref.current.isBusy(),false);assert.equal(f.props.ref.current.setViewerBlocked(true),true);f.h.unmount();await settle();assert.equal(f.counts.late,0);
+  const picker=voiceFixture();picker.render();picker.props.ref.current.pickAudio();assert.equal(picker.props.ref.current.setViewerBlocked(true),false);picker.hold.resolve();await settle();
+  assert.equal(picker.props.ref.current.isBusy(),true);picker.pending.resolve({assets:[]});await settle();picker.render();assert.equal(picker.props.ref.current.isBusy(),false);picker.h.unmount();
 });
 
 test('permission check/request, audio setup and preparation invalidate through background/return without auto-resume',async()=>{
@@ -127,10 +138,10 @@ function screenFixture(initialText='Original') {
   const component=load('app/conversation/[id].tsx',{react:h.react,'react-native':rn,'expo-router':{Stack:{Screen:'stack'},useLocalSearchParams:()=>({id}),useRouter:()=>({}),
     useFocusEffect:callback=>h.react.useEffect(()=>routeFocused?callback():undefined,[callback,routeFocused])},'lucide-react-native':{},
     '../../lib/uuid':{randomUUID:()=> 'request-'+(++serial)},'@replybot/core/contracts':{Draft:{},OwnerAction:{}},'expo-image':{Image:'image'},
-    '../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
+    '../../components/media-viewer':{MediaViewer:'viewer'},'../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
     '../../components/avatar':{Avatar:'avatar'},'../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
-    '../../lib/app-state':{useApp:()=>app},'../../lib/api':pendingApi,'../../lib/pending-intents':pendingModule(pendingApi,memoryStorage()),'../../lib/media-lease':lease,'../../components/outgoing-status':{OutboxStatus:'outbox-status'},'../../lib/local-drafts':{useLocalDraft:()=>({text,setText:value=>{text=value;},ready:true})},
+    '../../lib/app-state':{useApp:()=>app},'../../lib/api':pendingApi,'../../lib/pending-intents':pendingModule(pendingApi,memoryStorage()),'../../lib/media-lease':lease,'../../components/outgoing-status':{OutboxStatus:'outbox-status'},'../../lib/local-drafts':{useLocalDraftIds:()=>[],useLocalDraft:()=>({text,setText:value=>{text=value;},ready:true})},
     '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,'../../lib/composer-focus':focus,
     '../../lib/foreground':{isForeground:()=>foreground,useForeground:()=>foreground}},
     {...animation,setTimeout:()=>1,clearTimeout(){}});

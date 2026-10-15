@@ -2,9 +2,10 @@
 
 ## Agent setup
 
-Persona worker, Takomi Luna High, artifact-only after source freeze and task32.
+Persona worker, Takomi Luna High, artifact-only after source freeze and extension review38.
 Canonical root: C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot. Approved physical Android build copy
-C:/Otherme-build only. Read Daily_Use_Batch_1_Contract.md and current build tooling.
+C:/Otherme-build only. Read Daily_Use_Batch_1_Contract.md, Release_Extension_Implementation_Plan.md,
+36/37 dependency/API handoffs,38 findings/responses and current build tooling.
 Parent supplies final version/source hash after review; do not choose or edit it.
 
 ## Objective
@@ -23,13 +24,17 @@ Preserve all previous releases byte-for-byte and original signing material.
 Do not rerun exclusive prepare-copy over an existing destination; verify then sync
 its allowlist only, preserving short pnpm store/codegen fixes and native cache.
 Sign using original env privately; never put keys/env/session into build copy or
-print credentials. No install/licenses/firewall/services/cloud build.
+print credentials. No SDK/toolchain installs, licenses, firewall/services or cloud build. Only a
+parent-confirmed frozen dependency refresh in the existing approved short copy is
+allowed when required by37's exact Expo Contacts pin, with no new package choices.
 
 ## Definition of done
 
 Actual desktop production export and signed APK verified, matching frozen source.
 Single approved signer, package/version, non-debuggable, LANHTTP/no-backup/permissions,
 embedded bundle/native resize and private-file/real credential-byte scan pass.
+If Expo Contacts is used, assert READ_CONTACTS present and WRITE_CONTACTS absent in
+the actual merged/signed artifact, not just app.json. Retain mic/camera safeguards.
 Desktop assets contain no secrets and can only expose public bundle/static files.
 Source input hashes and previous APK hashes remain unchanged. Exact bytes/hash,
 redacted evidence and errors are reported. No physical microphone/phone install or
@@ -38,7 +43,11 @@ recordings, models or private content diagnostics. No debug APK fallback.
 
 ## Dependencies and review checkpoint
 
-32 accepted, parent-owned version/config/defaults and final source snapshot frozen.
+36 and37 integrated,38's confirmed blockers resolved, parent validation accepted,
+parent-owned version/config/defaults and final source snapshot frozen. Original32
+alone is insufficient. Owner-added send/receipt/name/prompt/punctuation gate must
+be complete. Preserve existing C:/Otherme-build caches/path fixes and refresh only
+the verified credential-free allowlist; do not run prepare-copy into it again.
 Worker does not commit/push or alter scopes. Parent independently verifies final
 artifacts, commits exact owned changes and guides owner install/service update.
 

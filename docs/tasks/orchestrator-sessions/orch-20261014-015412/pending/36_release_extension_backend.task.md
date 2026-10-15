@@ -50,3 +50,11 @@ Depends on34's authored plan and parent launch.37 starts only after36's shared c
 ## Limits
 
 No actual address-book, .env/token/auth/signing/SQLite/runtime reads, live backend/WhatsApp/profile/model action, phone input, service control, installation, SDK/toolchain/license change, OS viewer, final export/APK or outside-project write. Only documented synthetic `.runtime/ui-task31` artifacts may be inspected, otherwise use invented data and test-managed temporary stores/ports, not3210/8081/8083. Do not stage/commit/push, modify master_plan/board/status, launch agents or fix unrelated ingestion. Stop and report if version/target/scope becomes unclear.
+
+## Execution
+
+Running with provider takomi, openai-codex/gpt-6.1-sol, thinking high.
+T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-release-extension-backend-20261015-r1`.
+Client request ID: otherme-release-extension-backend-20261015-r1.
+Parent accepted34 and its simplification in a1da333. No other core/backend writer.
+37 waits for this source/DTO handoff;33 stays held for38 and source freeze.

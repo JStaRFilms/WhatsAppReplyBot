@@ -51,6 +51,30 @@ Sync only matched `{conversationId,name}` pairs, name max120 code points/512 UTF
 
 Backend enforces saved WhatsApp > phone matched > push/notify > verified > number/unknown. UI uses sourced Conversation.name, not a private competing cache. Name sync creates no chat and grants no AI access. Full/unmatched/unrelated book names never enter model context or logging.
 
+## Parent native dependency preflight
+
+Public registry metadata confirms expo-contacts57.0.7 and the installed Expo
+compatibility manifest nominates ~57.0.7. Parent downloaded its public archive to
+memory only and verified the registry SHA512,11,445,987 compressed bytes. No files,
+module install, real contacts or native permission call occurred. An initial5MiB
+audit bound was too small; the declared12,272,227-byte unpacked package justified
+the corrected16MiB in-memory bound. This is an API/source check, not hardware proof.
+
+The package publicly exports `expo-contacts/legacy`; its types expose paged
+getContactsAsync, getPermissionsAsync and requestPermissionsAsync. The root is the
+new API, so do not assume legacy getContactsAsync is exported at the root. Verify
+installed public types, select name/phone fields explicitly and do not use the
+native default field set, which includes unrelated data. Public Kotlin confirms
+permission methods request/check READ only when WRITE is absent from the manifest.
+Its config plugin adds both READ_CONTACTS and WRITE_CONTACTS by default. Explicitly
+block WRITE_CONTACTS in Android config and verify the resulting manifest. No custom
+native bridge or second dependency is authorized.
+
+When37 launches after36, the allowed install target is only canonical
+apps/mobile/package.json and canonical root pnpm-lock.yaml, pinned exactly57.0.7.
+Use existing pnpm and avoid lifecycle scripts/SDK changes. Do not install now or in
+C:/Otherme-build. Parent will supply final API handoff and confirmation at launch.
+
 ## Definition of done and checks
 
 Focused mobile tests defer hold/upload/send/snapshot independently. Cover immediate pending feedback, usable input/history/swipe, original capture, duplicate revision versus intentional identical send, media lease lifetime, pending remount, scope/background guards, sequential gestures, stale quote/source error, journal full/write failure, unknown/partial stop, no mutation restart and read-only request-ID reconciliation. Verify returning mutation result does not break draft approval, profile/Settings or Assistant feedback.

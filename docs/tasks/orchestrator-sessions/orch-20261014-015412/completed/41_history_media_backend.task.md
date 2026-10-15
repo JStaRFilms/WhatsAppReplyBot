@@ -75,11 +75,17 @@ Done means all required contracts/source guards work, focused tests and owned su
 
 ## Execution
 
-Running Takomi Sol High, sole core/backend writer. Parent accepted40 in30f4f15;
+Completed Takomi Sol High implementation; parent accepted with one focused
+arrival-class/unread correction. Parent accepted40 in30f4f15;
 39 finished and parent rerun passed. Source baseline69f01fd, newer commits docs-only.
 T3 task ID: node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-history-media-backend-20261015-r1.
 Client request ID: otherme-history-media-backend-20261015-r1. No42/43 writer active.
-No real data operation, native dependency install or build is authorized here.
+No real data operation, native dependency install or build occurred.
+Handoff docs/features/History_and_Media_Backend_Handoff.md. Parent regression failed
+before correcting known live/replay/backfill duplicate classification and actual
+acknowledgment semantics, preserving unknown/actor/source fields.22 focused tests
+then342 workspace tests and all workspace types pass. Source committed by parent.
+Acceptance is for downstream46/42 work; combined38 and native hardware remain.
 
 ## Safety limits
 

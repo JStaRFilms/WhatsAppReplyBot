@@ -18,6 +18,6 @@ export function ChatBadge({ conversation: c, pending = false }: { conversation: 
   const backgroundColor = off ? palette.surface : manual || auto && !hasAllowance ? palette.manualSoft : auto ? palette.autoSoft : palette.accentSoft;
   return <View accessibilityLabel={auto && hasAllowance ? remaining === null ? 'Auto reply, unlimited actions' : 'Auto reply, '+remaining+' actions remaining' : label}
     style={{ backgroundColor, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 3, alignSelf: 'center', flexShrink: 1, minWidth: 0 }}>
-    <Text numberOfLines={1} style={{ fontFamily: fonts.medium, fontSize: 10, lineHeight: 16, color }}>{label}</Text>
+    <Text style={{ fontFamily: fonts.medium, fontSize: 12, color }}>{label}</Text>
   </View>;
 }

@@ -116,7 +116,7 @@ function screenFixture(initialText='Original') {
     useFocusEffect:callback=>h.react.useEffect(()=>routeFocused?callback():undefined,[callback,routeFocused])},'lucide-react-native':{},
     '../../lib/uuid':{randomUUID:()=> 'request-'+(++serial)},'@replybot/core/contracts':{Draft:{},OwnerAction:{}},'expo-image':{Image:'image'},
     '../../components/voice-composer':{VoiceComposer:'voice'},'../../components/attachment-picker':{AttachmentPicker:'attachments'},
-    '../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
+    '../../components/avatar':{Avatar:'avatar'},'../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
     '../../lib/app-state':{useApp:()=>app},'../../lib/api':{SendResult:{}},'../../lib/local-drafts':{useLocalDraft:()=>({text,setText:value=>{text=value;},ready:true})},
     '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,'../../lib/composer-focus':focus,

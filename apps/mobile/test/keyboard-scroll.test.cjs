@@ -93,7 +93,7 @@ test('Page avoids native keyboard using measured screen offset and reveals focus
       TextInput: { State: { currentlyFocusedInput: () => focused } }, Keyboard: { addListener: (name, fn) => {
         listeners.set(name, fn); return { remove: () => listeners.delete(name) };
       } } };
-    const module = load('components/ui.tsx', { react: h.react, 'react-native': native,
+    const module = load('components/ui.tsx', { react: h.react, 'react-native': native, 'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
       '../lib/app-state': { useApp: () => ({ palette: {} }) }, '../lib/theme': { fonts: {} } }, {
       process: { env: { EXPO_OS: os } }, requestAnimationFrame: fn => { frames.set(++serial, fn); return serial; }, cancelAnimationFrame: key => frames.delete(key),
     });

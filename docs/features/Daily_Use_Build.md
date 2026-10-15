@@ -65,6 +65,25 @@ No live launcher, viewer, pairing, profile or device operation was used. Final w
 export, signed APK and actual Windows/device acceptance follow UI integration and
 focused integrated review.
 
+## Batch 1 selected UI source evidence
+
+The selected charcoal/blue and light layouts now cover Chats, Conversation,
+Review, Assistant and Settings. At browser width900 and above, a64-unit navigation
+rail and340-unit inbox sit beside the actual routed detail. There is one scoped
+AppProvider/LocalDraftProvider and one conversation, not a duplicate desktop client.
+The detail remains mounted across responsive resizing so local text and input
+identity survive. Header/bottom safe-area ownership and native measured keyboard
+avoidance remain separate.
+
+Parent reran all250 workspace tests and workspace typechecks successfully. The
+isolated browser rerun passed132 geometry/interaction checks with122 synthetic
+screenshots and zero page errors. It covers dark/light/system,320/360/390/1280
+widths, browser text inflation, navigation, scoped detail identity, local draft,
+quote/editor/image-preview and synthetic visual-viewport behavior. The preview
+export and screenshots are in ignored `.runtime/ui-task31/`. They use invented
+data and cannot prove native microphone/keyboard or actual Windows behavior.
+The focused integrated review and final production export/APK are still pending.
+
 ## Initial 0.1.0 build evidence
 
 The native ARM64/x86_64 assembleRelease build passed in the owner-approved short

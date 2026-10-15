@@ -53,10 +53,10 @@ export function AudioPlayback({clip,message,active=true}:{clip?:AudioClip;messag
     }catch(error){const cancelled=controller.signal.aborted || error instanceof DOMException && error.name==='AbortError';stop();if(!cancelled)reportError('Audio unavailable.');}
     finally{if(alive.current)setLoading(false);}
   }
-  return <View style={{flexDirection:'row',alignItems:'center',gap:10,minWidth:155,paddingVertical:4}}>
-    <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'} disabled={!allowed || loading} onPress={()=>{void toggle();}} style={{padding:8}}>
+  return <View style={{flexDirection:'row',alignItems:'center',gap:8,minWidth:0,flexShrink:1,paddingVertical:4}}>
+    <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'} disabled={!allowed || loading} onPress={()=>{void toggle();}} style={{width:48,minHeight:48,flexShrink:0,alignItems:'center',justifyContent:'center'}}>
       {loading ? <ActivityIndicator color={palette.accent}/> : playing ? <Pause color={palette.accent} size={22}/> : <Play color={allowed ? palette.accent : palette.muted} size={22}/>}
     </Pressable>
-    <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:13}}>{allowed ? audioTime(time)+' / '+audioTime(duration || clip?.duration || message?.media?.duration || 0) : 'Audio unavailable'}</Text>
+    <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:13,flexShrink:1}}>{allowed ? audioTime(time)+' / '+audioTime(duration || clip?.duration || message?.media?.duration || 0) : 'Audio unavailable'}</Text>
   </View>;
 }

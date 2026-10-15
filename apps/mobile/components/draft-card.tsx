@@ -26,9 +26,9 @@ export const DraftCard = memo(function DraftCard({ draft, onEditorFocus, onSent 
     if (operation === 'approve' && result?.outbox?.state === 'accepted' && draft.action.kind !== 'reaction') onSent?.();
     setBusy(false);
   };
-  return <View style={{ borderWidth: 1, borderColor: pending ? palette.accent : palette.border, borderRadius: 12,
+  return <View style={{ borderWidth: 1, borderColor: pending ? palette.accent : palette.border, borderStyle: pending ? 'dashed' : 'solid', borderRadius: 12,
     padding: 14, gap: 10, backgroundColor: pending ? palette.accentSoft : palette.surface }}>
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
       <Text style={{ fontFamily: fonts.semibold, color: palette.accent, fontSize: 12 }}>
         {draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : 'Dismissed'}
       </Text>
@@ -40,7 +40,7 @@ export const DraftCard = memo(function DraftCard({ draft, onEditorFocus, onSent 
       style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54, maxHeight: 180, textAlignVertical: 'top' }}/>
       : draft.action.kind==='text_sequence' ? <View accessibilityLabel="Ordered reply sequence" style={{gap:8}}>
         {draft.action.messages.map((message,index)=><View key={index} style={{padding:10,borderRadius:8,backgroundColor:palette.surface}}>
-          <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:11}}>Message {index+1}{message.quotedMessageId ? ' · quoted reply' : ''}</Text>
+          <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>Message {index+1}{message.quotedMessageId ? ' · quoted reply' : ''}</Text>
           <Text selectable style={{fontFamily:fonts.regular,fontSize:16,lineHeight:23,color:palette.text}}>{message.text}</Text>
         </View>)}
       </View> : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>

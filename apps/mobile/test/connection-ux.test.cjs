@@ -102,7 +102,7 @@ test('authenticated PC button stays connected before Continue and while WhatsApp
 
 test('service strip separates PC auth, profile acceptance, stale cache, WhatsApp link and AI permission',()=>{
   const app={palette:{},pcStatus:'authenticated',acceptedScope:null,profileBusy:false,snapshot:null,snapshotFresh:false};
-  const component=load('components/ui.tsx',{'react':hooks().react,'react-native':{},'../lib/app-state':{useApp:()=>app},'../lib/theme':{fonts:{}}});
+  const component=load('components/ui.tsx',{'react':hooks().react,'react-native':{},'react-native-safe-area-context':{useSafeAreaInsets:()=>({bottom:0})},'../lib/app-state':{useApp:()=>app},'../lib/theme':{fonts:{}}});
   assert.match(text(component.ServiceStrip()),/Connected to PC · Review profile/);
   app.acceptedScope=scope();app.snapshot={...snapshot(scope()),demo:false};app.snapshotFresh=true;
   assert.match(text(component.ServiceStrip()),/WhatsApp disconnected · AI paused/);

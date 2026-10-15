@@ -5,24 +5,38 @@ const {load,hooks,nodes}=require('./render-harness.cjs');
 const palette={background:'#fff',border:'#ddd',text:'#111',accent:'#06c',muted:'#777',surface:'#eee',outgoing:'#def',auto:'#0a0'};
 const fonts={bold:'bold',medium:'medium',regular:'regular',semibold:'semibold'};
 
-test('tab bar adds bottom inset to its existing height and padding',()=>{
+test('compact tab bar owns its bottom inset once',()=>{
   for(const bottom of [36,16,0]){
-    const Tabs=props=>props;Tabs.Screen='screen';
-    const component=load('app/(tabs)/_layout.tsx',{'expo-router':{Tabs},'lucide-react-native':{MessageSquare:'message',ClipboardList:'clipboard',Sparkles:'sparkles',Settings:'settings'},
+    const h=hooks();const Tabs=props=>props;Tabs.Screen='screen';
+    const component=load('app/(tabs)/_layout.tsx',{'react':h.react,'react-native':{View:'view',Text:'text',useWindowDimensions:()=>({fontScale:1})},'../../lib/responsive':{useWideLayout:()=>false},'expo-router':{Tabs},'lucide-react-native':{MessageSquare:'message',ClipboardList:'clipboard',Sparkles:'sparkles',Settings:'settings'},
       '../../lib/app-state':{useApp:()=>({palette})},'react-native-safe-area-context':{useSafeAreaInsets:()=>({bottom})},'../../lib/theme':{fonts}});
-    const tree=component.default();const style=tree.props.screenOptions.tabBarStyle;
-    assert.equal(style.height,80+bottom);assert.equal(style.paddingBottom,20+bottom);assert.equal(style.paddingTop,10);
+    const tree=h.render(component.default);const style=tree.props.screenOptions.tabBarStyle;
+    assert.equal(style.height,64+bottom);assert.equal(style.paddingBottom,4+bottom);assert.equal(style.paddingTop,4);
   }
+});
+
+test('tab labels grow for large native fonts and measured browser text without duplicating the inset',()=>{
+  const h=hooks();const Tabs=props=>props;Tabs.Screen='screen';
+  const component=load('app/(tabs)/_layout.tsx',{'react':h.react,'react-native':{View:'view',Text:'text',useWindowDimensions:()=>({fontScale:2})},
+    '../../lib/responsive':{useWideLayout:()=>false},'expo-router':{Tabs},
+    'lucide-react-native':{MessageSquare:'message',ClipboardList:'clipboard',Sparkles:'sparkles',Settings:'settings'},
+    '../../lib/app-state':{useApp:()=>({palette})},'react-native-safe-area-context':{useSafeAreaInsets:()=>({bottom:24})},'../../lib/theme':{fonts}});
+  const render=()=>h.render(component.default);let tree=render();
+  assert.equal(tree.props.screenOptions.tabBarStyle.height,100);
+  const tab=tree.props.children[0];const text=tab.props.options.tabBarLabel({color:palette.text});
+  text.props.onLayout({nativeEvent:{layout:{height:56}}});tree=render();
+  assert.equal(tree.props.screenOptions.tabBarStyle.height,124);
+  assert.equal(tree.props.screenOptions.tabBarStyle.paddingBottom,28);
 });
 
 function inboxFixture(snapshot,localDraftIds=[]){
   const h=hooks();h.react.useDeferredValue=value=>value;
-  const component=load('app/(tabs)/index.tsx',{'react':h.react,'react-native':{FlatList:'FlatList',Pressable:'Pressable',Text:'Text',TextInput:'TextInput',View:'View'},
+  const component=load('components/chat-list.tsx',{'react':h.react,'react-native':{FlatList:'FlatList',ScrollView:'ScrollView',Pressable:'Pressable',Text:'Text',TextInput:'TextInput',View:'View'},
     'lucide-react-native':{Search:'Search'},'expo-router':{useFocusEffect(){},useRouter:()=>({push(){}})},
-    '@replybot/core/contracts':{},'../../components/ui':{Page:'Page',EmptyConnection:'EmptyConnection'},
-    '../../components/chat-row':{ChatRow:'ChatRow'},'../../lib/app-state':{useApp:()=>({snapshot,palette,history:{load:async()=>{}}})},
-    '../../lib/local-drafts':{useLocalDraftIds:()=>localDraftIds},'../../lib/theme':{fonts}});
-  const render=()=>h.render(()=>component.default());
+    '@replybot/core/contracts':{},'./ui':{Page:'Page',EmptyConnection:'EmptyConnection'},
+    './chat-row':{ChatRow:'ChatRow'},'../lib/app-state':{useApp:()=>({snapshot,palette,history:{load:async()=>{}}})},
+    '../lib/local-drafts':{useLocalDraftIds:()=>localDraftIds},'../lib/theme':{fonts}});
+  const render=()=>h.render(()=>component.ChatList({active:true}));
   return{render};
 }
 const conversation=(id,name)=>({id,name,lastHumanActivityAt:0});

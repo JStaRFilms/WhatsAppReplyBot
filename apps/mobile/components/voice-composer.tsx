@@ -58,21 +58,21 @@ export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled
   useImperativeHandle(ref,()=>({pickAudio:()=>{void begin(true);}}));
   const blocked=disabled || !active || working || (!canSend && !recorder.canRecord);
   return <>
-    {clip && <View style={{paddingHorizontal:16,paddingBottom:6,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
+    {clip && <View style={{paddingHorizontal:16,paddingBottom:6,flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center',justifyContent:'space-between'}}>
       <AudioPlayback clip={clip} active={active}/>
       <Text style={{fontFamily:fonts.regular,fontSize:12,color:palette.muted}}>Local preview</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Delete voice note" disabled={disabled} onPress={()=>{stopPlayback();onClip(null);}} style={{padding:10}}><Trash2 color={palette.muted} size={20}/></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Delete voice note" disabled={disabled} onPress={()=>{stopPlayback();onClip(null);}} style={{minWidth:48,minHeight:48,alignItems:'center',justifyContent:'center'}}><Trash2 color={palette.muted} size={20}/></Pressable>
     </View>}
     {working && <Text accessibilityLiveRegion="polite" style={{paddingHorizontal:16,color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>Preparing voice note…</Text>}
     {!!recordingError && <Text accessibilityRole="alert" style={{paddingHorizontal:16,color:palette.danger,fontFamily:fonts.regular,fontSize:12}}>{recordingError}</Text>}
     {recorder.recording && <Text style={{paddingHorizontal:16,color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>{audioTime(recorder.seconds)} / 5:00</Text>}
-    <View style={{flexDirection:'row',alignItems:'flex-end',padding:12,paddingBottom:24,gap:8}}>
+    <View style={{flexDirection:'row',alignItems:'flex-end',padding:8,gap:8,width:'100%',maxWidth:800,alignSelf:'center'}}>
       {children}
       <Pressable accessibilityRole="button" accessibilityLabel={recorder.recording ? 'Stop recording' : canSend ? 'Send message' : 'Record voice note'}
         accessibilityState={{disabled:!recorder.recording && blocked,busy:working || sending}}
         disabled={!recorder.recording && blocked}
         onPress={()=>{if(recorder.recording){void recorder.stop();}else if(canSend){onSend();}else{void begin(false);}}}
-        style={{height:49,width:49,borderRadius:25,backgroundColor:recorder.recording ? palette.danger : palette.accent,alignItems:'center',justifyContent:'center',opacity:!recorder.recording && blocked ? 0.4 : 1}}>
+        style={{height:48,width:48,flexShrink:0,borderRadius:24,backgroundColor:recorder.recording ? palette.danger : palette.accent,alignItems:'center',justifyContent:'center',opacity:!recorder.recording && blocked ? 0.4 : 1}}>
         {recorder.recording ? <Square color={palette.accentText} size={22}/> : working || sending ? <ActivityIndicator color={palette.accentText}/> : canSend ? <Send color={palette.accentText} size={22}/> : <Mic color={palette.accentText} size={22}/>}
       </Pressable>
     </View>

@@ -28,13 +28,13 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
       onPanResponderTerminationRequest: () => true,
     });
   }, [message, onQuote, translation]);
-  return <View style={{ alignItems: owner ? 'flex-end' : 'flex-start', paddingBottom: 8 }}>
-    <Animated.View {...swipe.panHandlers} style={{ ...webSwipeStyle, maxWidth: '87%', transform: [{ translateX: translation }] }}>
+  return <View style={{ alignItems: owner ? 'flex-end' : 'flex-start', paddingBottom: 6 }}>
+    <Animated.View {...swipe.panHandlers} style={{ ...webSwipeStyle, maxWidth: '86%', transform: [{ translateX: translation }] }}>
     <Pressable accessibilityRole="button" accessibilityLabel={'Message: '+(message.text || media?.kind || 'attachment')} accessibilityHint="Swipe right to quote. Hold to quote or react."
-      onLongPress={() => onSelect(message)} style={{ padding: 11, borderRadius: 12,
-        borderTopRightRadius: owner ? 0 : 12, borderTopLeftRadius: owner ? 12 : 0,
+      onLongPress={() => onSelect(message)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
+        borderTopRightRadius: owner ? 4 : 16, borderTopLeftRadius: owner ? 16 : 4,
         backgroundColor: owner ? palette.outgoing : palette.surface }}>
-      {quoted && <View style={{ padding: 9, borderLeftWidth: 3, borderColor: palette.accent, backgroundColor: palette.background, borderRadius: 5, marginBottom: 8 }}>
+      {quoted && <View style={{ padding: 9, borderLeftWidth: 3, borderColor: palette.accent, backgroundColor: palette.background, borderRadius: 8, marginBottom: 8 }}>
         <Text style={{ fontFamily: fonts.semibold, color: palette.accent, fontSize: 12 }}>{quoted.direction === 'outbound' ? 'You' : 'Quoted message'}</Text>
         <Text numberOfLines={2} style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13 }}>{quoted.text || quoted.media?.kind}</Text>
       </View>}
@@ -42,8 +42,8 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
         {message.statusContext ? 'Reply to your status: '+message.statusContext : 'Reply to your status · original unavailable'}
       </Text>}
       {media?.kind==='audio' ? <AudioPlayback message={message} active={active}/> : media && <MediaAttachment message={message}/>}
-      {!!message.text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 15, lineHeight: 22 }}>{message.text}</Text>}
-      <Text style={{ fontFamily: fonts.regular, fontSize: 11, textAlign: 'right', color: palette.muted, marginTop: 4 }}>
+      {!!message.text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 16, lineHeight: 24 }}>{message.text}</Text>}
+      <Text style={{ fontFamily: fonts.regular, fontSize: 12, textAlign: 'right', color: owner ? palette.outgoingMuted : palette.muted, marginTop: 4 }}>
         {owner ? message.authorship === 'assistant_written' ? snapshot?.demo ? 'AI · simulated ' : 'AI · ' : message.authorship === 'owner_edited_assistant' ? snapshot?.demo ? 'Edited by you · simulated ' : 'Edited by you · ' : 'You · ' : ''}
         {time.format(message.occurredAt)}
       </Text>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Stack, useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { ChevronDown, ChevronLeft, SlidersHorizontal, Smile, X } from 'lucide-react-native';
 import { randomUUID } from '../../lib/uuid';
 import { Draft, type Message, OwnerAction } from '@replybot/core/contracts';
@@ -9,6 +9,7 @@ import { VoiceComposer, type VoiceComposerHandle } from '../../components/voice-
 import type { AudioClip } from '../../lib/audio-clip';
 import { AttachmentPicker,type PickedImage } from '../../components/attachment-picker';
 import { Page, Button } from '../../components/ui';
+import { Avatar } from '../../components/avatar';
 import { ChatBadge } from '../../components/chat-badge';
 import { MessageBubble } from '../../components/message-bubble';
 import { DraftCard } from '../../components/draft-card';
@@ -209,34 +210,37 @@ export default function ConversationScreen() {
     void send(action.data);setSelected(null);setReactionPicker(false);setReactionEmoji('');
   };
   const busy=sending || uploading || picking || audioBusy;
-  const header = <Stack.Screen options={{
-    title: c?.name ?? 'Conversation', headerBackVisible: false,
-    headerLeft: () => <Pressable accessibilityRole="button" accessibilityLabel="Back to Chats" onPress={() => router.dismissTo('/(tabs)')}
-      style={{ flexDirection:'row', alignItems:'center', paddingVertical:8, paddingRight:8 }}>
-      <ChevronLeft color={palette.text} size={21}/><Text style={{color:palette.text,fontFamily:fonts.medium,fontSize:14}}>Chats</Text>
-    </Pressable>,
-    headerRight: c ? () => <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)} style={{ padding: 10 }}><SlidersHorizontal color={palette.text} size={21}/></Pressable> : undefined,
-  }}/>;
-  if (!c) return <Page>{header}<Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Conversation unavailable. Connect to the service first.</Text></Page>;
   const turnDrafts=new Map<string,Draft>();
   for(const draft of snapshot?.drafts ?? [])if(draft.conversationId===id){
     const previous=turnDrafts.get(draft.triggerMessageId);
     if(!previous || draft.createdAt>=previous.createdAt)turnDrafts.set(draft.triggerMessageId,draft);
   }
-  const drafts=[...turnDrafts.values()].filter(d=>['pending','needs_owner','stale'].includes(d.state));
-  return <Page scroll={false}>
-    {header}
-    <View style={{ paddingHorizontal: 16, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-      <View style={{ flexDirection:'row',alignItems:'center',gap:8,flexShrink:1,minWidth:0 }}><ChatBadge conversation={c} pending={drafts.some(d => d.state === 'pending')}/><PauseControls conversation={c}/></View>
-      {c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && c.control !== 'manual' && <Pressable accessibilityRole="button" accessibilityState={{ busy: drafting, disabled: drafting || status !== 'online' }}
-        disabled={drafting || status !== 'online'} onPress={() => { void requestDraft(); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+  const header = <View style={{ minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingRight: 4, gap: 8 }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Back to Chats" onPress={() => router.dismissTo('/(tabs)')}
+      style={{ width: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
+      <ChevronLeft color={palette.text} size={24}/>
+    </Pressable>
+    {c && <Avatar name={c.name} size={40}/>}
+    <View style={{ flex: 1, minWidth: 0, paddingVertical: 8, gap: 3 }}>
+      <Text accessibilityRole="header" style={{ color: palette.text, fontFamily: fonts.semibold, fontSize: 18 }}>{c?.name ?? 'Conversation'}</Text>
+      {c && <View style={{ alignSelf: 'flex-start' }}><ChatBadge conversation={c} pending={[...turnDrafts.values()].some(d => d.state === 'pending')}/></View>}
+    </View>
+    {c && <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)}
+      style={{ width: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}><SlidersHorizontal color={palette.text} size={22}/></Pressable>}
+  </View>;
+  if (!c) return <Page header={header} bottomInset><Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Conversation unavailable. Connect to the service first.</Text></Page>;
+  return <Page scroll={false} header={header} bottomInset>
+    {c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && <View style={{ paddingHorizontal: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1, borderColor: palette.border }}>
+      <PauseControls conversation={c}/>
+      {c.control !== 'manual' && <Pressable accessibilityRole="button" accessibilityState={{ busy: drafting, disabled: drafting || status !== 'online' }}
+        disabled={drafting || status !== 'online'} onPress={() => { void requestDraft(); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, minHeight: 48, paddingHorizontal: 8 }}>
         {drafting && <ActivityIndicator size="small" color={palette.accent}/>}
         <Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 12, lineHeight:18 }} numberOfLines={1}>{drafting ? 'Drafting…' : 'Draft reply'}</Text>
       </Pressable>}
-    </View>
-    <View style={{ flex: 1 }}>
-      <View style={{ flex: 1 }}>
-      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="none" keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}
+    </View>}
+    <View style={{ flex: 1, minHeight: 0 }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
+      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="none" keyboardShouldPersistTaps="always" contentContainerStyle={{ width: '100%', maxWidth: 784, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 12, gap: 4 }}
         accessibilityLabel="Conversation history" accessibilityElementsHidden={!!cached && !positioned} importantForAccessibility={cached && !positioned ? 'no-hide-descendants' : 'auto'}
         scrollEnabled={positioned} style={{ flex: 1, opacity: cached && !positioned ? 0 : 1 }}
         onLayout={scrolling.onLayout} onContentSizeChange={scrolling.onContentSizeChange}
@@ -254,12 +258,12 @@ export default function ConversationScreen() {
       </ScrollView>
       {scrolling.showLatest && <Pressable accessibilityRole="button" accessibilityLabel="Jump to latest message" onPress={scrolling.latest}
         style={{ position: 'absolute', right: 16, bottom: 12, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10,
-          minHeight: 44, borderRadius: 22, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }}>
+          minHeight: 48, borderRadius: 24, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }}>
         <ChevronDown size={18} color={palette.accent}/><Text style={{ color: palette.accent, fontFamily: fonts.semibold, fontSize: 13 }}>Latest</Text>
       </Pressable>}
       </View>
       {emojiOpen && <View accessibilityLabel="Emoji picker" style={{flexDirection:'row',flexWrap:'wrap',paddingHorizontal:16,paddingVertical:6,gap:4,backgroundColor:palette.surface}}>
-        {emojis.map(emoji => <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'Insert '+emoji} style={{padding:8}}
+        {emojis.map(emoji => <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'Insert '+emoji} style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}
           onPress={() => {
             const start=Math.min(selection?.start ?? text.length,text.length);
             const end=Math.min(selection?.end ?? start,text.length);
@@ -268,16 +272,16 @@ export default function ConversationScreen() {
             editText(next); setSelection({start:start+emoji.length,end:start+emoji.length});
             typing.focus();
           }}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}
-        <Pressable accessibilityRole="button" accessibilityLabel="Close emoji picker" style={{padding:8}} onPress={() => setEmojiOpen(false)}><X size={22} color={palette.muted}/></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close emoji picker" style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }} onPress={() => setEmojiOpen(false)}><X size={22} color={palette.muted}/></Pressable>
       </View>}
       {attachment && <View style={{flexDirection:'row',alignItems:'center',gap:12,padding:10,marginHorizontal:16,backgroundColor:palette.surface,borderRadius:12}}>
         <Image source={{uri:attachment.uri}} accessibilityLabel="Selected image preview" contentFit="contain" style={{width:110,height:100}}/>
         <Text style={{flex:1,color:palette.muted,fontFamily:fonts.regular,fontSize:13}}>Add a caption below</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Remove image" disabled={busy} onPress={()=>{composeRevision.current++;setAttachment(null);uploadIntent.current=null;}}><X color={palette.muted} size={20}/></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Remove image" disabled={busy} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center', alignItems: 'center' }} onPress={()=>{composeRevision.current++;setAttachment(null);uploadIntent.current=null;}}><X color={palette.muted} size={20}/></Pressable>
       </View>}
       {quote && <View style={{ padding: 12, marginHorizontal: 16, borderLeftWidth: 3, borderColor: palette.accent, backgroundColor: palette.surface, flexDirection: 'row', gap: 8 }}>
         <Text numberOfLines={2} style={{ flex: 1, fontFamily: fonts.regular, color: palette.muted, fontSize: 13 }}>{quote.text || quote.media?.kind}</Text>
-        <Pressable accessibilityLabel="Remove quote" onPress={() => editQuote(null)}><X size={18} color={palette.muted}/></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Remove quote" style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }} onPress={() => editQuote(null)}><X size={18} color={palette.muted}/></Pressable>
       </View>}
       <VoiceComposer key={'voice:'+id} ref={voice} clip={audioClip} active={focused && foreground} scope={client} inactiveReason={!foreground ? 'background' : 'chat'}
         disabled={busy || !draftReady || status!=='online'} canSend={!!text.trim() || !!attachment || !!audioClip} sending={sending || uploading}
@@ -285,11 +289,11 @@ export default function ConversationScreen() {
           if(!alive.current || activeId.current!==id || activeClient.current!==client){clip?.release();return;}
           composeRevision.current++;setAudioClip(clip);audioIntent.current=null;
         }} onBusyChange={setAudioBusy} beforePick={holdComposer}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.surface, borderRadius: 26, padding: 13 }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Choose emoji" accessibilityState={{expanded:emojiOpen}} onPress={() => setEmojiOpen(open=>!open)}><Smile size={21} color={palette.muted}/></Pressable>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 0, minWidth: 0, minHeight: 48, backgroundColor: palette.surface, borderRadius: 24, paddingHorizontal: 0, paddingVertical: 0 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Choose emoji" accessibilityState={{expanded:emojiOpen}} style={{ width: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }} onPress={() => setEmojiOpen(open=>!open)}><Smile size={21} color={palette.muted}/></Pressable>
           <TextInput ref={input} accessibilityLabel="Message" value={text} multiline maxLength={4000} placeholder={attachment ? 'Caption' : 'Message'} placeholderTextColor={palette.muted}
             editable={draftReady && !picking && !audioBusy && !audioClip} onChangeText={editText} onFocus={typing.onFocus} onBlur={typing.onBlur} selection={selection} onSelectionChange={event => setSelection(event.nativeEvent.selection)}
-            style={{ flex: 1, color: palette.text, fontFamily: fonts.regular, fontSize: 16, maxHeight: 110, padding: 0 }}/>
+            style={{ flex: 1, color: palette.text, fontFamily: fonts.regular, fontSize: 16, minWidth: 0, maxHeight: 132, paddingVertical: 12, paddingHorizontal: 0 }}/>
           <AttachmentPicker key={'attachments:'+id} audioDisabled={!!text.trim() || !!attachment} onPickAudio={()=>voice.current?.pickAudio()} disabled={busy || !!audioClip || !draftReady || status!=='online'} onPick={image=>{
               if(!alive.current || activeId.current!==id || activeClient.current!==client){if(process.env.EXPO_OS==='web' && image.uri.startsWith('blob:'))URL.revokeObjectURL(image.uri);return;}
               composeRevision.current++;setAttachment(image);uploadIntent.current=null;
@@ -307,7 +311,7 @@ export default function ConversationScreen() {
         <View style={{ padding: 22, gap: 12, backgroundColor: palette.background, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
           <Button label="Quote this message" onPress={() => { quoteMessage(selected); setSelected(null); }}/>
           <View style={{ flexDirection: 'row', flexWrap:'wrap', gap:4 }}>{(reactionPicker ? emojis : ['👍','😂','❤️','🙏','🎉','😮','😢','🔥']).map(emoji =>
-            <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'React '+emoji} disabled={busy || status!=='online'} onPress={()=>chooseReaction(emoji)} style={{padding:8}}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}</View>
+            <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'React '+emoji} disabled={busy || status!=='online'} onPress={()=>chooseReaction(emoji)} style={{minWidth:48,minHeight:48,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}</View>
           {!reactionPicker ? <Button label="More emoji" secondary onPress={()=>setReactionPicker(true)}/> : <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
             <TextInput accessibilityLabel="Another reaction emoji" placeholder="Paste or type one emoji" placeholderTextColor={palette.muted} value={reactionEmoji} onChangeText={setReactionEmoji} maxLength={64}
               style={{flex:1,color:palette.text,fontFamily:fonts.regular,fontSize:16}}/>

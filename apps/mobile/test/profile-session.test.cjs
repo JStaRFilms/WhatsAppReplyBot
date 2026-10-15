@@ -193,11 +193,11 @@ test('saved identical scope restores after discovery, changed saved scope needs 
 });
 
 test('root keys both draft provider and navigation by accepted scope epoch, and gates unacknowledged accounts',()=>{
-  let app={acceptedScope:scope(),sessionKey:'1:original:0',dark:false};
-  const root=load('app/_layout.tsx',{'expo-router':{Stack:'stack'},'expo-status-bar':{StatusBar:'status'},'react-native-safe-area-context':{SafeAreaView:'safe'},'./(tabs)/settings':'settings',
+  let app={acceptedScope:scope(),sessionKey:'1:original:0',dark:false,palette:{}};
+  const root=load('app/_layout.tsx',{'react-native':{View:'viewport',useWindowDimensions:()=>({height:800})},'expo-router':{Stack:'stack'},'expo-status-bar':{StatusBar:'status'},'react-native-safe-area-context':{SafeAreaView:'safe'},'./(tabs)/settings':'settings',
     'expo-font':{useFonts:()=>[true,null]},'@expo-google-fonts/inter/400Regular':{},'@expo-google-fonts/inter/500Medium':{},'@expo-google-fonts/inter/600SemiBold':{},'@expo-google-fonts/inter/700Bold':{},
-    '../lib/app-state':{AppProvider:'app',useApp:()=>app},'../lib/local-drafts':{LocalDraftProvider:'drafts'},'../lib/theme':{fonts:{}}});
-  const boundary=root.default().props.children.type;const first=boundary();assert.equal(first.type,'drafts');assert.equal(first.key,app.sessionKey);assert.equal(first.props.children.key,app.sessionKey);
+    '../lib/app-state':{AppProvider:'app',useApp:()=>app},'../lib/local-drafts':{LocalDraftProvider:'drafts'},'../components/desktop-shell':{DesktopShell:'desktop'}});
+  const boundary=root.default().props.children.props.children.type;const first=boundary();assert.equal(first.type,'drafts');assert.equal(first.key,app.sessionKey);assert.equal(first.props.children.key,app.sessionKey);
   app={...app,acceptedScope:scope('original',2),sessionKey:'3:original:2'};const back=boundary();assert.notEqual(back.key,first.key);assert.notEqual(back.props.children.key,first.props.children.key);
   app={...app,acceptedScope:null};const gate=boundary();assert.equal(gate.type,'safe');assert.ok(nodes(gate).some(n=>n.type==='settings'));assert.ok(!nodes(gate).some(n=>n.type==='drafts'));
 });

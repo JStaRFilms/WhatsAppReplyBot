@@ -58,7 +58,7 @@ regressions, not speculative refactors. Then freeze source for desktop/APK build
 
 ## Execution
 
-Running after accepted28/30 source handoffs.
+Source implementation accepted after parent validation.
 T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-visual-integration-batch1-20261015-r1`.
 Provider takomi, model openai-codex/gpt-6.1-sol, thinking high, async implementation.
 Client request ID: otherme-visual-integration-batch1-20261015-r1. Lifecycle commit dd49d77
@@ -79,3 +79,25 @@ A preview export is allowed; final production desktop export and APK release are
 reserved for33 after review. No Metro or server use on3210/8081/8083. No installs,
 private runtime, live profile/WhatsApp actions, phone input, paid model/image calls
 or source versions/signing changes. Commit/stage/push remain parent-only.
+
+## Parent acceptance evidence
+
+All250 workspace tests pass:60 core,70 backend,91 mobile and29 packaging.
+`pnpm typecheck` passes for all workspaces. Parent reran the existing isolated
+browser harness, passing132 checks with122 synthetic screenshots and zero page
+errors. Parent inspected the dark phone conversation, wide conversation and light
+Settings images. The chosen charcoal/blue/light layout, real inbox/detail panes,
+source suggestions and connection states are present. The synthetic harness uses
+fresh browser storage, invented contacts/messages, blocked outside origins and a
+disposable static port. No real service or account is contacted.
+
+At browser width900 and above, the64-unit navigation rail and340-unit inbox share
+one scoped provider with the existing routed detail. The stable keyed detail keeps
+input identity and local text when resizing. Native top/side safe area, tab bottom
+inset and conversation bottom inset each have one owner. Existing lifecycle,
+keyboard, profile, capability-query and uncertain-send regressions still pass.
+
+Handoff and reproducible preview artifacts are in ignored `.runtime/ui-task31/`.
+This completes source integration, not physical Android microphone, native
+keyboard, OS fonts/screen-reader or Windows viewer acceptance.32 now reviews the
+integrated source before33 creates final production assets/APK.

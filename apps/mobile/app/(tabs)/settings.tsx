@@ -20,8 +20,9 @@ export default function Settings() {
   const connected=pcStatus==='authenticated' && sameAddress && !token.trim();
   const input = { color: palette.text, fontFamily: fonts.regular, fontSize: 15, backgroundColor: palette.surface,
     borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14 };
-  return <Page>
-    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>PC service</Text>
+  const section = { gap: 12, paddingBottom: 20, borderBottomWidth: 1, borderColor: palette.border };
+  return <Page title="Settings">
+    <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>PC service</Text>
     <Text style={{fontFamily:fonts.regular,fontSize:13,lineHeight:20,color:palette.muted}}>Windows keeps working while this app is closed. Returning refreshes its current status.</Text>
     <TextInput accessibilityLabel="Service address" autoCapitalize="none" autoCorrect={false} value={url} onChangeText={setUrl} style={input}/>
     <TextInput accessibilityLabel="Service token" autoCapitalize="none" autoCorrect={false} secureTextEntry value={token} onChangeText={setToken}
@@ -29,10 +30,10 @@ export default function Settings() {
     <Button label={pcStatus==='connecting'?'Connecting to PC…':connected?'Connected to PC':pcStatus==='auth-required'?'Update PC connection':hasSavedCredential && sameAddress?'Reconnect to PC':'Connect to PC'}
       disabled={pcStatus==='connecting' || connected} onPress={() => { void connect(url, token || undefined).finally(()=>setToken('')); }}/>
     <Text selectable style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>{pcStatus==='auth-required'?'The saved service token was not accepted. Check the service address and token on your PC.':hasSavedCredential?'The saved service token is reused. Linking WhatsApp does not need it again.':'Enter the service token from your PC once. Use trusted Wi-Fi.'}</Text>
-    <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 5 }}/>
-    <ProfileControls/>
-    <WhatsAppConnection/>
-    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Model</Text>
+    </View>
+    <View style={section}><ProfileControls/></View>
+    <View style={section}><WhatsAppConnection/></View>
+    <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Assistant and data</Text>
     <Text style={{ fontFamily: fonts.regular, fontSize: 14, lineHeight: 22, color: palette.muted }}>
       {snapshot?.model === 'openai/gpt-6-luna' ? 'GPT-6 Luna' : 'Local preview'}
     </Text>
@@ -41,9 +42,14 @@ export default function Settings() {
       <Button label={modelBusy ? 'Applying…' : snapshot.modelConsent ? 'Pause AI' : 'Enable AI'} secondary={snapshot.modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
     </>}
     <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Images, stickers, GIFs and voice notes are supported. View-once, deleted and expired media stay private.</Text>
-    <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 5 }}/>
-    <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Appearance</Text>
-    <View style={{ flexDirection: 'row', gap: 8 }}>{(['system','light','dark'] as const).map(choice =>
-      <Button key={choice} label={choice.charAt(0).toUpperCase()+choice.slice(1)} secondary={themeChoice !== choice} onPress={() => setTheme(choice)}/>)}</View>
+    </View>
+    <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Appearance</Text>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{(['system','light','dark'] as const).map(choice =>
+      <Button key={choice} label={choice.charAt(0).toUpperCase()+choice.slice(1)} secondary={themeChoice !== choice} onPress={() => setTheme(choice)}/>)}</View></View>
+    <View style={{ gap: 6, paddingVertical: 8 }}>
+      <Text style={{ color: palette.text, fontFamily: fonts.semibold, fontSize: 16 }}>Otherme</Text>
+      <Text style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 13 }}>By JStar Studios</Text>
+      <Text selectable style={{ color: palette.muted, fontFamily: fonts.regular, fontSize: 13 }}>jstarstudios.com</Text>
+    </View>
   </Page>;
 }

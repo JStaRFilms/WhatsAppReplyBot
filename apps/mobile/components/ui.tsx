@@ -1,9 +1,13 @@
 import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../lib/app-state';
 import { fonts } from '../lib/theme';
-export function Page({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
+export function Page({ children, scroll = true, title, header, bottomInset = false }: {
+  children: ReactNode; scroll?: boolean; title?: string; header?: ReactNode; bottomInset?: boolean;
+}) {
   const { palette } = useApp();
+  const insets = useSafeAreaInsets();
   const root = useRef<View>(null); const content = useRef<ScrollView>(null);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   useEffect(() => {
@@ -19,13 +23,16 @@ export function Page({ children, scroll = true }: { children: ReactNode; scroll?
     return () => { listener.remove(); if (frame !== undefined) cancelAnimationFrame(frame); };
   }, [scroll]);
   return <View ref={root} onLayout={() => root.current?.measureInWindow((_x, y) => { if (root.current) setKeyboardOffset(y); })}
-    style={{ flex: 1, backgroundColor: palette.background }}>
+    style={{ flex: 1, minHeight: 0, backgroundColor: palette.background, paddingBottom: bottomInset ? insets.bottom : 0 }}>
     <KeyboardAvoidingView enabled={process.env.EXPO_OS !== 'web'} keyboardVerticalOffset={keyboardOffset}
       behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <View style={{ flex: 1, width: '100%', maxWidth: 680, alignSelf: 'center' }}>
+      <View style={{ flex: 1, minHeight: 0, width: '100%' }}>
+        {header ?? (title ? <View style={{ minHeight: 56, paddingHorizontal: 16, paddingVertical: 10, justifyContent: 'center' }}>
+          <Text accessibilityRole="header" style={{ color: palette.text, fontFamily: fonts.bold, fontSize: 26 }}>{title}</Text>
+        </View> : null)}
         <ServiceStrip/><ErrorNotice/>
         {scroll ? <ScrollView ref={content} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={{ padding: 20, paddingBottom: 32, gap: 16 }}>{children}</ScrollView> : children}
+          style={{ flex: 1 }} contentContainerStyle={{ width: '100%', maxWidth: 760, alignSelf: 'center', padding: 16, paddingBottom: 24, gap: 16 }}>{children}</ScrollView> : children}
       </View>
     </KeyboardAvoidingView>
   </View>;
@@ -40,7 +47,7 @@ export function ServiceStrip() {
     :!snapshotFresh?'Connected to PC · Cached data'
     :snapshot?.demo?'Connected to PC · Preview · WhatsApp not linked · AI '+(snapshot.modelConsent?'enabled':'paused')
     :'Connected to PC · WhatsApp '+(snapshot?.connection ?? 'unknown')+' · AI '+(snapshot?.modelConsent?'enabled':'paused');
-  return <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
+  return <View style={{ paddingHorizontal: 16, paddingBottom: 6 }}>
     <Text accessibilityLiveRegion="polite" style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>
       {label}
     </Text>
@@ -58,9 +65,9 @@ export function Button({ label, onPress, secondary = false, disabled = false, st
 }) {
   const { palette } = useApp();
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress}
-    style={[{ paddingHorizontal: 17, paddingVertical: 12, minHeight: 44, borderRadius: 22,
+    style={[{ paddingHorizontal: 16, paddingVertical: 12, minHeight: 48, borderRadius: 24, justifyContent: 'center',
       backgroundColor: secondary ? palette.surface : palette.accent, opacity: disabled ? 0.45 : 1, alignItems: 'center' }, style]}>
-    <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: secondary ? palette.text : palette.accentText }}>{label}</Text>
+    <Text style={{ fontFamily: fonts.semibold, fontSize: 14, textAlign: 'center', color: secondary ? palette.text : palette.accentText }}>{label}</Text>
   </Pressable>;
 }
 export function EmptyConnection() {

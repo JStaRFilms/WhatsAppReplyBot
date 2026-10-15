@@ -48,7 +48,7 @@ export function PermissionSheet({conversation,visible,onClose}:{conversation:Con
           <Button label={busy ? 'Applying…' : 'Confirm'} disabled={busy || status!=='online'} onPress={()=>{void apply();}}/>
           <Button label="Back" secondary disabled={busy} onPress={()=>setProposal(null)}/>
         </> : <>
-          {(['never_reply','draft_only','auto_reply'] as const).map(value=><Pressable key={value} accessibilityRole="radio" accessibilityState={{checked:mode===value}} accessibilityLabel={labels[value]} onPress={()=>setMode(value)} disabled={busy} style={{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:10}}>
+          {(['never_reply','draft_only','auto_reply'] as const).map(value=><Pressable key={value} accessibilityRole="radio" accessibilityState={{checked:mode===value}} accessibilityLabel={labels[value]} onPress={()=>setMode(value)} disabled={busy} style={{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:10,minHeight:48}}>
             <View style={{width:18,height:18,borderRadius:9,borderWidth:mode===value ? 5 : 1,borderColor:mode===value ? palette.accent : palette.muted}}/>
             <Text style={{fontFamily:fonts.medium,fontSize:16,color:palette.text}}>{labels[value]}</Text>
           </Pressable>)}
@@ -65,7 +65,7 @@ export function PermissionSheet({conversation,visible,onClose}:{conversation:Con
             {dated && <DateTimeField value={end} onChange={setEnd}/>}
             {(!validLimit || !validEnd) && <Text style={{fontFamily:fonts.regular,color:palette.danger,fontSize:13}}>Choose a positive whole number and a future end time.</Text>}
             <Text style={{fontFamily:fonts.regular,color:palette.muted,fontSize:12}}>Reactions count toward the limit.</Text>
-            {risky && <Pressable accessibilityRole="checkbox" accessibilityState={{checked:riskAccepted}} accessibilityLabel="Accept extended automation risk" onPress={()=>setRiskAccepted(v=>!v)} disabled={busy} style={{flexDirection:'row',alignItems:'center',gap:10}}>
+            {risky && <Pressable accessibilityRole="checkbox" accessibilityState={{checked:riskAccepted}} accessibilityLabel="Accept extended automation risk" onPress={()=>setRiskAccepted(v=>!v)} disabled={busy} style={{flexDirection:'row',alignItems:'center',gap:10,minHeight:48}}>
               <Text style={{color:palette.manual,fontSize:22}}>{riskAccepted ? '☑' : '☐'}</Text>
               <Text style={{flex:1,color:palette.manual,fontFamily:fonts.regular,fontSize:13,lineHeight:19}}>AI can send incorrect messages and incur ongoing API charges. I accept this longer or unlimited run.</Text>
             </Pressable>}

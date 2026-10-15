@@ -63,7 +63,7 @@ export function AttachmentPicker({disabled,onPick,onBusyChange,beforePick,onPick
     }
   }
   return <View style={{position:'relative'}}>
-    {open && !disabled && <View style={{position:'absolute',bottom:48,left:0,minWidth:150,zIndex:20,
+    {open && !disabled && <View style={{position:'absolute',bottom:48,right:0,minWidth:180,zIndex:20,
       backgroundColor:palette.surface,borderColor:palette.border,borderWidth:1,borderRadius:12,padding:4}}>
       <Pressable accessibilityRole="button" accessibilityLabel="Choose image from gallery" onPress={() => {void pick(false);}}
         style={{flexDirection:'row',alignItems:'center',gap:10,padding:12}}>
@@ -80,7 +80,7 @@ export function AttachmentPicker({disabled,onPick,onBusyChange,beforePick,onPick
     </View>}
     <Pressable accessibilityRole="button" accessibilityLabel="Attach file" accessibilityState={{expanded:open,disabled:disabled || busy}}
       disabled={disabled || busy} onPress={() => setOpen(value => !value)}
-      style={{width:44,height:44,alignItems:'center',justifyContent:'center',opacity:disabled || busy ? 0.45 : 1}}>
+      style={{width:48,height:48,alignItems:'center',justifyContent:'center',opacity:disabled || busy ? 0.45 : 1}}>
       <Paperclip size={22} color={palette.text}/>
     </Pressable>
   </View>;

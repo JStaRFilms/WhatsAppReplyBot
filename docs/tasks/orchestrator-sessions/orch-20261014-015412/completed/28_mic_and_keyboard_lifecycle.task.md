@@ -48,4 +48,20 @@ one desktop/APK release. Do not claim success from mocks as hardware proof.
 
 Running as a T3-owned task with Takomi Sol High.
 Task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-mic-keyboard-batch1-20261015-r1`.
-Parent owns acceptance and source-scoped commits; no live actions are authorized.
+Implementation returned and parent accepted this source slice for integration.
+Parent reran the41 focused audio/interaction/scroll/composer-lifecycle tests and
+mobile typecheck successfully. The lifecycle harness now runs effect dependency
+cleanup and layout-before-passive teardown. Busy/hold/snapshot rerenders did not
+reproduce the physical cancellation; repeated permission requests were removed
+without claiming a device-proven root cause. Permission queries, cancellation
+stage/reason, editable/focused send, guarded edit revisions, quote focus, manual
+hide and same-chat restoration have synthetic regressions.
+
+Owned source: conversation/[id].tsx, voice-composer.tsx, voice-recorder.ts,
+conversation-scroll.ts, new composer-focus.ts and focused audio/interactions/
+keyboard-scroll/composer-lifecycle/lifecycle-harness tests. No other slice's files,
+release metadata, live data or service was changed by this coder.
+
+Physical record/playback/keyboard acceptance remains pending in the integrated
+candidate. This completes the implementation handoff, not the owner's hardware
+issue. Parent owns source-scoped commit and integrated review/release.

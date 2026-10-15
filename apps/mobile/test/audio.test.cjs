@@ -44,7 +44,7 @@ test('web recording stays local until Send; stop/unmount releases tracks and tim
 test('native Expo recorder requests permission, caps recording and cleans local files on unmount with a window shim',async()=>{
   const h=hooks();let permissions=0,starts=0,stops=0,deleted=0,clips=0;
   const recorder={uri:'file:///synthetic-local.m4a',currentTime:1,isRecording:false,prepareToRecordAsync:async()=>{},record:options=>{assert.equal(options.forDuration,300);starts++;recorder.isRecording=true;},stop:async()=>{stops++;recorder.isRecording=false;}};
-  const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,requestRecordingPermissionsAsync:async()=>{permissions++;return{granted:true};},setAudioModeAsync:async mode=>{assert.equal(mode.shouldPlayInBackground,false);}},
+  const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,getRecordingPermissionsAsync:async()=>({granted:false}),requestRecordingPermissionsAsync:async()=>{permissions++;return{granted:true};},setAudioModeAsync:async mode=>{assert.equal(mode.shouldPlayInBackground,false);}},
     'expo-file-system':{File:class {exists=true;delete(){deleted++;}}},'./audio-clip':{clipFromUri:()=>{clips++;return{uri:recorder.uri};}},'./foreground':{isForeground:()=>true,useForeground:()=>true}},
     {window:{},setTimeout,clearTimeout,setInterval,clearInterval,Date});
   const voice=hook.useVoiceRecorder(()=>{},()=>assert.fail('Unexpected recorder error'));const cleanup=h.layouts[0]();
@@ -58,7 +58,7 @@ test('native microphone start failure releases prepared recorder so a second tap
     record:()=>{starts++;if(starts===1)throw new Error('synthetic microphone start failure');recorder.isRecording=true;},
     stop:async()=>{stops++;prepared=false;recorder.isRecording=false;}};
   const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,
-    requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
+    getRecordingPermissionsAsync:async()=>({granted:true}),requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
     'expo-file-system':{File:class{exists=true;delete(){}}},'./audio-clip':{clipFromUri:()=>{clips++;return{};}},
     './foreground':{isForeground:()=>true,useForeground:()=>true}},{Date});
   const voice=hook.useVoiceRecorder(()=>{},()=>assert.fail('Unexpected asynchronous error'));h.layouts[0]();
@@ -71,7 +71,7 @@ test('native recorder does not claim recording when the platform record call is 
   const h=hooks();let stops=0;
   const recorder={uri:'file:///synthetic-local.m4a',currentTime:0,isRecording:false,prepareToRecordAsync:async()=>{},record(){},stop:async()=>{stops++;}};
   const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,
-    requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
+    getRecordingPermissionsAsync:async()=>({granted:true}),requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
     'expo-file-system':{File:class{exists=true;delete(){}}},'./audio-clip':{clipFromUri:()=>assert.fail('No clip')},
     './foreground':{isForeground:()=>true,useForeground:()=>true}},{Date});
   const voice=hook.useVoiceRecorder(()=>assert.fail('No clip'),()=>{});h.layouts[0]();
@@ -92,7 +92,7 @@ test('native layout teardown precedes Expo release and retains file cleanup afte
       prepareToRecordAsync:async()=>{access();},record:()=>access(),stop:async()=>{access();stops++;await Promise.resolve();if(state==='stop-failure')throw new Error('stop failed');}};
     const hook=load('voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},
       useAudioRecorder:()=>{h.react.useEffect(()=>()=>{released=true;});return recorder;},
-      requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
+      getRecordingPermissionsAsync:async()=>({granted:true}),requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}},
       'expo-file-system':{File:class {exists=true;delete(){deleted++;}}},'./audio-clip':{clipFromUri:()=>assert.fail('No clip after unmount')},
       './foreground':{isForeground:()=>true,useForeground:()=>true}}, {Date});
     const voice=hook.useVoiceRecorder(()=>assert.fail('No clip after unmount'),()=>assert.fail('No UI error after unmount'));

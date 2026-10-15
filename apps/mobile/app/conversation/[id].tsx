@@ -20,6 +20,7 @@ import { useLocalDraft } from '../../lib/local-drafts';
 import { fonts } from '../../lib/theme';
 import { HistoryCache } from '../../lib/history-cache';
 import { useConversationScroll } from '../../lib/conversation-scroll';
+import { useComposerFocus } from '../../lib/composer-focus';
 import { isForeground, useForeground } from '../../lib/foreground';
 
 const emojis = ['😀','😂','😊','😍','🥰','😎','🤔','😮','😢','😭','👍','👎','❤️','🙏','🎉','🔥','✅','👋'];
@@ -53,7 +54,11 @@ export default function ConversationScreen() {
   const composerState=useRef<{id:string;hasText:boolean} | null>(null);
   const [composerRetry,setComposerRetry]=useState(0);
   const [quote, setQuote] = useState<Message | null>(null); const [selected, setSelected] = useState<Message | null>(null);
-  const input = useRef<TextInput>(null);
+  const composeRevision=useRef(0);
+  const composeScope=useRef({id,client});
+  if(composeScope.current.id!==id || composeScope.current.client!==client){composeScope.current={id,client};composeRevision.current++;}
+  const editText=(value:string)=>{composeRevision.current++;setText(value);};
+  const editQuote=(value:Message | null)=>{composeRevision.current++;setQuote(value);};
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [reactionPicker, setReactionPicker] = useState(false);
   const [reactionEmoji, setReactionEmoji] = useState('');
@@ -65,6 +70,9 @@ export default function ConversationScreen() {
   const pendingIntent = useRef<{ key: string; requestId: string } | null>(null);
   const [focused, setFocused] = useState(false);
   const focusedRef = useRef(false);
+  const typing=useComposerFocus(id,client,focused,foreground,!!text || !!quote || !!attachment);
+  const {input}=typing;
+  const quoteMessage=(message:Message | null)=>{editQuote(message);typing.focus();};
   const viewedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cancelViewed = useCallback(() => { clearTimeout(viewedTimer.current); }, []);
   const scrolling = useConversationScroll(history, id, !!cached, cancelViewed);
@@ -76,13 +84,13 @@ export default function ConversationScreen() {
     setReactionPicker(false);setReactionEmoji('');
     setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);
     setAttachment(null);setPicking(false);uploadIntent.current=null;setAudioClip(null);audioIntent.current=null;setAudioBusy(false);
-    composerState.current=null; seenMessage.current=null;
+    composerState.current=null; seenMessage.current=null;pendingIntent.current=null;
     return () => { alive.current=false; cancelViewed(); };
-  }, [id,history,cancelViewed]);
+  }, [id,history,client,cancelViewed]);
   useFocusEffect(useCallback(() => {
     focusedRef.current = true; setFocused(true);
-    return () => { focusedRef.current = false; setFocused(false); cancelViewed(); };
-  }, [id, history, cancelViewed]));
+    return () => { focusedRef.current = false; setFocused(false); typing.clear(); cancelViewed(); };
+  }, [id, history, typing.clear, cancelViewed]));
   useEffect(() => { if (c?.control === 'assistant_allowed') setPauseState('idle'); }, [c?.control]);
   const last = snapshot?.lastMessages.find(m => m.conversationId === id);
   const loadedVersion = useRef<string | null>(null);
@@ -141,43 +149,51 @@ export default function ConversationScreen() {
     try { await perform('/v1/conversations/'+encodeURIComponent(id)+'/draft', Draft, {}); }
     finally { draftLock.current = false; setDrafting(false); }
   };
-  const send = async (action: OwnerAction, quotedMessageId: string | null = null) => {
+  const send = async (action: OwnerAction, quotedMessageId: string | null = null, revision?:number) => {
     if (!id || sendLock.current) return; sendLock.current = true; setSending(true);
     const key = JSON.stringify({ action, quotedMessageId });
     if (pendingIntent.current?.key !== key) pendingIntent.current = { key, requestId: randomUUID() };
-    const result = await perform('/v1/conversations/'+encodeURIComponent(id)+'/manual-send', SendResult,
-      { action, quotedMessageId, requestId: pendingIntent.current.requestId });
-    if (result && result.outbox.state !== 'accepted') reportError(result.outbox.state === 'unknown' || result.outbox.state === 'partial' ? 'Send outcome is uncertain. Do not resend this message.' : 'The message was not accepted. Check WhatsApp connection.');
-    if(result?.outbox.state==='accepted'){
-      if(action.kind!=='reaction')setText('');
-      if(activeId.current===id){if(action.kind!=='reaction')scrolling.latest();
-        if(action.kind!=='reaction'){setAttachment(null);uploadIntent.current=null;setAudioClip(null);audioIntent.current=null;setQuote(null);}
-        pendingIntent.current=null;setPauseState('acknowledged');}
-    }
-    if(result?.outbox.state==='failed')pendingIntent.current=null;
-    sendLock.current=false;setSending(false);
+    const intent=pendingIntent.current;
+    try {
+      const result = await perform('/v1/conversations/'+encodeURIComponent(id)+'/manual-send', SendResult,
+        { action, quotedMessageId, requestId: intent.requestId });
+      if(!alive.current || activeId.current!==id || activeClient.current!==client)return;
+      if (result && result.outbox.state !== 'accepted') reportError(result.outbox.state === 'unknown' || result.outbox.state === 'partial' ? 'Send outcome is uncertain. Do not resend this message.' : 'The message was not accepted. Check WhatsApp connection.');
+      if(result?.outbox.state==='accepted'){
+        if(action.kind!=='reaction'){
+          scrolling.latest();
+          if(composeRevision.current===revision){setText('');setAttachment(null);uploadIntent.current=null;setAudioClip(null);audioIntent.current=null;setQuote(null);}
+        }
+        if(pendingIntent.current===intent)pendingIntent.current=null;
+        setPauseState('acknowledged');
+      }
+      if(result?.outbox.state==='failed' && pendingIntent.current===intent)pendingIntent.current=null;
+    }finally{sendLock.current=false;if(alive.current)setSending(false);}
   };
   const sendComposed=async()=>{
+    // Capture before bytes/upload awaits, not when the transport send begins.
+    const revision=composeRevision.current;
+    if(uploadLock.current || sendLock.current)return;
     if(audioClip){
-      if(uploadLock.current || sendLock.current)return;uploadLock.current=true;setUploading(true);
+      uploadLock.current=true;setUploading(true);
       try {
         if(audioIntent.current?.clip!==audioClip)audioIntent.current={clip:audioClip,requestId:randomUUID()};
         const intent=audioIntent.current;
         if(!intent.uploadId)intent.uploadId=(await client.uploadAudio(id,await audioClip.bytes(),intent.requestId)).id;
         if(!alive.current || activeId.current!==id || activeClient.current!==client)return;
-        await send({kind:'audio',uploadId:intent.uploadId,reason:'Owner voice note.'},quote?.id ?? null);
+        await send({kind:'audio',uploadId:intent.uploadId,reason:'Owner voice note.'},quote?.id ?? null,revision);
       }catch(error){reportError(error instanceof Error ? error.message : 'Audio could not be uploaded.');}
       finally{uploadLock.current=false;setUploading(false);}
       return;
     }
-    if(!attachment){await send({kind:'text',text:text.trim(),reason:'Owner manual message.'},quote?.id ?? null);return;}
-    if(uploadLock.current || sendLock.current)return;uploadLock.current=true;setUploading(true);
+    if(!attachment){await send({kind:'text',text:text.trim(),reason:'Owner manual message.'},quote?.id ?? null,revision);return;}
+    uploadLock.current=true;setUploading(true);
     try{
       if(uploadIntent.current?.image!==attachment)uploadIntent.current={image:attachment,requestId:randomUUID()};
       const intent=uploadIntent.current;
       if(!intent.uploadId)intent.uploadId=(await client.uploadImage(id,attachment.base64,intent.requestId)).id;
       if(!alive.current || activeId.current!==id || activeClient.current!==client)return;
-      await send({kind:'image',uploadId:intent.uploadId,caption:text.trim(),reason:'Owner image message.'},quote?.id ?? null);
+      await send({kind:'image',uploadId:intent.uploadId,caption:text.trim(),reason:'Owner image message.'},quote?.id ?? null,revision);
     }catch(error){reportError(error instanceof Error ? error.message : 'The image could not be uploaded.');}
     finally{uploadLock.current=false;setUploading(false);}
   };
@@ -220,7 +236,7 @@ export default function ConversationScreen() {
     </View>
     <View style={{ flex: 1 }}>
       <View style={{ flex: 1 }}>
-      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}
+      <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="none" keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}
         accessibilityLabel="Conversation history" accessibilityElementsHidden={!!cached && !positioned} importantForAccessibility={cached && !positioned ? 'no-hide-descendants' : 'auto'}
         scrollEnabled={positioned} style={{ flex: 1, opacity: cached && !positioned ? 0 : 1 }}
         onLayout={scrolling.onLayout} onContentSizeChange={scrolling.onContentSizeChange}
@@ -231,7 +247,7 @@ export default function ConversationScreen() {
         {messages.map(m=>{
           const draft=turnDrafts.get(m.id);
           return <View key={m.id} testID={'turn-'+m.id}>
-            <MessageBubble message={m} active={focused && foreground} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={setSelected} onQuote={setQuote}/>
+            <MessageBubble message={m} active={focused && foreground} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={setSelected} onQuote={quoteMessage}/>
             {draft && ['pending','needs_owner','stale'].includes(draft.state) && <View style={{paddingVertical:8}}><DraftCard draft={draft} onEditorFocus={scrolling.editorFocus} onSent={scrolling.latest}/></View>}
           </View>;
         })}
@@ -249,34 +265,34 @@ export default function ConversationScreen() {
             const end=Math.min(selection?.end ?? start,text.length);
             const next=text.slice(0,start)+emoji+text.slice(end);
             if(next.length>4000)return;
-            setText(next); setSelection({start:start+emoji.length,end:start+emoji.length});
-            requestAnimationFrame(() => input.current?.focus());
+            editText(next); setSelection({start:start+emoji.length,end:start+emoji.length});
+            typing.focus();
           }}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}
         <Pressable accessibilityRole="button" accessibilityLabel="Close emoji picker" style={{padding:8}} onPress={() => setEmojiOpen(false)}><X size={22} color={palette.muted}/></Pressable>
       </View>}
       {attachment && <View style={{flexDirection:'row',alignItems:'center',gap:12,padding:10,marginHorizontal:16,backgroundColor:palette.surface,borderRadius:12}}>
         <Image source={{uri:attachment.uri}} accessibilityLabel="Selected image preview" contentFit="contain" style={{width:110,height:100}}/>
         <Text style={{flex:1,color:palette.muted,fontFamily:fonts.regular,fontSize:13}}>Add a caption below</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Remove image" disabled={busy} onPress={()=>{setAttachment(null);uploadIntent.current=null;}}><X color={palette.muted} size={20}/></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Remove image" disabled={busy} onPress={()=>{composeRevision.current++;setAttachment(null);uploadIntent.current=null;}}><X color={palette.muted} size={20}/></Pressable>
       </View>}
       {quote && <View style={{ padding: 12, marginHorizontal: 16, borderLeftWidth: 3, borderColor: palette.accent, backgroundColor: palette.surface, flexDirection: 'row', gap: 8 }}>
         <Text numberOfLines={2} style={{ flex: 1, fontFamily: fonts.regular, color: palette.muted, fontSize: 13 }}>{quote.text || quote.media?.kind}</Text>
-        <Pressable accessibilityLabel="Remove quote" onPress={() => setQuote(null)}><X size={18} color={palette.muted}/></Pressable>
+        <Pressable accessibilityLabel="Remove quote" onPress={() => editQuote(null)}><X size={18} color={palette.muted}/></Pressable>
       </View>}
-      <VoiceComposer key={'voice:'+id} ref={voice} clip={audioClip} active={focused && foreground}
+      <VoiceComposer key={'voice:'+id} ref={voice} clip={audioClip} active={focused && foreground} scope={client} inactiveReason={!foreground ? 'background' : 'chat'}
         disabled={busy || !draftReady || status!=='online'} canSend={!!text.trim() || !!attachment || !!audioClip} sending={sending || uploading}
         onSend={()=>{void sendComposed();}} onClip={clip=>{
           if(!alive.current || activeId.current!==id || activeClient.current!==client){clip?.release();return;}
-          setAudioClip(clip);audioIntent.current=null;
+          composeRevision.current++;setAudioClip(clip);audioIntent.current=null;
         }} onBusyChange={setAudioBusy} beforePick={holdComposer}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.surface, borderRadius: 26, padding: 13 }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Choose emoji" accessibilityState={{expanded:emojiOpen}} onPress={() => setEmojiOpen(open=>!open)}><Smile size={21} color={palette.muted}/></Pressable>
           <TextInput ref={input} accessibilityLabel="Message" value={text} multiline maxLength={4000} placeholder={attachment ? 'Caption' : 'Message'} placeholderTextColor={palette.muted}
-            editable={draftReady && !busy && !audioClip} onChangeText={setText} selection={selection} onSelectionChange={event => setSelection(event.nativeEvent.selection)}
+            editable={draftReady && !picking && !audioBusy && !audioClip} onChangeText={editText} onFocus={typing.onFocus} onBlur={typing.onBlur} selection={selection} onSelectionChange={event => setSelection(event.nativeEvent.selection)}
             style={{ flex: 1, color: palette.text, fontFamily: fonts.regular, fontSize: 16, maxHeight: 110, padding: 0 }}/>
           <AttachmentPicker key={'attachments:'+id} audioDisabled={!!text.trim() || !!attachment} onPickAudio={()=>voice.current?.pickAudio()} disabled={busy || !!audioClip || !draftReady || status!=='online'} onPick={image=>{
               if(!alive.current || activeId.current!==id || activeClient.current!==client){if(process.env.EXPO_OS==='web' && image.uri.startsWith('blob:'))URL.revokeObjectURL(image.uri);return;}
-              setAttachment(image);uploadIntent.current=null;
+              composeRevision.current++;setAttachment(image);uploadIntent.current=null;
             }} onBusyChange={setPicking} beforePick={holdComposer}/>
         </View>
       </VoiceComposer>
@@ -289,7 +305,7 @@ export default function ConversationScreen() {
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000088' }}>
         <Pressable style={{ flex: 1 }} onPress={() => setSelected(null)}/>
         <View style={{ padding: 22, gap: 12, backgroundColor: palette.background, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
-          <Button label="Quote this message" onPress={() => { setQuote(selected); setSelected(null); }}/>
+          <Button label="Quote this message" onPress={() => { quoteMessage(selected); setSelected(null); }}/>
           <View style={{ flexDirection: 'row', flexWrap:'wrap', gap:4 }}>{(reactionPicker ? emojis : ['👍','😂','❤️','🙏','🎉','😮','😢','🔥']).map(emoji =>
             <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'React '+emoji} disabled={busy || status!=='online'} onPress={()=>chooseReaction(emoji)} style={{padding:8}}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}</View>
           {!reactionPicker ? <Button label="More emoji" secondary onPress={()=>setReactionPicker(true)}/> : <View style={{flexDirection:'row',alignItems:'center',gap:8}}>

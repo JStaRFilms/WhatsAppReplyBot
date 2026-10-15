@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
+import { RecordingPresets, getRecordingPermissionsAsync, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
 import { File } from 'expo-file-system';
 import { clipFromUri, type AudioClip } from './audio-clip';
 import { isForeground, useForeground } from './foreground';
@@ -8,6 +8,8 @@ export function useVoiceRecorder(onClip:(clip:AudioClip)=>void,onError:(message:
   const [recording,setRecording]=useState(false);const [seconds,setSeconds]=useState(0);
   const foreground=useForeground();const alive=useRef(true);const running=useRef(false);const stopping=useRef(false);
   const localUri=useRef<string | null>(null);
+  const activity=useRef({foreground,epoch:0});
+  if(activity.current.foreground!==foreground){activity.current.foreground=foreground;if(!foreground)activity.current.epoch++;}
   const callbacks=useRef({onClip,onError});callbacks.current={onClip,onError};
   const discard=()=>{
     const uri=localUri.current;localUri.current=null;
@@ -42,20 +44,30 @@ export function useVoiceRecorder(onClip:(clip:AudioClip)=>void,onError:(message:
     return()=>{clearInterval(timer);clearTimeout(maximum);};
   },[recording]);
   return {recording,seconds,canRecord:true,stop,start:async(isActive:()=>boolean=()=>true)=>{
-    if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
-    const permission=await requestRecordingPermissionsAsync();
+    const epoch=activity.current.epoch;
+    const checkActive=(stage:string)=>{
+      if(!alive.current)throw new Error('Recording cancelled during '+stage+': recorder closed.');
+      if(!isForeground() || activity.current.epoch!==epoch)throw new Error('Recording cancelled during '+stage+': app left the foreground. Tap the mic again.');
+      if(!isActive())throw new Error('Recording cancelled during '+stage+': composer changed.');
+    };
+    checkActive('permission check');
+    let permission=await getRecordingPermissionsAsync();
+    checkActive('permission check');
+    if(!permission.granted && permission.canAskAgain!==false){
+      permission=await requestRecordingPermissionsAsync();
+      checkActive('permission request');
+    }
     if(!permission.granted)throw new Error(permission.canAskAgain === false
       ? 'Microphone access is blocked. Allow it in your phone settings for Otherme, then try again.'
       : 'Allow microphone access for Otherme, then tap the mic again.');
-    if(!alive.current || !isForeground() || !isActive())throw new Error('Return to the chat before recording.');
     let prepared=false;
     try{
       await setAudioModeAsync({allowsRecording:true,shouldPlayInBackground:false});
-      if(!alive.current || !isForeground() || !isActive())throw new Error('Recording cancelled.');
+      checkActive('audio setup');
       await recorder.prepareToRecordAsync();
-      if(!alive.current)throw new Error('Recording cancelled.');
+      if(!alive.current)throw new Error('Recording cancelled during microphone preparation: recorder closed.');
       prepared=true;localUri.current=recorder.uri;
-      if(!isForeground() || !isActive())throw new Error('Recording cancelled.');
+      checkActive('microphone preparation');
       recorder.record({forDuration:300});
       if(!recorder.isRecording)throw new Error('The microphone did not start. Check microphone access on your phone and try again.');
       running.current=true;setSeconds(0);setRecording(true);

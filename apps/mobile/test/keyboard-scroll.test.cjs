@@ -73,7 +73,7 @@ test('draft editor stays visible through keyboard and text layout changes withou
   f.render().onLayout({ nativeEvent: { layout: { height: 200 } } });
   f.render().onContentSizeChange(320, 1400); const before = f.moves.length; f.frame();
   assert.equal(f.editors.at(-1), 42); assert.equal(f.moves.length, before);
-  f.render().latest(); f.frame(); assert.equal(f.counts().dismissed, 1); assert.equal(f.moves.at(-1), 1200);
+  f.render().latest(); f.frame(); assert.equal(f.counts().dismissed, 0); assert.equal(f.moves.at(-1), 1200);
 });
 
 test('saved position is chat/history scoped, not shared across profile caches; old callbacks cannot scroll a new scope', () => {

@@ -11,40 +11,46 @@ import { fonts } from '../lib/theme';
 export interface VoiceComposerHandle { pickAudio:()=>void }
 export interface VoiceComposerProps {
   ref?:Ref<VoiceComposerHandle>;children:ReactNode;canSend:boolean;sending:boolean;onSend:()=>void;
-  clip:AudioClip | null;disabled:boolean;active:boolean;beforePick:()=>Promise<void>;
+  clip:AudioClip | null;disabled:boolean;active:boolean;scope?:object;inactiveReason?:'background'|'chat';beforePick:()=>Promise<void>;
   onClip:(clip:AudioClip | null)=>void;onBusyChange:(busy:boolean)=>void;
 }
-export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled,active,beforePick,onClip,onBusyChange}:VoiceComposerProps) {
+export function VoiceComposer({ref,children,canSend,sending,onSend,clip,disabled,active,scope,inactiveReason='chat',beforePick,onClip,onBusyChange}:VoiceComposerProps) {
   const {palette,reportError}=useApp();const [working,setWorking]=useState(false);const [recordingError,setRecordingError]=useState<string | null>(null);const lock=useRef(false);const alive=useRef(true);
   const activeRef=useRef(active);const operation=useRef(0);const recordingGuard=useRef<()=>boolean>(()=>false);
-  if(activeRef.current!==active){activeRef.current=active;if(!active)operation.current++;}
+  const scopeRef=useRef(scope);const cancellation=useRef<string | null>(null);
+  if(scopeRef.current!==scope){scopeRef.current=scope;operation.current++;cancellation.current ??= 'connection or profile changed';}
+  if(activeRef.current!==active){activeRef.current=active;if(!active){operation.current++;cancellation.current ??= inactiveReason==='background' ? 'app left the foreground' : 'chat is no longer focused';}}
   const recorder=useVoiceRecorder(clip=>{if(recordingGuard.current())onClip(clip);else clip.release();},message=>{
     if(alive.current){setRecordingError(message);reportError(message);}
   });
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;operation.current++;};},[]);
   useEffect(()=>{onBusyChange(working || recorder.recording);},[working,recorder.recording,onBusyChange]);
-  useEffect(()=>{if(!active && recorder.recording)void recorder.stop();},[active,recorder.recording]);
+  useEffect(()=>{if(recorder.recording && (!active || cancellation.current!==null))void recorder.stop();},[active,scope,recorder.recording]);
   async function begin(file:boolean) {
     if(disabled || !activeRef.current || canSend || clip || lock.current || recorder.recording)return;
     const current=++operation.current;
     const isCurrent=()=>alive.current && activeRef.current && operation.current===current;
-    lock.current=true;setRecordingError(null);setWorking(true);
+    lock.current=true;cancellation.current=null;setRecordingError(null);setWorking(true);
+    let stage='composer hold';let failed=false;
     try {
       await beforePick();if(!isCurrent())return;stopPlayback();
       if(file){
+        stage='audio picker';
         const selected=await DocumentPicker.getDocumentAsync({type:'audio/*',multiple:false,copyToCacheDirectory:true,base64:false});
         const asset=selected.assets?.[0];
         if(asset){const picked=clipFromAsset(asset);if(isCurrent())onClip(picked);else picked.release();}
-      }else {recordingGuard.current=isCurrent;await recorder.start(isCurrent);}
+      }else {stage='microphone setup';recordingGuard.current=isCurrent;await recorder.start(isCurrent);}
     }catch(error){
-      if(isCurrent()){
-        const message=error instanceof Error ? error.message : 'Audio unavailable.';
-        setRecordingError(message);reportError(message);
+      failed=true;
+      if(alive.current){
+        const detail=error instanceof Error ? error.message : 'Audio unavailable.';
+        const message=isCurrent() ? detail : detail+' '+(cancellation.current ?? 'Composer closed')+'. Tap the mic again to start.';
+        setRecordingError(message);if(isCurrent())reportError(message);
       }
     }finally{
       lock.current=false;
       if(alive.current){
-        if(!isCurrent())setRecordingError('Audio setup was cancelled when this chat lost focus. Tap the mic again when you are back in this chat.');
+        if(!isCurrent() && !failed)setRecordingError('Audio setup was cancelled during '+stage+': '+(cancellation.current ?? 'composer closed')+'. Tap the mic again to start.');
         setWorking(false);
       }
     }

@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {createRequire}=require('node:module');
 const path=require('node:path');
 const {load,hooks,nodes,label,deferred}=require('./render-harness.cjs');
-const native={View:'view',Text:'text',Pressable:'pressable',TextInput:'input',ScrollView:'scroll',Modal:'modal',KeyboardAvoidingView:'keyboard',ActivityIndicator:'spinner'};
+const native={Keyboard:{dismiss(){},addListener:()=>({remove(){}})},View:'view',Text:'text',Pressable:'pressable',TextInput:'input',ScrollView:'scroll',Modal:'modal',KeyboardAvoidingView:'keyboard',ActivityIndicator:'spinner'};
 const icons={Mic:'mic',Send:'send',Square:'stop',Trash2:'delete',X:'close',Smile:'smile',SlidersHorizontal:'sliders',ChevronLeft:'back'};
 const coreRequire=createRequire(path.resolve(__dirname,'../../../packages/core/package.json'));
 const contracts=load('../../packages/core/src/contracts.ts',{'zod':require('zod'),'emoji-regex':coreRequire('emoji-regex')});
@@ -73,7 +73,7 @@ test('recorder startup carries the composer guard across native permission/prepa
     const h=hooks(),pending=deferred();let active=true,starts=0,deleted=0,stops=0;
     const recorder={uri:'file:///synthetic.m4a',prepareToRecordAsync:()=>phase==='prepare' ? pending.promise : Promise.resolve(),record:()=>starts++,stop:async()=>stops++};
     const nativeHook=load('lib/voice-recorder.ts',{'react':h.react,'expo-audio':{RecordingPresets:{HIGH_QUALITY:{}},useAudioRecorder:()=>recorder,
-      requestRecordingPermissionsAsync:()=>phase==='permission' ? pending.promise : Promise.resolve({granted:true}),setAudioModeAsync:async()=>{}},
+      getRecordingPermissionsAsync:async()=>({granted:false}),requestRecordingPermissionsAsync:()=>phase==='permission' ? pending.promise : Promise.resolve({granted:true}),setAudioModeAsync:async()=>{}},
       'expo-file-system':{File:class{exists=true;delete(){deleted++;}}},'./audio-clip':{},'./foreground':{useForeground:()=>true,isForeground:()=>true}});
     const voice=nativeHook.useVoiceRecorder(()=>assert.fail('No stale clip'),()=>assert.fail('No stale error'));
     const started=voice.start(()=>active);const rejected=assert.rejects(started,/chat|cancelled/);await settle();active=false;
@@ -110,7 +110,8 @@ function screenFixture(initialText='') {
     '../../components/ui':{Page:'page',Button:'button'},'../../components/chat-badge':{ChatBadge:'badge'},'../../components/message-bubble':{MessageBubble:'bubble'},
     '../../components/draft-card':{DraftCard:'draft'},'../../components/pause-controls':{PauseControls:'pause'},'../../components/permission-sheet':{PermissionSheet:'permissions'},
     '../../lib/app-state':{useApp:()=>app},'../../lib/api':{SendResult:{}},'../../lib/local-drafts':{useLocalDraft:()=>({text:initialText,setText(){},ready:true})},
-    '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,'../../lib/foreground':{isForeground:()=>true,useForeground:()=>true}}, {WeakMap,Map,clearTimeout,...animation});
+    '../../lib/theme':{fonts:{}},'../../lib/conversation-scroll':scrolling,
+    '../../lib/composer-focus':load('lib/composer-focus.ts',{react:h.react,'react-native':native,'./foreground':{isForeground:()=>true}},animation),'../../lib/foreground':{isForeground:()=>true,useForeground:()=>true}}, {WeakMap,Map,clearTimeout,...animation});
   return{render:()=>h.render(component.default),sends,message,app,h,frame:()=>{const next=[...frames.values()];frames.clear();next.forEach(fn=>fn());}};
 }
 test('history and recorder siblings have scoped unique keys and file import stays in attachments',()=>{

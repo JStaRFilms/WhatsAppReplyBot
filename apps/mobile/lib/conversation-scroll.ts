@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, ScrollView } from 'react-native';
 import type { HistoryCache } from './history-cache';
 
 const savedPositions = new WeakMap<HistoryCache, Map<string, { offset: number; atBottom: boolean }>>();
@@ -68,7 +68,7 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
   }, [position, cancelFrames]);
   const latest = () => {
     if (current.current !== position) return;
-    if (position.editor !== null) { position.editor = null; Keyboard.dismiss(); }
+    position.editor = null;
     position.dragging = false; position.following = true; setShowLatest(false); cancelViewed(); follow();
   };
   const editorFocus = useCallback((target: number | null) => {

@@ -96,8 +96,8 @@ account access, provider requests, real sends and deployment remain gated.
 | 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Complete; parent36 checks/18 screenshots pass after fixture wait correction;69f01fd baseline only |
 | 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Complete; parent accepted with cached-first/policy/manual-work/JPEG corrections in30f4f15 |
 | 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Complete, source32fe269; parent22 focused/342 workspace tests and all types pass |
-| 42 | Paged/cache-first chats, private media reuse and photo viewer | coder | vibe-build |41 and46 accepted contracts | Running Sol High, sole mobile writer; cached-first existing draft included |
-| 43 | Foreground video player and disabled-background/PiP config | coder | vibe-build |42 accepted, exact module approval | Pending; no Expo Video install yet |
+| 42 | Paged/cache-first chats, private media reuse and photo viewer | coder | vibe-build |41 and46 accepted contracts | Complete061c4d7; parent404 serialized-suite/packaging tests, all types, local ack lifecycle regression fixed |
+| 43 | Foreground video player and disabled-background/PiP config | coder | vibe-build |42 accepted, exact module approved | Running Sol High, sole mobile/config writer; approved57.0.5 install, no build-copy writes |
 | 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43 plus accepted ASR fix frozen | Pending, new isolated ui-task44 artifacts, not39 baseline |
 | 45 | Audit ASR prices/routes and repeat paid work | architect | vibe-build | read-only frozen69f01fd | Complete; selected WhisperTurbo via same OpenRouter key,7 fake assertions, parent public catalog check |
 | 46 | Dedicated economical STT and durable reuse/attempt protection | coder | vibe-build |41 accepted,45 findings | Complete, source402e804; parent363 workspace tests/all types pass, no paid/live change |

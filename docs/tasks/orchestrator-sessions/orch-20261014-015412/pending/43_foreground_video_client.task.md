@@ -2,7 +2,7 @@
 
 ## Agent setup and status
 
-Persona coder, Takomi Sol High, Build. requiredCapabilities=[write-code]. Pending and dependency-gated, no launch or execution ID assigned. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every shell command explicitly cd there or use absolute project paths. Use unslop, scoped instructions and existing UI. Parent owns status, board/master plan, docs, commits and release. Do not launch agents.
+Persona coder, Takomi Sol High, Build. requiredCapabilities=[write-code]. Running after parent accepted42 source061c4d7; exact dependency approval recorded, no other writer. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every shell command explicitly cd there or use absolute project paths. Use unslop, scoped instructions and existing UI. Parent owns status, board/master plan, docs, commits and release. Do not launch agents.
 
 Read docs/Coding_Guidelines.md, Project_Requirements, History_and_Media_Reliability_Scope, History_and_Media_Implementation_Plan, Voice_Notes, Account_Profile_API,37/38 and accepted41/42 source/types/tests/handoffs. Preserve all previous pending-send, mic/keyboard, source/permission, receipt/name/prompt and future context/style constraints.
 
@@ -64,6 +64,17 @@ Use mocked Expo SharedObject/player plus browser media events and synthetic file
 Test config plugin output in memory for both activities' disabled PiP, no ExpoVideoPlaybackService or foreground media permissions, preserved Contacts READ-only/blocked permissions and existing package/version/signing values. No generated native build here. Keep viewer/pending/composer/keyboard/audio tests passing. Backend41 already owns video-byte/AI isolation tests; do not claim mock player success as codec/device proof.
 
 Run focused tests, `pnpm --filter @replybot/mobile test`, `pnpm --filter @replybot/mobile typecheck` and relevant existing packaging/plugin tests from root. Report exact approved dependency diff and commands/results. Done requires approved exact module/config, required foreground ownership, scoped diff and passing checks, not merely a mocked UI around an absent native dependency. Return significant blockers to parent.44 validates browser integration next; existing38 performs combined source review.33 stays held until source/validation/review/final-target gates, and actual merged manifest/playback remain later release/device checks.
+
+## Execution
+
+T3 task ID node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-foreground-video-client-20261015-r1.
+Client request ID otherme-foreground-video-client-20261015-r1. Note the MCP instance
+prefix changed; use this exact returned ID. Parent42 handoff is
+ docs/features/Cached_History_and_Photo_Handoff.md.404 tests pass across serialized
+suites/packaging, all types pass. Default parallel backend conversion timing had
+failed in unchanged FFmpeg checks, isolated14 passed, no deadlines loosened.
+Sole mobile/config writer, approved exact Video install allowed here only. No
+C:/Otherme-build writes or actual APK/desktop build before later33/source freeze.
 
 ## Safety limits
 

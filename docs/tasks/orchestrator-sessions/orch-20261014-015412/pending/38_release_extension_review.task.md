@@ -95,6 +95,16 @@ physical source labels, and deduplicates unread by actual acknowledgment.22 focu
 and342 workspace tests/all types pass after correction. Keep this in the combined
 review; this is not an actual live-incident/root-cause claim or separate review loop.
 
+42 parent acceptance found local acknowledged draft edits overriding equal-revision
+server stale/dismissed/resolved state. A new regression failed first. Source061c4d7
+keeps strictly newer local content against older reads but honors same-revision
+terminal lifecycle, with11 focused checks passing. Serialized94core/109backend/
+172mobile plus29packaging pass,404 total, all workspace types pass. Initial403
+parallel passed; later default parallel run hit unchanged FFmpeg audio/GIF deadlines.
+Isolated14 conversion checks and full serialized suites passed, no production
+budget or test assertion loosened. Carry that timing limit honestly into review.
+See Cached_History_and_Photo_Handoff.md for exact cache/player contract.
+
 ## Later economical ASR requirement
 
 Read ASR_Cost_Review.md, completed45 and accepted46 handoff. Owner selected exact

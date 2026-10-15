@@ -81,6 +81,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 24 | Focused profile integration review | reviewer | vibe-build | 20/21/22 | completed, discoveryrevisionP1fixed;177checks/typespass |
 | 25 | Signed profile update0.1.1/code2 | worker | vibe-build | 24 | completed, actualAPKverified withsamecert, originalliveaccountunswitched |
 | 26 | Keyboard, smart chat scrolling and microphone retry | coder / reviewer / worker | vibe-build | owner usability reports | Completed, 190 tests/types and web export pass; actual signed 0.1.2/code3 independently verified, owner hardware checks remain |
+| 27 | Reconcile design/context references and plan the next batch | architect / designer | vibe-genesis | owner requested plan only | Completed plan with both source investigations; implementation awaits owner approval |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

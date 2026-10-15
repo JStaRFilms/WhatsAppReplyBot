@@ -25,11 +25,11 @@ export function assertReleaseManifest(badging, manifest) {
   // and flags on their own element rather than matching another activity's flag.
   const elements = [];
   let element;
-  for (const line of manifest.split('\n')) {
+  for (const line of manifest.split(/\r?\n/)) {
     const node = /^\s*E:\s*([^\s(]+)/.exec(line);
     if (node) { element = { kind: node[1], attributes: new Map() }; elements.push(element); }
     else {
-      const attribute = /^\s*A:\s*(?:android:)?(\w+)(?:\([^)]*\))?=(.*)$/.exec(line);
+      const attribute = /^\s*A:\s*(?:(?:android|http:\/\/schemas\.android\.com\/apk\/res\/android):)?(\w+)(?:\([^)]*\))?=(.*)$/.exec(line);
       if (element && attribute) element.attributes.set(attribute[1], attribute[2].trim());
     }
   }

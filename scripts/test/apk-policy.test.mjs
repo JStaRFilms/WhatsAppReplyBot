@@ -46,6 +46,14 @@ test('both required activities must explicitly disable PiP on their own elements
   assert.throws(() => assertReleaseManifest(badging, manifest.replace('FullscreenPlayerActivity', 'UnrelatedActivity')), /activities/);
   assert.throws(() => assertReleaseManifest(badging, manifest.replace(/\s*A: android:supportsPictureInPicture[^\n]+/g, '')), /Picture-in-picture/);
 });
+test('aapt2 full Android namespace names retain activity, PiP and service checks', () => {
+  const qualified = manifest.replaceAll('android:', 'http://schemas.android.com/apk/res/android:').replaceAll('\n', '\r\n');
+  assert.doesNotThrow(() => assertReleaseManifest(badging, qualified));
+  const index = qualified.lastIndexOf('(type 0x12)0x0');
+  assert.throws(() => assertReleaseManifest(badging, qualified.slice(0,index)+'(type 0x12)0xffffffff'+qualified.slice(index+'(type 0x12)0x0'.length)), /Picture-in-picture/);
+  const service = '    E: service (line=40)\n      A: http://schemas.android.com/apk/res/android:name(0x01010003)="expo.modules.video.playbackService.ExpoVideoPlaybackService"\n';
+  assert.throws(() => assertReleaseManifest(badging, qualified+service), /playback service/);
+});
 test('release refuses a merged ExpoVideoPlaybackService even with correct activity flags', () => {
   const service = '    E: service (line=40)\n      A: android:name(0x01010003)="expo.modules.video.playbackService.ExpoVideoPlaybackService"\n';
   assert.throws(() => assertReleaseManifest(badging, manifest+service), /playback service/);

@@ -179,6 +179,24 @@ export hashes and limitations. Report any confirmed normal-use blocker without
 product writes or another generic review. Parent accepts 44 then launches the one
 combined 38, final metadata and 33. No review or final build is launched yet.
 
+## Round 3 outcome
+
+Terminal partial, not accepted. Designated primary replay passed88 assertions;
+supplements passed seven required assertions but recorded a normal thumbnail
+cancellation availability failure. All15 viewed POSTs matched synchronous visible
+inbound source rectangles. Geometry/editor/pending-photo and previous fixes passed.
+A second recorded thumbnail failure occurred before recorder stubs in run-004.
+Both stayed on Retry despite visible correct geometry and available replacement
+source/bytes. Later passing runs do not erase these observations.
+
+Read `docs/issues/Thumbnail_Cancellation_Availability.md`. Correction49 now diagnoses
+the exact rejection or invalid handle cause before any source change. No new44
+round, review38 or build33 is active. Parent found a separate fixture overclaim:
+a new valid handle may have a different Blob URI, so URI inequality alone is not
+stale publication. Diagnostic-only parent probes distinguish it from actual Retry.
+Original r3 failure and hash evidence is preserved. Source is still35cba0c until
+49 proves and returns a correction. No blanket retry/limit increase is authorized.
+
 ## Safety limits
 
 No real DB/auth/.env/token/key/book/message/log/media/runtime reads, live API/model/WhatsApp/profile/download/history actions, original gallery/private-phone storage, paid/image quota, device/service/OS viewer control, production3210/8081/8083, installation/SDK/toolchain work, outside-project writes, final desktop/APK build or stage/commit/push. Only the explicitly documented synthetic directories and normal synthetic test temp data are permitted. No source fixes or other agent launches.

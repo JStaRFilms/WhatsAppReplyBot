@@ -90,6 +90,15 @@ commands, counts and remaining limits under fix49/verification.json or handoff.m
 If unable to capture or prove a cause, return the bounded findings and real blocker
 rather than invent a patch. Parent handles acceptance and subsequent44/38/33.
 
+## Execution
+
+Running Takomi Sol High, sole diagnosis/source worker, after terminal partial44 r3.
+T3 task ID is
+`node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-thumbnail-cancellation-fix-20261015-r1`.
+Client request ID is `otherme-thumbnail-cancellation-fix-20261015-r1`.
+Source edits require a diagnosed cause and failing-before regression. Current
+product remains35cba0c. No review38 or artifact33 is launched.
+
 ## Safety
 
 Only invented APIs/scope/token/media, ephemeral loopback listen0 and full API mocks;

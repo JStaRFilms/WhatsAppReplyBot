@@ -98,11 +98,12 @@ account access, provider requests, real sends and deployment remain gated.
 | 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Complete, source32fe269; parent22 focused/342 workspace tests and all types pass |
 | 42 | Paged/cache-first chats, private media reuse and photo viewer | coder | vibe-build |41 and46 accepted contracts | Complete061c4d7; parent404 serialized-suite/packaging tests, all types, local ack lifecycle regression fixed |
 | 43 | Foreground video player and disabled-background/PiP config | coder | vibe-build |42 accepted, exact module approved | Complete4f2b428; parent435 serialized-suite/packaging tests and all types pass |
-| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43/46 plus47/48 corrected source | Running Sol High r3, frozen35cba0c; fresh full results and supplements required |
+| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43/46 plus47/48/49 corrections | Blocked, r3 primary88 pass and7 supplements pass; intermittent thumbnail availability unresolved,49 diagnoses |
 | 45 | Audit ASR prices/routes and repeat paid work | architect | vibe-build | read-only frozen69f01fd | Complete; selected WhisperTurbo via same OpenRouter key,7 fake assertions, parent public catalog check |
 | 46 | Dedicated economical STT and durable reuse/attempt protection | coder | vibe-build |41 accepted,45 findings | Complete, source402e804; parent363 workspace tests/all types pass, no paid/live change |
 | 47 | Correct bounded actual row visibility after history reflow | coder | vibe-build |44 R1 confirmed blocker | Complete eb8a242, source440 tests/types pass; r2 exposes additional warm/resize/editor failures assigned48 |
-| 48 | Correct warm geometry, focused editor anchors and foreground photo recovery | coder | vibe-build |47 plus44 r2 confirmed failures | Complete35cba0c; parent449 tests/types and27 isolated browser checks pass, no active writer |
+| 48 | Correct warm geometry, focused editor anchors and foreground photo recovery | coder | vibe-build |47 plus44 r2 confirmed failures | Complete35cba0c; parent449 tests/types and27 isolated browser checks pass |
+| 49 | Diagnose and correct thumbnail cancellation availability | coder | vibe-build |48 plus44 r3 recorded failures | Running Sol High; capture actual cause before source edits, no broad retry or URI-stability assumption |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

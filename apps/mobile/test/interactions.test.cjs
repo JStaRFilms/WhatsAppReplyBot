@@ -107,7 +107,8 @@ function screenFixture(initialText='') {
   const animation={requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial;},cancelAnimationFrame:key=>frames.delete(key)};
   const conversation={id:'chat',accountId:'account',kind:'direct',mode:'draft_only',control:'assistant_allowed',name:'Synthetic'};
   const message={id:'message',text:'Synthetic',conversationId:'chat'};
-  const history={subscribe(){},get:()=>({messages:[message]}),load:async()=>{}};
+  const cached={messages:[message]};
+  const history={subscribe(){},get:()=>cached,load:async()=>{}};
   const app={snapshot:{conversations:[conversation],lastMessages:[],historyVersions:{},drafts:[]},palette:{},history,status:'online',reportError:message=>sends.push({error:message}),composer:async()=>{},viewed:async()=>{},client:{},perform:async(_path,_schema,payload)=>{sends.push(payload.action);}};
   app.intents={subscribe(){},get:()=>[],enqueue:async(capture,clear)=>{sends.push(capture.action ?? {kind:'text',text:capture.text});clear();}};
   const scrolling=load('lib/conversation-scroll.ts',{'react':h.react,'react-native':native},{WeakMap,Map,...animation});

@@ -116,7 +116,8 @@ function screenFixture(initialText='Original') {
   const h=lifecycleHooks(),listeners=new Map(),frames=new Map(),sendResult=deferred(),uploads=deferred();
   let serial=0,id='chat',routeFocused=true,foreground=true,text=initialText,focuses=0,blurs=0,dismisses=0,inputFocused=false;
   const messages=[{id:'message',conversationId:'chat',text:'Synthetic'}];
-  const history={subscribe(){},get:()=>({messages}),load:async()=>{}};
+  const cached={messages};
+  const history={subscribe(){},get:()=>cached,load:async()=>{}};
   const sends=[],holds=[];
   const app={snapshot:{accountId:scope().accountId,outbox:[],conversations:['chat','other'].map(id=>({id,kind:'direct',control:'assistant_allowed',mode:'draft_only'})),lastMessages:[],drafts:[],historyVersions:{}},
     status:'online',palette:{},history,client:{uploadImage:()=>uploads.promise,uploadAudio:()=>uploads.promise},reportError(){},
@@ -237,7 +238,7 @@ test('video open/play use synchronous actual recorder guards without treating th
   f.app.discovery={capabilities:{privateMediaCache:true}};f.app.clock={now:()=>100};
   f.app.mediaCache={setViewerOpen:value=>events.push(value),revalidate:async()=>{},invalidate:()=>events.push('invalidated')};
   const source={id:'message',conversationId:'chat',transportId:'synthetic',text:'Synthetic',media:{kind:'video',access:'unsupported',viewOnce:false,expiresAt:null}};
-  f.app.history.get=()=>({messages:[source]});let tree=f.render();
+  const cached={messages:[source]};f.app.history.get=()=>cached;let tree=f.render();
   const voice=nodes(tree).find(node=>node.type==='voice');voice.props.ref.current={isBusy:()=>busy,setViewerBlocked:value=>{if(value && busy)return false;viewerBlocked=value;return true;}};
   const open=()=>nodes(f.render()).find(node=>node.type==='bubble').props.onOpenMedia(source);
   open();assert.equal(nodes(f.render()).some(node=>node.type==='viewer'),false);

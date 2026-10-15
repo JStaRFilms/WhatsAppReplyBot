@@ -40,7 +40,6 @@ export default function ConversationScreen() {
   const [composerIdentity] = useState(randomUUID);
   const turns = useRef(new Map<string, number>());
   const draftOffsets = useRef(new Map<string, number>());
-  const sourceLayouts=useRef(new Map<string,{y:number;height:number}>());
   const knownMedia=useRef(new Map<string,Message>());
   const cached = useSyncExternalStore(history.subscribe,() => history.get(id),() => undefined);
   const messages = cached?.messages ?? [];
@@ -95,7 +94,7 @@ export default function ConversationScreen() {
   const quoteMessage=(message:Message | null)=>{editQuote(message);typing.focus();};
   const viewedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cancelViewed = useCallback(() => { clearTimeout(viewedTimer.current); }, []);
-  const scrolling = useConversationScroll(history, id, !!cached, cancelViewed);
+  const scrolling = useConversationScroll(history, id, !!cached, cancelViewed, cached, client);
   const { scroll, position, positioned } = scrolling;
   const group=snapshot?.historyGroups?.find(group=>group.id===id || group.memberIds.includes(id));
   const memberIds=group?.memberIds ?? [id];
@@ -109,7 +108,7 @@ export default function ConversationScreen() {
     setReactionPicker(false);setReactionEmoji('');
     setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);
     setAttachment(null);setPicking(false);setAudioClip(null);setAudioBusy(false);
-    setDraftFeedback(null);setDrafting(false);setDraftUnconfirmed(false);draftUnknownScope.current=null;draftRequest.current=null;turns.current.clear();draftOffsets.current.clear();sourceLayouts.current.clear();knownMedia.current.clear();
+    setDraftFeedback(null);setDrafting(false);setDraftUnconfirmed(false);draftUnknownScope.current=null;draftRequest.current=null;turns.current.clear();draftOffsets.current.clear();knownMedia.current.clear();
     composerState.current=null; seenMessage.current=null;
     return () => { alive.current=false; draftRequest.current=null; cancelViewed();viewerOpen.current=false;mediaCache?.setViewerOpen(false); };
   }, [id,history,client,cancelViewed]);
@@ -166,7 +165,8 @@ export default function ConversationScreen() {
     if (!ids.length || !discovery?.capabilities?.historyPaging || !focused || !foreground || !positioned || !scrolling.settled || historyError || cached?.stale || paging || viewer
       || readyVersion !== version || status !== 'online' || seenMessage.current === key) return;
     viewedTimer.current = setTimeout(() => {
-      if (!focusedRef.current || !isForeground() || position.dragging || position.target!==null) return;
+      if (!focusedRef.current || !isForeground() || position.dragging || position.target!==null || scrolling.isVisibilityCurrent?.()===false
+        || !currentScreen() || history.get(id)!==cached) return;
       seenMessage.current = key;
       void viewedMessages(id, ids).catch(() => { if (seenMessage.current === key) seenMessage.current = null; });
     }, 600);
@@ -312,14 +312,16 @@ export default function ConversationScreen() {
   const displayedDraftIds=new Set([...turnDrafts.values()].filter(draft=>['pending','needs_owner','stale'].includes(draft.state) || draft.id===draftId || draft.id===localDraft?.id).map(draft=>draft.id));
   const turnIds=[...messages.map(message=>message.id),...[...turnDrafts].filter(([source,draft])=>displayedDraftIds.has(draft.id) && !messages.some(message=>message.id===source)).map(([source])=>source)];
   function finishLocation(source:string,measured=false){
-    const target=pendingLocation.current;if(!currentScreen() || target?.source!==source)return;
+    const target=pendingLocation.current;if(!currentScreen() || target?.source!==source || scrolling.hasCurrentGeometry?.()===false)return;
     const actual=history.get(id)?.messages.some(message=>message.id===source);
     if(target.bodyLocated && (!actual || !target.contextArrived))return;
     if(target.bodyLocated && actual && !measured){requestAnimationFrame(()=>{if(pendingLocation.current===target)finishLocation(source,true);});return;}
     const offset=turns.current.get(source),card=target.draftId && displayedDraftIds.has(target.draftId)?draftOffsets.current.get(target.draftId):0;
     if(offset===undefined || card===undefined || !actual && !target.draftId)return;
-    scrolling.locate(offset+card);
-    if(actual)pendingLocation.current=null;else target.bodyLocated=true;
+    scrolling.locate(offset+card,()=>{
+      if(pendingLocation.current!==target)return;
+      if(actual)pendingLocation.current=null;else target.bodyLocated=true;
+    });
   }
   useLayoutEffect(()=>{
     for(const message of messages){const previous=knownMedia.current.get(message.id);
@@ -328,8 +330,16 @@ export default function ConversationScreen() {
     knownMedia.current=new Map(messages.filter(message=>message.media).map(message=>[message.id,message]));
     const target=pendingLocation.current;
     if(target && !target.contextArrived && messages.some(message=>message.id===target.source))target.contextArrived=true;
-    scrolling.retainRows?.(messages.map(message=>message.id));
-  },[cached]);
+    scrolling.retainRows?.(messages.map(message=>message.id),turnIds,layouts=>{
+      if(!currentScreen() || history.get(id)!==cached)return;
+      turns.current.clear();
+      for(const [source,row] of layouts){
+        turns.current.set(source,row.y);
+        const draft=turnDrafts.get(source);if(draft)draftOffsets.current.set(draft.id,row.sourceY+row.sourceHeight);
+      }
+      const target=pendingLocation.current;if(target)finishLocation(target.source);
+    });
+  },[cached,turnIds.join('\n'),[...displayedDraftIds].join('\n')]);
   const header = <View style={{ minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingRight: 4, gap: 8 }}>
     <Pressable accessibilityRole="button" accessibilityLabel="Back to Chats" onPress={() => router.dismissTo('/(tabs)')}
       style={{ width: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
@@ -376,22 +386,20 @@ export default function ConversationScreen() {
         {cached?.hasOlder && <Button label="Load older" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('older');}}/>}
         {turnIds.map(source=>{
           const m=messages.find(message=>message.id===source),draft=turnDrafts.get(source);
-          return <View key={source} testID={'turn-'+source} onLayout={event=>{
+          const refs=scrolling.rowRefs?.(source);
+          return <View key={source} ref={refs?.turn} collapsable={false} testID={'turn-'+source} onLayout={event=>{
             if(!currentScreen() || history.get(id)?.messages!==cached?.messages)return;
             const {y}=event.nativeEvent.layout;turns.current.set(source,y);
-            const row=sourceLayouts.current.get(source);
-            if(m && row)scrolling.onRowLayout?.(source,y+row.y,row.height);
-            finishLocation(source);
+            scrolling.refreshRows?.();finishLocation(source);
           }}>
-            <View key={m?'source':'missing-source'} onLayout={event=>{
+            <View key={m?'source':'missing-source'} ref={refs?.source} collapsable={false} onLayout={event=>{
               if(!currentScreen() || history.get(id)?.messages!==cached?.messages)return;
-              const {y,height}=event.nativeEvent.layout;sourceLayouts.current.set(source,{y,height});const turn=turns.current.get(source);
-              if(m && turn!==undefined)scrolling.onRowLayout?.(source,turn+y,height);
+              const {y,height}=event.nativeEvent.layout;scrolling.refreshRows?.();
               // The card follows this measured sibling with no intervening margin. Keep its editor mounted when the source first arrives.
               if(draft)draftOffsets.current.set(draft.id,y+height);finishLocation(source);
             }}>{m ? cached?.unavailableSourceIds?.includes(source) ? <Text style={{color:palette.muted,padding:8}}>Original source unavailable. Its verified copies conflict.</Text> : <MessageBubble message={m} active={focused && foreground && !viewer} visible={scrolling.visibleIds?.includes(m.id) ?? false} onOpenMedia={openViewer} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={selectMessage} onQuote={quoteMessage} onQuoteSource={source=>{void locateSource(source);}}/>
               : <View style={{padding:8,gap:4}}><Text style={{color:palette.muted,fontSize:12}}>{historyError ? 'Original source unavailable. The known draft is kept below.' : 'Original source is not loaded. The known draft is kept below.'}</Text><Button label="View original source" secondary disabled={paging || status!=='online'} onPress={()=>{void locateSource(source,draft?.id);}}/></View>}</View>
-            {draft && displayedDraftIds.has(draft.id) && <View key={'draft-'+draft.id} onLayout={event=>{if(currentScreen() && history.get(id)?.messages===cached?.messages){draftOffsets.current.set(draft.id,event.nativeEvent.layout.y);finishLocation(source);}}} style={{paddingVertical:8}}><DraftCard draft={draft} sourceReady={!!m && !cached?.stale && !historyError && readyVersion===version && !cached?.unavailableSourceIds?.includes(source) && !readOnly && (!group || draft.conversationId===group.id)} onEditorFocus={scrolling.editorFocus} onSent={()=>{if(discovery?.capabilities?.historyPaging)void pageHistory('latest');else scrolling.latest();}}/></View>}
+            {draft && displayedDraftIds.has(draft.id) && <View key={'draft-'+draft.id} onLayout={event=>{if(currentScreen() && history.get(id)?.messages===cached?.messages){draftOffsets.current.set(draft.id,event.nativeEvent.layout.y);scrolling.refreshRows?.();finishLocation(source);}}} style={{paddingVertical:8}}><DraftCard draft={draft} sourceReady={!!m && !cached?.stale && !historyError && readyVersion===version && !cached?.unavailableSourceIds?.includes(source) && !readOnly && (!group || draft.conversationId===group.id)} onEditorFocus={scrolling.editorFocus} onSent={()=>{if(discovery?.capabilities?.historyPaging)void pageHistory('latest');else scrolling.latest();}}/></View>}
           </View>;
         })}
         {cached?.hasNewer && <Button label="Load newer" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('newer');}}/>}

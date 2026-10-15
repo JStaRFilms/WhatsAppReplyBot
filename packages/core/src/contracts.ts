@@ -56,6 +56,7 @@ export type AudioTranscript = z.infer<typeof AudioTranscript>;
 export const Message = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), transportId: z.string(),
   direction: z.enum(['inbound', 'outbound']), outgoingReceipt: OutgoingReceipt.optional(),
+  contentState: z.enum(['partial', 'complete']).optional(), contentRecovered: z.boolean().optional(),
   authorship: z.enum(['owner_written', 'assistant_written', 'owner_edited_assistant', 'contact_written', 'unknown']),
   text: z.string().max(100_000), occurredAt: z.number(),
   source: z.enum(['live', 'backfill', 'replay', 'unknown']),
@@ -101,7 +102,7 @@ export const OwnerAction = z.union([Action, OwnerImageAction, OwnerAudioAction])
 export type OwnerAction = z.infer<typeof OwnerAction>;
 export const Draft = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), triggerMessageId: z.string(),
-  workflowVersion: z.number(), policyVersion: z.number(), revision: z.number().int().positive(),
+  workflowVersion: z.number(), policyVersion: z.number(), sourceEpoch: z.number().int().nonnegative().optional(), revision: z.number().int().positive(),
   action: Action, audioSourceIds:z.array(z.string().min(1)).max(2).optional(), state: z.enum(['pending', 'needs_owner', 'approved', 'dismissed', 'stale', 'resolved']),
   createdAt: z.number(), handoverAt: z.number().nullable().optional(), edited: z.boolean(),
 });
@@ -123,7 +124,7 @@ export const Component = z.object({
 export type Component = z.infer<typeof Component>;
 export const Outbox = z.object({
   id: z.string(), accountId: z.string(), conversationId: z.string(), requestId: z.string(),
-  workflowVersion: z.number(), policyVersion: z.number(), action: OwnerAction, audioSourceIds:z.array(z.string().min(1)).max(2).optional(),
+  workflowVersion: z.number(), policyVersion: z.number(), sourceEpoch: z.number().int().nonnegative().optional(), action: OwnerAction, audioSourceIds:z.array(z.string().min(1)).max(2).optional(),
   origin: z.enum(['owner_manual', 'assistant_approved', 'assistant_auto']),
   state: z.enum(['queued', 'dispatching', 'accepted', 'cancelled', 'unknown', 'failed', 'partial']),
   components: z.array(Component).min(1).max(5), quotedMessageId: z.string().nullable(),

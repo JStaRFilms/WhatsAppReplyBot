@@ -1,4 +1,4 @@
-import type { Message } from '@replybot/core';
+import { automaticTrigger, type Message } from '@replybot/core';
 interface Entry {
   timer:ReturnType<typeof setTimeout> | undefined;
   resolve:()=>void; reject:(error:unknown)=>void; finish:()=>void;
@@ -10,7 +10,7 @@ export class ReplyWindow {
   constructor(private readonly run:(message:Message,isCurrent:()=>boolean)=>Promise<void>,private readonly delayMs=5000,
     private readonly onWindow?: (message:Message,isCurrent:()=>boolean)=>()=>void) {}
   enqueue(message:Message):Promise<void> {
-    if(this.closed || message.source!=='live' || message.direction!=='inbound')return Promise.resolve();
+    if(this.closed || message.source!=='live' || message.direction!=='inbound' || !automaticTrigger(message))return Promise.resolve();
     const previous=this.entries.get(message.conversationId);
     previous?.finish();
     if(previous?.timer){clearTimeout(previous.timer);previous.resolve();}

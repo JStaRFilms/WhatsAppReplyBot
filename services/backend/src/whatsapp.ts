@@ -4,8 +4,8 @@ import QRCode from 'qrcode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DomainError, automaticDecision, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation, type OutgoingReceipt } from '@replybot/core';
-import { directJid, normalizeWhatsApp, isViewOnce } from './whatsapp-normalize.ts';
+import { DomainError, automaticDecision, automaticTrigger, partialMessage, eventIdentity, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation, type OutgoingReceipt } from '@replybot/core';
+import { directJid, normalizeWhatsApp, isViewOnce, inspectHistoryRaw, decodeStoredMessage, attachmentIdentity, messageId } from './whatsapp-normalize.ts';
 import { downloadAttachment, mediaDeadline } from './whatsapp-media.ts';
 
 export const WhatsAppStatus = z.object({
@@ -32,7 +32,7 @@ export class WhatsAppAdapter {
   private readonly presenceLanes = new Map<string, Promise<void>>();
   constructor(private readonly flow: Workflow, private readonly authDir: string,
     private readonly incoming: (message: Message) => Promise<void>,private readonly onConnectionLost?:()=>void,
-    private readonly clock = Date.now, private readonly requireOwnerLock = false) {}
+    private readonly clock = Date.now, private readonly requireOwnerLock = false) { flow.store.inspectHistoryRaw = inspectHistoryRaw; }
   snapshot(): WhatsAppStatus { return { ...this.status }; }
   requireReady(): void { if (this.status.state !== 'connected' || !this.socket || this.verifiedSocket !== this.socket) throw new DomainError('whatsapp_not_connected', 503); }
   async start(): Promise<void> {
@@ -173,7 +173,9 @@ export class WhatsAppAdapter {
     });
     socket.ev.on('messages.delete', event => {
       this.enqueueData(socket, async () => {
-        const keys = 'keys' in event ? event.keys : this.flow.store.messages(this.flow.accountId, this.canonical(event.jid)).map(m => ({ remoteJid: event.jid, id: m.transportId }));
+        const chat = 'keys' in event ? undefined : this.canonical(event.jid);
+        const keys = 'keys' in event ? event.keys : this.flow.store.historyGroup(this.flow.accountId,chat ?? event.jid).memberIds
+          .flatMap(id => this.flow.store.messages(this.flow.accountId,id)).map(m => ({ remoteJid: event.jid, id: m.transportId }));
         for (const key of keys) if (key.remoteJid && key.id) {
           this.erase(this.canonical(key.remoteJid), key.id);
         }
@@ -211,12 +213,7 @@ export class WhatsAppAdapter {
     });
   }
   private erase(chat: string, transportId: string): void {
-    const message = this.flow.store.messages(this.flow.accountId,chat).find(m => m.transportId === transportId);
-    if (message) {
-      this.flow.pause(chat,'delete-'+message.id);
-      this.flow.store.saveMessage({ ...message, text: '[Message deleted]', media: null, reaction: null });
-    }
-    this.flow.store.saveWaMessage(this.flow.accountId,chat,transportId,JSON.stringify({ deleted: true }));
+    this.flow.restrictSource(chat,transportId,'deleted');
   }
   private enqueue(operation: () => Promise<void>): void {
     this.events = this.events.then(operation).catch(() => { this.status = { ...this.status, error: 'A WhatsApp event could not be processed. No automatic retry or send was attempted.' }; });
@@ -227,23 +224,10 @@ export class WhatsAppAdapter {
     const second = alternate ? jidNormalizedUser(alternate) : undefined;
     const phone = [first,second].find(j => j?.endsWith('@s.whatsapp.net'));
     const lid = [first,second].find(j => j?.endsWith('@lid'));
-    if (phone && lid && this.flow.store.waCanonical(this.flow.accountId,lid) === lid) {
-      const original = this.flow.store.conversation(this.flow.accountId,lid);
-      if (original) {
-        const target = this.conversation(phone);
-        const mode = original.mode === 'never_reply' || target.mode === 'never_reply' ? 'never_reply'
-          : original.mode === 'draft_only' || target.mode === 'draft_only' ? 'draft_only' : target.mode ?? original.mode;
-        this.flow.pause(lid,'alias-old-'+lid);
-        const paused = this.flow.pause(phone,'alias-new-'+lid);
-        this.flow.store.saveConversation({ ...paused, excluded: original.excluded || target.excluded, mode,
-          name: original.name || target.name, policyVersion: paused.policyVersion+1 });
-      }
-      this.flow.store.saveWaAlias(this.flow.accountId, lid, phone);
-      if (original) {
-        this.flow.store.mergeReleaseContext(this.flow.accountId,lid,phone);
-        this.flow.refreshContactName(phone);
-      }
-    } else if (phone && lid) this.flow.store.saveWaAlias(this.flow.accountId,lid,phone);
+    if (phone && lid) {
+      this.conversation(phone);
+      this.flow.verifyAlias(lid,phone);
+    }
     return this.flow.store.waCanonical(this.flow.accountId, first);
   }
   private conversation(jid: string): Conversation {
@@ -257,12 +241,9 @@ export class WhatsAppAdapter {
     this.flow.store.saveConversation(c); return c;
   }
   private raw(chat: string, id: string): WAMessage | undefined {
-    const payload = this.flow.store.waMessage(this.flow.accountId, chat, id);
-    if (!payload) return undefined;
-    const parsed = z.object({ protobuf: z.string() }).safeParse(JSON.parse(payload));
-    if (!parsed.success) return undefined;
-    const raw = proto.WebMessageInfo.decode(Buffer.from(parsed.data.protobuf,'base64'));
-    return raw.key ? { ...raw, key: raw.key } : undefined;
+    const source = this.flow.store.historySource(this.flow.accountId,chat,messageId(chat,id),this.clock());
+    if (source?.state !== 'available') return undefined;
+    return decodeStoredMessage(this.flow.store.waMessage(this.flow.accountId,source.conversationId,source.transportId));
   }
   private receiveReaction(key: WAMessage['key'], reaction: Omit<proto.IReaction,'key'> & {key?: WAMessage['key'] | null}, source: Message['source']): void {
     const reactor = reaction.key;
@@ -273,7 +254,7 @@ export class WhatsAppAdapter {
     const targetChat = key.remoteJid ? this.canonical(key.remoteJid,key.remoteJidAlt) : undefined;
     const chat = targetChat ?? reactorChat;
     if (!chat || !directJid(chat) || reactorChat && reactorChat !== chat) return;
-    const target = this.flow.store.messages(this.flow.accountId,chat).find(m => m.transportId === key.id);
+    const target = this.flow.store.historySource(this.flow.accountId,chat,messageId(chat,key.id),this.clock())?.message;
     if (!target || !this.raw(chat,key.id)) return;
     const at = Number(reaction.senderTimestampMs ?? 0);
     if (!Number.isFinite(at) || at <= 0) return;
@@ -294,34 +275,68 @@ export class WhatsAppAdapter {
     const chat = this.canonical(raw.key.remoteJid, raw.key.remoteJidAlt);
     this.conversation(chat);
     if (!raw.key.fromMe && raw.pushName !== undefined) this.flow.observeContactNames(chat,{wa_notify:raw.pushName});
-    const message = normalizeWhatsApp(raw,this.flow.accountId,chat,source);
+    const message = normalizeWhatsApp(raw,this.flow.accountId,chat,source,
+      id=>this.flow.store.historyGroup(this.flow.accountId,chat).memberIds.includes(id));
     if (!message) return;
+    const candidates = this.flow.store.eventMessages(this.flow.accountId,chat,message.transportId);
+    const existing = candidates[0];
+    if (existing) {
+      const sourceRef = this.flow.store.historySource(this.flow.accountId,chat,existing.id,this.clock());
+      if (sourceRef?.state !== 'available') return;
+      const original = decodeStoredMessage(this.flow.store.waMessage(this.flow.accountId,existing.conversationId,existing.transportId));
+      if(isViewOnce(raw)){this.flow.restrictSource(chat,message.transportId,'view_once');return;}
+      const expiry=inspectHistoryRaw(JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(raw).finish()).toString('base64')})).expiresAt;
+      if(expiry!==null && (sourceRef.expiresAt===null || expiry<sourceRef.expiresAt))this.flow.restrictSource(chat,message.transportId,'expiry',expiry);
+      if(!partialMessage(existing)){
+        const group=this.flow.store.historyGroup(this.flow.accountId,chat);
+        const known=group.memberIds.flatMap(id=>this.flow.store.outboxes(this.flow.accountId,id))
+          .find(o=>o.components.some(p=>p.transportId===message.transportId));
+        const baseline=original ? normalizeWhatsApp(original,this.flow.accountId,existing.conversationId,existing.source,id=>group.memberIds.includes(id)) : null;
+        const comparable=(m:Message)=>({...m,source:existing.source,quotedMessageId:m.quotedMessageId
+          ? this.flow.store.historySource(this.flow.accountId,chat,m.quotedMessageId,this.clock())?.messageId ?? m.quotedMessageId : null});
+        const incoming={...message,authorship:raw.key.fromMe ? known?.authoredAs ?? message.authorship : message.authorship,
+          ...(known && raw.key.fromMe ? {occurredAt:existing.occurredAt} : {})};
+        if(eventIdentity(comparable({...(baseline ?? existing),authorship:existing.authorship,
+          ...(known && raw.key.fromMe ? {occurredAt:existing.occurredAt} : {})}),original?attachmentIdentity(original):null)
+          !==eventIdentity(comparable(incoming),original?attachmentIdentity(raw):null))this.flow.restrictSource(chat,message.transportId,'conflict');
+        else if(!original && known)this.flow.store.saveWaMessage(this.flow.accountId,existing.conversationId,message.transportId,
+          JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode({...raw,key:{...raw.key,remoteJid:existing.conversationId}}).finish()).toString('base64')}));
+        return;
+      }
+      if(message.direction!==existing.direction || message.occurredAt!==existing.occurredAt
+        || original && attachmentIdentity(original)!==null && attachmentIdentity(original)!==attachmentIdentity(raw)) {
+        this.flow.restrictSource(chat,message.transportId,'conflict');return;
+      }
+      const full: WAMessage = {...(original ?? raw),key:original?.key ?? {...raw.key,remoteJid:existing.conversationId},message:raw.message ?? null};
+      this.flow.recoverMessage(chat,{...message,id:existing.id},JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(full).finish()).toString('base64')}));
+      return;
+    }
     const previous = this.flow.store.waMessage(this.flow.accountId,chat,message.transportId);
     if (previous && z.object({ deleted: z.literal(true) }).safeParse(JSON.parse(previous)).success) return;
-    if (!isViewOnce(raw)) this.flow.store.saveWaMessage(this.flow.accountId,chat,message.transportId,
-      JSON.stringify({ protobuf: Buffer.from(proto.WebMessageInfo.encode(raw).finish()).toString('base64') }));
-    const inserted = this.flow.observe(message, raw.key.fromMe === true);
-    if (inserted && source === 'backfill') this.status.historyMessages++;
-    if (inserted && source === 'live' && message.direction === 'inbound') {
+    const observed = this.flow.observe(message,raw.key.fromMe === true,isViewOnce(raw) ? undefined
+      : JSON.stringify({protobuf:Buffer.from(proto.WebMessageInfo.encode(raw).finish()).toString('base64')}));
+    if (observed && source === 'backfill') this.status.historyMessages++;
+    if (observed && source === 'live' && message.direction === 'inbound' && automaticTrigger(message)) {
       // Do not hold the event lane while a model runs; owner takeover must remain immediate.
       void this.incoming(message).catch(() => { this.status = { ...this.status, error: 'A reply could not be drafted. Review this chat manually.' }; });
     }
   }
   mediaCurrent(message:Message):boolean {
-    const saved=this.flow.store.message(this.flow.accountId,message.id);
+    const source=this.flow.store.historySource(this.flow.accountId,message.conversationId,message.id,this.clock());
+    const saved=source?.state==='available' ? source.message : undefined;
     const raw=this.raw(message.conversationId,message.transportId);
     const normalized=raw ? normalizeWhatsApp(raw,this.flow.accountId,message.conversationId,message.source) : null;
     return message.accountId===this.flow.accountId && saved?.conversationId===message.conversationId && !!saved.media && !!raw && !isViewOnce(raw) && !!normalized?.media
       && !saved.media.viewOnce && (saved.media.expiresAt===null || saved.media.expiresAt>this.clock())
       && (normalized.media.expiresAt===null || normalized.media.expiresAt>this.clock());
   }
-  async downloadMedia(message:Message):Promise<Buffer> {
+  async downloadMedia(message:Message, ownerVideo = false):Promise<Buffer> {
     this.requireReady();
     if(!this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
     const raw=this.raw(message.conversationId,message.transportId);
     if(!raw)throw new DomainError('media_unavailable',404);
     const content=normalizeMessageContent(raw.message);
-    const attachment=content?.imageMessage ?? content?.stickerMessage ?? content?.audioMessage ?? (content?.videoMessage?.gifPlayback ? content.videoMessage : undefined);
+    const attachment=content?.imageMessage ?? content?.stickerMessage ?? content?.audioMessage ?? (content?.videoMessage && (ownerVideo || content.videoMessage.gifPlayback) ? content.videoMessage : undefined);
     if(!attachment || Number(attachment.fileLength ?? 0)>10*1024*1024)throw new DomainError('media_too_large',413);
     const signal=AbortSignal.timeout(15000);const socket=this.socket;
     const kind=content?.imageMessage ? 'image' : content?.stickerMessage ? 'sticker' : content?.audioMessage ? 'audio' : 'video';
@@ -334,8 +349,8 @@ export class WhatsAppAdapter {
       if(this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message) || isViewOnce(updated)
         || updated.key.id!==raw.key.id || updated.key.remoteJid!==raw.key.remoteJid)throw new DomainError('media_unavailable',404);
       const fresh=normalizeMessageContent(updated.message);
-      const next=fresh?.imageMessage ?? fresh?.stickerMessage ?? fresh?.audioMessage ?? (fresh?.videoMessage?.gifPlayback ? fresh.videoMessage : undefined);
-      if(!next)throw new DomainError('media_unavailable',404);
+      const next=fresh?.imageMessage ?? fresh?.stickerMessage ?? fresh?.audioMessage ?? (fresh?.videoMessage && (ownerVideo || fresh.videoMessage.gifPlayback) ? fresh.videoMessage : undefined);
+      if(!next || attachmentIdentity(updated)!==attachmentIdentity(raw))throw new DomainError('media_unavailable',404);
       bytes=await downloadAttachment(next,kind,signal);
       if(this.socket!==socket || this.verifiedSocket!==socket || !this.mediaCurrent(message))throw new DomainError('media_unavailable',404);
       this.flow.store.saveWaMessage(this.flow.accountId,message.conversationId,message.transportId,
@@ -347,16 +362,17 @@ export class WhatsAppAdapter {
   beginPresence(chat: string, isCurrent: () => boolean, outboxId?: string): () => void {
     this.presence.get(chat)?.();
     const socket = this.socket;
-    const c = this.flow.conversation(chat);
+    const c = this.flow.effectiveConversation(chat);
+    const sourceEpoch = this.flow.store.historyGroup(this.flow.accountId,chat).sourceEpoch;
     const eligible = () => {
       if (!socket || this.socket !== socket || this.verifiedSocket !== socket || this.status.state !== 'connected'
         || !isCurrent() || !this.flow.store.modelConsent(this.flow.accountId)) return false;
-      const current = this.flow.conversation(chat);
+      const current = this.flow.effectiveConversation(chat);
       if (!chat.endsWith('@s.whatsapp.net') || !aiAccess(current,this.flow.accountId) || current.control !== 'assistant_allowed'
         || current.workflowVersion !== c.workflowVersion || current.policyVersion !== c.policyVersion
-        || !inPermittedHours(current,this.clock())) return false;
+        || !inPermittedHours(current,this.clock()) || sourceEpoch !== this.flow.store.historyGroup(this.flow.accountId,chat).sourceEpoch) return false;
       const grant = this.flow.store.grants(this.flow.accountId,chat).find(g => g.state === 'active');
-      if (!outboxId) return automaticDecision(current,this.flow.store.conversations(this.flow.accountId),this.flow.accountId,this.clock(),'live',grant) === 'auto';
+      if (!outboxId) return automaticDecision(current,this.flow.effectiveConversations(),this.flow.accountId,this.clock(),'live',grant) === 'auto';
       const outbox = this.flow.store.outbox(this.flow.accountId,outboxId);
       return !!outbox && outbox.origin === 'assistant_auto' && outbox.conversationId === chat && outbox.grantId === grant?.id
         && outbox.workflowVersion === current.workflowVersion && !!grant && grant.reservedUnits > 0
@@ -407,10 +423,10 @@ export class WhatsAppAdapter {
         const part = current.components.find(p => p.id === component.id);
         if (!part) return { state: 'failed' };
         part.transportId = transportId; this.flow.store.saveOutbox(current);
-        const target = component.reaction ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === component.reaction?.targetMessageId) : undefined;
+        const target = component.reaction ? this.flow.store.historySource(this.flow.accountId,c.id,component.reaction.targetMessageId,this.clock())?.message : undefined;
         const reactionRaw = target ? this.raw(c.id,target.transportId) : undefined;
         const quoteId = component.quotedMessageId !== undefined ? component.quotedMessageId : outbox.quotedMessageId;
-        const quote = quoteId ? this.flow.store.messages(this.flow.accountId,c.id).find(m => m.id === quoteId) : undefined;
+        const quote = quoteId ? this.flow.store.historySource(this.flow.accountId,c.id,quoteId,this.clock())?.message : undefined;
         const quoted = quote ? this.raw(c.id,quote.transportId) : undefined;
         if (component.kind === 'reaction' && !reactionRaw || quoteId && (!quote || !quoted || quote.media?.viewOnce || quote.media?.expiresAt!==undefined && quote.media.expiresAt!==null && quote.media.expiresAt<=this.clock())) return { state: 'failed' };
         const audio = component.kind==='audio' && component.uploadId ? this.flow.store.audioUpload(this.flow.accountId,c.id,component.uploadId) : undefined;

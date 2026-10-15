@@ -15,7 +15,7 @@ export type ProfileOperation = z.infer<typeof ProfileOperation>;
 export const PcDisplay = z.object({ requestId: z.string().min(1).max(96), state: z.enum(['requested', 'ready', 'unavailable', 'expired']) }).strict();
 export type PcDisplay = z.infer<typeof PcDisplay>;
 export const SessionDiscovery = z.object({ protocol: z.literal(2), scope: ProfileScope, label: z.string(), transition: ProfileOperation.nullable(),
-  capabilities: z.object({ pcQrDisplay: z.boolean().optional(), desktopBrowser: z.boolean().optional(), ownerInstructions: z.boolean().optional(), contactBookNames: z.boolean().optional() }).strict().optional(),
+  capabilities: z.object({ pcQrDisplay: z.boolean().optional(), desktopBrowser: z.boolean().optional(), ownerInstructions: z.boolean().optional(), contactBookNames: z.boolean().optional(), historyPaging: z.boolean().optional(), privateMediaCache: z.boolean().optional() }).strict().optional(),
 }).strict();
 export type SessionDiscovery = z.infer<typeof SessionDiscovery>;
 export const ProfileList = z.object({ profiles: z.array(ProfileDescriptor) }).strict();
@@ -50,7 +50,28 @@ export const ContactNamesImportInput = ReleaseRequest.extend({ entries: z.array(
 export type ContactNamesImportInput = z.infer<typeof ContactNamesImportInput>;
 export const ContactNamesImportResult = z.object({ settings: ContactNameSettings }).strict();
 export type ContactNamesImportResult = z.infer<typeof ContactNamesImportResult>;
+export const HistoryGroup = z.object({
+  id: z.string(), memberIds: z.array(z.string()), revision: Revision, sourceEpoch: Revision,
+  lastMessageId: z.string().nullable(), aiBlocked: z.boolean(),
+}).strict();
+export type HistoryGroup = z.infer<typeof HistoryGroup>;
+export const HistoryPage = z.object({
+  conversationId: z.string(), messages: z.array(Message).max(100), unavailableSourceIds: z.array(z.string()),
+  revision: Revision, sourceEpoch: Revision, beforeCursor: z.string().max(2048).nullable(), afterCursor: z.string().max(2048).nullable(),
+  hasOlder: z.boolean(), hasNewer: z.boolean(), latestMessageId: z.string().nullable(),
+}).strict();
+export type HistoryPage = z.infer<typeof HistoryPage>;
+export const MediaVariant = z.enum(['preview','image','video']);
+export type MediaVariant = z.infer<typeof MediaVariant>;
+export const MediaSource = z.object({
+  cacheNamespace: z.string().uuid(), conversationId: z.string(), messageId: z.string(), sourceVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  variant: MediaVariant, state: z.enum(['available','missing','deleted','expired','view_once','denied','unsupported','conflict']),
+  mime: z.enum(['image/png','image/gif','image/jpeg','video/mp4']).nullable(), maxBytes: z.number().int().positive(),
+  expiresAt: z.number().nullable(), validatedAt: z.number(), validUntil: z.number(),
+}).strict();
+export type MediaSource = z.infer<typeof MediaSource>;
 export const ClientSnapshot = Snapshot.extend({
+  historyGroups: z.array(HistoryGroup).optional(),
   profileScope: ProfileScope.default({ profileId: 'original', accountId: 'whatsapp-owner', revision: 0 }),
   serverTime:z.number().default(0),
   lastMessages: z.array(Message), latestTenIds: z.array(z.string()), modelConsent: z.boolean(), unreadCounts: z.record(z.string(),z.number().int().nonnegative()).default({}),

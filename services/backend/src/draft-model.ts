@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Draft, DomainError, aiAccess, buildContext, type AudioTranscript, type Action, type ModelContext, type Workflow } from '@replybot/core';
+import { Draft, DomainError, aiAccess, type AudioTranscript, type Action, type ModelContext, type Workflow } from '@replybot/core';
 import { demoReply } from './demo-model.ts';
 import type { VisualFrame } from './media.ts';
 import { readableAudio, type AudioService, type Transcriber } from './audio.ts';
@@ -14,23 +14,27 @@ export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals
     const running=active.get(requestId);
     if(running){if(running.hash!==payloadHash)throw new DomainError('request_id_conflict');return running.result;}
     const result=(async()=>{
-      const c=flow.conversation(conversationId);
+      flow.assertFreshAction(conversationId);
+      const c=flow.effectiveConversation(conversationId);
+      const sourceEpoch=flow.store.historyGroup(flow.accountId,conversationId).sourceEpoch;
       if(c.control==='manual')throw new DomainError('ai_access_denied',403);
+      if(flow.groupUnknown(conversationId))throw new DomainError('delivery_unknown');
       if(remote && !flow.store.modelConsent(flow.accountId))throw new DomainError('model_consent_required',403);
       const ownerInstructions=flow.store.ownerInstructions(flow.accountId);
       const nameRevision=c.nameRevision ?? 0;
       const context=flow.context(conversationId);
-      const existing=flow.store.drafts(flow.accountId,conversationId).filter(d=>d.state==='pending' && d.workflowVersion===c.workflowVersion && d.policyVersion===c.policyVersion).at(-1);
+      const existing=flow.store.drafts(flow.accountId,conversationId).filter(d=>d.state==='pending' && d.workflowVersion===c.workflowVersion && d.policyVersion===c.policyVersion && (d.sourceEpoch===undefined || d.sourceEpoch===sourceEpoch)).at(-1);
       if(existing){flow.store.saveRequest(flow.accountId,requestId,payloadHash,existing);return existing;}
-      const key=JSON.stringify([conversationId,c.workflowVersion,c.policyVersion,ownerInstructions.revision,nameRevision]);
+      const key=JSON.stringify([conversationId,c.workflowVersion,c.policyVersion,sourceEpoch,ownerInstructions.revision,nameRevision]);
       let job=generations.get(key);
       if(!job){
         job=(async()=>{
           const guard=()=>{
-            const current=flow.conversation(conversationId);
+            const current=flow.effectiveConversation(conversationId);
+            if(flow.groupUnknown(conversationId))throw new DomainError('delivery_unknown');
             if(!aiAccess(current,flow.accountId) || current.control==='manual')throw new DomainError('ai_access_denied',403);
             if(remote && !flow.store.modelConsent(flow.accountId))throw new DomainError('model_consent_revoked',403);
-            if(current.workflowVersion!==c.workflowVersion || current.policyVersion!==c.policyVersion
+            if(flow.store.historyGroup(flow.accountId,conversationId).sourceEpoch!==sourceEpoch || current.workflowVersion!==c.workflowVersion || current.policyVersion!==c.policyVersion
               || flow.store.ownerInstructions(flow.accountId).revision!==ownerInstructions.revision || (current.nameRevision ?? 0)!==nameRevision)throw new DomainError('stale_workflow');
           };
           guard();
@@ -44,7 +48,7 @@ export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals
           for(const message of context.messages)if(transcripts.has(message.id)){
             try{audio?.check(message);}catch{transcripts.delete(message.id);}
           }
-          const prepared=buildContext(flow.conversation(conversationId),flow.accountId,flow.store.messages(flow.accountId,conversationId),[],8000,now(),transcripts,flow.store.modelConsent(flow.accountId) ? ownerInstructions : undefined);
+          const prepared=flow.context(conversationId,transcripts);
           const visuals=remote && media ? await media.visuals(prepared) : [];
           guard();
           for(const message of prepared.messages)if(message.audioTranscript)audio?.check(message);

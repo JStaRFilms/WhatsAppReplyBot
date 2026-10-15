@@ -3,9 +3,9 @@ import { DomainError, aiAccess, type Conversation, type Workflow, type Draft } f
 import { AssistantResponse } from '@replybot/core/api';
 
 export function attention(flow: Workflow, start = Date.now()-5*60*60*1000, end = Date.now()) {
-  const conversations = flow.store.conversations(flow.accountId);
+  const conversations = flow.effectiveConversations();
   return conversations.flatMap(c => {
-    const messages = flow.store.messages(flow.accountId, c.id).sort((a,b) => a.occurredAt-b.occurredAt);
+    const messages = flow.store.recentMessages(flow.accountId,c.id,100,end);
     const incoming = messages.filter(m => m.direction === 'inbound' && m.occurredAt >= start && m.occurredAt <= end).at(-1);
     if (!incoming || messages.some(m => m.direction === 'outbound' && m.occurredAt > incoming.occurredAt)) return [];
     return [{ conversationId: c.id, name: c.name, sourceId: incoming.id, incompleteHistory: true,
@@ -17,7 +17,7 @@ export function attention(flow: Workflow, start = Date.now()-5*60*60*1000, end =
 }
 function resolve(flow: Workflow, name: string): Conversation[] {
   const lower = name.trim().toLowerCase().replace(/[.!?]+$/, '');
-  const all = flow.store.conversations(flow.accountId);
+  const all = flow.effectiveConversations();
   const exact = all.filter(c => c.name.toLowerCase() === lower);
   return exact.length ? exact : all.filter(c => c.name.toLowerCase().startsWith(lower));
 }

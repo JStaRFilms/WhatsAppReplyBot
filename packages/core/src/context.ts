@@ -47,9 +47,11 @@ export function requiredContextMessageIds(messages: Message[]): Set<string> {
 export function buildContext(
   conversation: Conversation, accountId: string, allMessages: Message[],
   allMemories: Memory[] = [], budget = 8000, now = Date.now(), transcripts:ReadonlyMap<string,AudioTranscript> = new Map(), ownerInstructions?: OwnerInstructions,
+  verified?: {memberIds:readonly string[];examples:readonly Message[]},
 ): ModelContext {
   if (!aiAccess(conversation, accountId)) throw new DomainError('ai_access_denied', 403);
-  const scoped = allMessages.filter(m => m.accountId === accountId && m.conversationId === conversation.id)
+  const memberIds = new Set(verified?.memberIds ?? [conversation.id]);
+  const scoped = allMessages.filter(m => m.accountId === accountId && memberIds.has(m.conversationId))
     .sort((a, b) => a.occurredAt - b.occurredAt);
   const sourceIds = new Set(scoped.map(m => m.id));
   const memories = allMemories.filter(m => m.accountId === accountId
@@ -75,7 +77,7 @@ export function buildContext(
     limitations.push(message.media.viewOnce ? 'view_once_not_exported' : 'media_context_unavailable');
     return { ...message, media: { ...message.media, fixture: null, description: '[Unavailable media]' } };
   });
-  const styleExamples = scoped.filter(m => m.authorship === 'owner_written' && m.direction === 'outbound'
+  const styleExamples = (verified?.examples ?? scoped).filter(m => m.accountId === accountId && memberIds.has(m.conversationId) && m.authorship === 'owner_written' && m.direction === 'outbound'
     && m.text.trim().length>0 && m.text.length <= 600).slice(-3).map(m => m.text);
   const context: ModelContext = { instructions, messages, memories, styleExamples,
     limitations: [...new Set(limitations)], worstCaseTextTokens: 0,

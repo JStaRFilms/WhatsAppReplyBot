@@ -1,4 +1,5 @@
 export * from './contracts.ts';
+export * from './history.ts';
 export * from './policy.ts';
 export * from './context.ts';
 export * from './store.ts';

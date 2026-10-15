@@ -2,14 +2,16 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Action, OwnerAction, DomainError, Workflow, aiAccess, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
-import { ClientSnapshot, ProfileTransitionInput, OwnerInstructionsInput, ContactNamesInput, ContactNamesImportInput, type ProfileScope, type ProfileOperation } from '@replybot/core/api';
+import { Action, OwnerAction, DomainError, Workflow, aiAccess, inPermittedHours, automaticDecision, latestTen, type Message, type SqliteStore } from '@replybot/core';
+import { ClientSnapshot, MediaVariant, ProfileTransitionInput, OwnerInstructionsInput, ContactNamesInput, ContactNamesImportInput, type ProfileScope, type ProfileOperation } from '@replybot/core/api';
 import { ProfileRegistry, bounded } from './profiles.ts';
 import { assistantTurn, attention } from './assistant.ts';
 import { draftGenerator, type RemoteModel } from './draft-model.ts';
 import { WhatsAppAdapter } from './whatsapp.ts';
 import { DEMO_ACCOUNT, seedDemo } from './seed.ts';
 import { MediaService,readableMedia } from './media.ts';
+import { MediaDisplay } from './media-display.ts';
+import { inspectHistoryRaw } from './whatsapp-normalize.ts';
 import { ReplyWindow } from './reply-window.ts';
 import { AudioService, readableAudio, registerAudioUploads } from './audio.ts';
 import { registerImageUploads } from './image-uploads.ts';
@@ -37,6 +39,7 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   const pcDisplay = new PcQrDisplay({ rootId: options.launcher?.rootId ?? '', instanceId: options.launcher?.instanceId ?? '', profileScope: scope }, now);
   const pcQrDisplay = !!(options.launcher && options.onPcDisplay);
   const desktopBrowser = !!options.desktopDir && desktopAvailable(options.desktopDir);
+  options.store.inspectHistoryRaw = inspectHistoryRaw;
   const flow = new Workflow(options.store, accountId, now);
   if (!options.whatsapp && options.seed !== false) seedDemo(options.store, now());
   flow.recover(gated || options.profiles?.activation);
@@ -45,47 +48,51 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   const allowedOrigin = (origin: string) => localOrigin(origin) || (options.allowedOrigins ?? []).includes(origin);
   const replyWindow=new ReplyWindow(async(message,isCurrent)=>{
     if(blocked() || !isCurrent() || whatsapp && (whatsapp.snapshot().state!=='connected' || !options.remoteModel || !options.store.modelConsent(accountId)))return;
-    const c=flow.conversation(message.conversationId);
+    const c=flow.effectiveConversation(message.conversationId);
     const grant=options.store.grants(accountId,c.id).find(g=>g.state==='active');
-    const decision=automaticDecision(c,options.store.conversations(accountId),accountId,now(),message.source,grant);
-    if(decision==='none')return;
+    const decision=automaticDecision(c,flow.effectiveConversations(),accountId,now(),message.source,grant);
+    if(decision==='none' || flow.groupUnknown(c.id))return;
     let draft;
     try{draft=await generateDraft(c.id,'window-'+message.id+':'+c.workflowVersion);}
     catch(error){if(error instanceof DomainError && ['stale_workflow','stale_draft','ai_access_denied','model_consent_revoked'].includes(error.code))return;throw error;}
     if(blocked() || !isCurrent() || whatsapp && whatsapp.snapshot().state!=='connected')return;
-    const current=flow.conversation(c.id);const allowance=options.store.grants(accountId,c.id).find(g=>g.state==='active');
+    const current=flow.effectiveConversation(c.id);const allowance=options.store.grants(accountId,c.id).find(g=>g.state==='active');
     const latest=options.store.draft(accountId,draft.id);
-    if(automaticDecision(current,options.store.conversations(accountId),accountId,now(),message.source,allowance)==='auto'
+    if(automaticDecision(current,flow.effectiveConversations(),accountId,now(),message.source,allowance)==='auto'
       && latest?.state==='pending' && !latest.edited)await dispatch(flow.autoSend(latest.id,'window-auto-'+latest.id).id);
   },5000,(message,isCurrent)=>whatsapp?.beginPresence(message.conversationId,isCurrent) ?? (()=>{}));
   const whatsapp=options.whatsapp ? new WhatsAppAdapter(flow,options.whatsapp.authDir,async message=>{
     if(!blocked() && options.remoteModel && options.store.modelConsent(accountId))await replyWindow.enqueue(message);
   },()=>replyWindow.clear(),now,options.whatsapp.requireOwnerLock) : undefined;
-  const media=new MediaService(async message=>{
+  const media:MediaService=new MediaService(async (message,ownerVideo)=>{
     const upload=options.store.sentImageUpload(accountId,message.conversationId,message.transportId);
     if(upload)return Buffer.from(upload.bytes);
     if(!whatsapp)throw new DomainError('media_unavailable',404);
-    return whatsapp.downloadMedia(message);
+    return whatsapp.downloadMedia(message,ownerVideo);
   },message=>{
-    const saved=options.store.message(accountId,message.id);
+    const source=options.store.historySource(accountId,message.conversationId,message.id,now());
+    const saved=source?.state==='available' ? source.message : undefined;
     const raw=options.store.waMessage(accountId,message.conversationId,message.transportId);
     if(raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success)return false;
     return !!saved && saved.conversationId===message.conversationId && readableMedia(saved,now())
       && (!!options.store.sentImageUpload(accountId,message.conversationId,message.transportId) || whatsapp?.mediaCurrent(message)===true);
-  },now);
+  },now,message=>display.source(message.conversationId,message.id,'preview').sourceVersion);
+  const display:MediaDisplay=new MediaDisplay(flow,media,now,()=>!blocked() && !shutdownStarted);
   const audio=new AudioService(async message=>{
     const upload=options.store.sentAudioUpload(accountId,message.conversationId,message.transportId);
     if(upload)return Buffer.from(upload.bytes);
     if(!whatsapp)throw new DomainError('media_unavailable',404);
     return whatsapp.downloadMedia(message);
   },message=>{
-    const saved=options.store.message(accountId,message.id);
+    const source=options.store.historySource(accountId,message.conversationId,message.id,now());
+    const saved=source?.state==='available' ? source.message : undefined;
     const raw=options.store.waMessage(accountId,message.conversationId,message.transportId);
     if(raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success)return false;
     return message.accountId===accountId && !!saved && saved.conversationId===message.conversationId && readableAudio(saved,now())
       && (!!options.store.sentAudioUpload(accountId,message.conversationId,message.transportId) || whatsapp?.mediaCurrent(message)===true);
-  },now);
+  },now,message=>String(options.store.historyGroup(accountId,message.conversationId).sourceEpoch));
   const generateDraft=draftGenerator(flow,options.remoteModel,media,audio,now);
+  const mediaReplies=new Map<string,()=>void>();
   app.register(cors, { origin: (origin, callback) => callback(null, !origin || allowedOrigin(origin)) });
   app.addHook('onRequest', async (request, reply) => {
     const ip = request.ip.replace(/^::ffff:/,'');
@@ -124,7 +131,10 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     }
   });
   app.addHook('onSend', async (request, reply, payload) => {
-    if (['/v1/owner-instructions','/v1/contact-names','/v1/contact-names/import'].includes(request.routeOptions.url ?? '')) reply.header('Cache-Control','no-store');
+    if ((request.routeOptions.url ?? request.url).startsWith('/v1/')) reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff');
+    const guard=mediaReplies.get(request.id);
+    mediaReplies.delete(request.id);
+    if (guard) guard();
     if (shutdownStarted) reply.header('Connection', 'close');
     return payload;
   });
@@ -143,8 +153,10 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   registerAudioUploads(app,flow);
   const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), profileScope:scope, serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
     modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
-    lastMessages: options.store.lastMessages(accountId),
-    latestTenIds: latestTen(options.store.conversations(accountId), accountId, now()) });
+    conversations:options.store.conversations(accountId).map(c=>options.store.historyGroup(accountId,c.id).id===c.id ? flow.effectiveConversation(c.id):c),
+    historyGroups:flow.effectiveConversations().map(c=>({...options.store.historyGroup(accountId,c.id),aiBlocked:!aiAccess(c,accountId) || c.control==='manual' || !inPermittedHours(c,now())})),
+    lastMessages: options.store.lastMessages(accountId,now()),
+    latestTenIds: latestTen(flow.effectiveConversations(), accountId, now()) });
   const dispatch = (id: string) => whatsapp ? whatsapp.dispatch(id) : flow.dispatch(id, async () => ({ state: 'accepted', transportId: 'demo-'+randomUUID() }));
   const ready = () => whatsapp?.requireReady();
   app.get('/v1/health', async () => ({ demo: !whatsapp, service: 'ready', whatsapp: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo' }));
@@ -156,7 +168,8 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   });
   app.get('/v1/session', async request => ({ protocol: 2, scope,
     label: registry?.list().find(p => p.profileId === scope.profileId)?.label ?? 'Original account', transition: registry?.current() ?? null,
-    ...(z.object({ capabilities: z.literal('1') }).safeParse(request.query).success ? { capabilities: { pcQrDisplay, desktopBrowser, ownerInstructions: true, contactBookNames: true } } : {}) }));
+    ...(z.object({ capabilities: z.literal('1') }).safeParse(request.query).success ? { capabilities: { pcQrDisplay, desktopBrowser, ownerInstructions: true, contactBookNames: true,
+      ...(z.object({historyMedia:z.literal('1')}).safeParse(request.query).success ? {historyPaging:true,privateMediaCache:true} : {}) } } : {}) }));
   app.get('/v1/profile-operations/:requestId', async request => {
     if (!registry) throw new DomainError('profile_operation_not_found', 404);
     return registry.operation(z.object({ requestId: z.string() }).parse(request.params).requestId);
@@ -256,17 +269,44 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   });
   app.get('/v1/conversations/:id/messages', async request => {
     const { id } = Id.parse(request.params); flow.conversation(id);
-    return options.store.recentMessages(accountId,id);
+    return options.store.recentMessages(accountId,id,100,now());
   });
   app.get('/v1/conversations/:id/history',async request=>{
     const {id}=Id.parse(request.params);flow.conversation(id);
-    const messages=options.store.recentMessages(accountId,id);
+    const messages=options.store.recentMessages(accountId,id,100,now());
     return{messages,watermark:options.store.historyWatermark(accountId,id,messages.map(m=>m.id))};
+  });
+  app.get('/v1/conversations/:id/history-page',async request=>{
+    const {id}=Id.parse(request.params);flow.conversation(id);
+    const query=z.object({limit:z.coerce.number().int().min(1).max(100).optional(),before:z.string().max(2048).optional(),
+      after:z.string().max(2048).optional(),around:z.string().min(1).max(256).optional()}).strict().parse(request.query);
+    return options.store.historyPage(accountId,id,query,now());
+  });
+  app.post('/v1/conversations/:id/viewed-messages',async request=>{
+    const {id}=Id.parse(request.params);
+    const body=Request.extend({messageIds:z.array(z.string().min(1).max(256)).min(1).max(100)}).strict().parse(request.body);
+    return flow.viewedMessages(id,body.messageIds,body.requestId);
+  });
+  const MediaParams=Id.extend({messageId:z.string().min(1).max(256)});
+  app.get('/v1/conversations/:id/media/:messageId/source',async request=>{
+    const {id,messageId}=MediaParams.parse(request.params);
+    const {variant}=z.object({variant:MediaVariant}).strict().parse(request.query);
+    return display.source(id,messageId,variant);
+  });
+  app.get('/v1/conversations/:id/media/:messageId/content',async(request,reply)=>{
+    const {id,messageId}=MediaParams.parse(request.params);
+    const {variant,sourceVersion}=z.object({variant:MediaVariant,sourceVersion:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse(request.query);
+    if(request.headers.range)throw new DomainError('media_range_unsupported',416);
+    const result=await display.content(id,messageId,variant,sourceVersion);
+    display.check(id,messageId,variant,sourceVersion);
+    mediaReplies.set(request.id,()=>{display.check(id,messageId,variant,sourceVersion);});
+    return reply.header('X-Otherme-Media-Version',sourceVersion).type(result.mime).send(result.bytes);
   });
   app.get('/v1/conversations/:id/media/:messageId',async(request,reply)=>{
     const {id,messageId}=Id.extend({messageId:z.string().min(1).max(256)}).parse(request.params);flow.conversation(id);
-    const message=options.store.message(accountId,messageId);
-    if(!message || message.conversationId!==id)throw new DomainError('media_unavailable',404);
+    const source=options.store.historySource(accountId,id,messageId,now());
+    const message=source?.state==='available' ? source.message : undefined;
+    if(!message)throw new DomainError('media_unavailable',404);
     if(message.media?.kind==='audio')return reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').type('audio/mpeg').send(await audio.preview(message));
     const preview=await media.preview(message);
     return reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').type(preview.mime).send(preview.bytes);
@@ -293,9 +333,10 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   app.post('/v1/conversations/:id/manual-send', async request => {
     const { id } = Id.parse(request.params);
     const body = Request.extend({ action: OwnerAction, quotedMessageId: z.string().nullable().default(null) }).strict().parse(request.body);
-    ready();
+    const retired=options.store.historyGroup(accountId,id).id!==id;
+    if(!retired)ready();
     const queued = flow.manualSend(id, body.action, body.requestId, body.quotedMessageId);
-    return { simulated: !whatsapp, outbox: await dispatch(queued.id) };
+    return { simulated: !whatsapp, outbox: retired ? queued : await dispatch(queued.id) };
   });
   app.post('/v1/conversations/:id/draft', async request => {
     const { id } = Id.parse(request.params); const body = Request.strict().parse(request.body);
@@ -310,9 +351,11 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
       if (!action) throw new DomainError('action_required', 422);
       return { draft: flow.editDraft(id, action, body.revision, body.requestId), outbox: null };
     }
-    ready();
+    const original=options.store.draft(accountId,id);
+    const retired=original && options.store.historyGroup(accountId,original.conversationId).id!==original.conversationId;
+    if(!retired)ready();
     const queued = flow.approve(id, body.revision, body.requestId);
-    return { simulated: !whatsapp, outbox: await dispatch(queued.id), draft: options.store.draft(accountId, id) };
+    return { simulated: !whatsapp, outbox: retired ? queued : await dispatch(queued.id), draft: options.store.draft(accountId, id) };
   });
   app.post('/v1/conversations/:id/owner-actions', async request => {
     const { id } = Id.parse(request.params);
@@ -360,8 +403,8 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
       if (catchUps.size >= 4 || catchUps.has(job.conversationId)) continue;
       if (whatsapp && (!options.remoteModel || !options.store.modelConsent(accountId))) continue;
       const candidate = flow.conversation(job.conversationId);
-      if (candidate.mode === null && !latestTen(options.store.conversations(accountId),accountId,now()).includes(candidate.id)) { flow.finishCatchUp(candidate.id,job.messageId); continue; }
-      const current = options.store.recentMessages(accountId,job.conversationId).at(-1);
+      if (candidate.mode === null && !latestTen(flow.effectiveConversations(),accountId,now()).includes(candidate.id)) { flow.finishCatchUp(candidate.id,job.messageId); continue; }
+      const current = options.store.recentMessages(accountId,job.conversationId,100,now()).at(-1);
       if (current?.id !== job.messageId || current.direction !== 'inbound') { flow.finishCatchUp(job.conversationId,job.messageId); continue; }
       const task = generateDraft(job.conversationId,'cooldown-'+job.messageId+':'+job.workflowVersion).then(() => {}).catch(() => {
         // A catch-up attempt never sends. The owner can request a new draft explicitly.

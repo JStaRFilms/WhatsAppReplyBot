@@ -46,7 +46,7 @@ export class AudioService {
   private readonly pending=new Map<string,Promise<Buffer>>();
   private readonly transcribing=new Map<string,Promise<AudioTranscript>>();
   constructor(private readonly load:(m:Message)=>Promise<Buffer>,private readonly current:(m:Message)=>boolean,
-    private readonly now=Date.now) {
+    private readonly now=Date.now, private readonly sourceVersion=(m:Message)=>JSON.stringify(m.media)) {
     this.expiryTimer=setInterval(()=>{
       for(const [key,item] of this.cache){
         try{if(item.expires<=this.now())this.cache.delete(key);else this.check(item.message);}
@@ -56,7 +56,7 @@ export class AudioService {
     this.expiryTimer.unref();
   }
   close():void {clearInterval(this.expiryTimer);this.cache.clear();}
-  private key(m:Message):string {return JSON.stringify([m.accountId,m.conversationId,m.id]);}
+  private key(m:Message):string {return JSON.stringify([m.accountId,m.conversationId,m.id,this.sourceVersion(m)]);}
   check(m:Message):void {
     if(!readableAudio(m,this.now()) || !this.current(m)) {this.cache.delete(this.key(m));throw new DomainError('media_unavailable',404);}
   }
@@ -68,14 +68,15 @@ export class AudioService {
     if(!task){
       if(this.pending.size>=2)throw new DomainError('audio_busy',503);
       task=(async()=>{
-        this.check(m);const input=await this.load(m);this.check(m);
-        const {bytes}=await normalizeAudio(input,'mp3');this.check(m);
+        const check=()=>{this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);};
+        check();const input=await this.load(m);check();
+        const {bytes}=await normalizeAudio(input,'mp3');check();
         this.cache.set(key,{message:m,bytes,expires:Math.min(this.now()+300000,m.media?.expiresAt ?? Infinity)});
         for(const id of this.cache.keys()){if(this.cache.size<=10)break;this.cache.delete(id);}
         return bytes;
       })().finally(()=>this.pending.delete(key));this.pending.set(key,task);
     }
-    const bytes=await task;this.check(m);return bytes;
+    const bytes=await task;this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);return bytes;
   }
   async transcript(m:Message,model:Transcriber,guard:()=>void):Promise<AudioTranscript> {
     guard();this.check(m);
@@ -85,13 +86,13 @@ export class AudioService {
     let task=this.transcribing.get(key);
     if(!task){
       if(this.transcribing.size>=2)throw new DomainError('audio_busy',503);
-      const exportGuard=()=>{guard();this.check(m);};
+      const exportGuard=()=>{guard();this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);};
       exportGuard();
       task=model.transcribe(bytes,exportGuard).then(transcript=>{
         exportGuard();const item=this.cache.get(key);if(item)item.transcript=transcript;return transcript;
       }).finally(()=>this.transcribing.delete(key));this.transcribing.set(key,task);
     }
-    const result=await task;guard();this.check(m);return result;
+    const result=await task;guard();this.check(m);if(this.key(m)!==key)throw new DomainError('media_unavailable',404);return result;
   }
 }
 export function registerAudioUploads(app:FastifyInstance,flow:Workflow):void {

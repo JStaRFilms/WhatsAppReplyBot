@@ -1,8 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
+import { HistoryCursor, historyDigest, eventIdentity, partialMessage, automaticTrigger, type RawHistoryEvidence, type HistorySource } from './history.ts';
 import { z } from 'zod';
 import { Conversation, Message, Draft, Grant, Outbox, Proposal, DomainError, ImageUpload, AudioUpload, OutgoingReceipt, type NameSource } from './contracts.ts';
 
-import { AssistantTurn, OwnerInstructions, ContactNameSettings } from './api.ts';
+import { AssistantTurn, OwnerInstructions, ContactNameSettings, type HistoryGroup, type HistoryPage } from './api.ts';
 
 const Payload = z.object({ payload: z.string() });
 const Cached = z.object({ payload_hash: z.string(), result: z.string() });
@@ -49,6 +51,7 @@ export class SqliteStore {
       owner_instructions: "TEXT NOT NULL DEFAULT ''", owner_instructions_revision: 'INTEGER NOT NULL DEFAULT 0',
       contact_book_names_enabled: 'INTEGER NOT NULL DEFAULT 0', contact_names_revision: 'INTEGER NOT NULL DEFAULT 0',
       phone_names_synced_at: 'INTEGER', phone_names_import_request_id: 'TEXT', release_context_version: 'INTEGER NOT NULL DEFAULT 0',
+      history_projection_version: 'INTEGER NOT NULL DEFAULT 0', media_cache_id: 'TEXT',
     })) if (!columns.has(column)) this.db.exec(`ALTER TABLE account_settings ADD COLUMN ${column} ${declaration}`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS contact_names (
       account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, source TEXT NOT NULL, name TEXT NOT NULL, updated_at INTEGER NOT NULL, phone_import_request_id TEXT,
@@ -60,12 +63,232 @@ export class SqliteStore {
       PRIMARY KEY(account_id,conversation_id,transport_id),
       FOREIGN KEY(account_id,conversation_id) REFERENCES conversations(account_id,id));`);
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS history_group_state (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+        revision INTEGER NOT NULL, source_epoch INTEGER NOT NULL, PRIMARY KEY(account_id,conversation_id));
+      CREATE UNIQUE INDEX IF NOT EXISTS message_account_id ON messages(account_id,id);
+      CREATE TABLE IF NOT EXISTS message_views (account_id TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(account_id,message_id),
+        FOREIGN KEY(account_id,message_id) REFERENCES messages(account_id,id));
+      CREATE INDEX IF NOT EXISTS message_paging ON messages(account_id,conversation_id,json_extract(payload,'$.occurredAt'),id);
       CREATE INDEX IF NOT EXISTS message_time ON messages(account_id,conversation_id,json_extract(payload,'$.occurredAt') DESC);
       CREATE UNIQUE INDEX IF NOT EXISTS message_transport_id ON messages(
         account_id,conversation_id,json_extract(payload,'$.transportId'));
       CREATE UNIQUE INDEX IF NOT EXISTS outbox_request_id ON outbox(account_id,json_extract(payload,'$.requestId'));
       CREATE UNIQUE INDEX IF NOT EXISTS active_grant ON delegations(account_id,conversation_id)
         WHERE json_extract(payload,'$.state')='active';`);
+  }
+  // Backend supplies protobuf evidence without introducing transport types into core.
+  inspectHistoryRaw: ((payload: string) => RawHistoryEvidence) | undefined;
+  private rawEvidence(payload: string | undefined): RawHistoryEvidence {
+    if (!payload) return {deleted:false,viewOnce:false,expiresAt:null,mediaIdentity:null};
+    if (this.inspectHistoryRaw) return this.inspectHistoryRaw(payload);
+    const value: unknown = JSON.parse(payload);
+    return {deleted:z.object({deleted:z.literal(true)}).safeParse(value).success,
+      conflict:z.object({historyConflict:z.literal(true)}).safeParse(value).success,
+      viewOnce:z.object({historyViewOnce:z.literal(true)}).safeParse(value).success,
+      expiresAt:z.object({historyExpiresAt:z.number()}).safeParse(value).data?.historyExpiresAt ?? null,
+      mediaIdentity:historyDigest(value)};
+  }
+  historyProjectionVersion(accountId: string): number {
+    const row = this.db.prepare('SELECT history_projection_version AS version FROM account_settings WHERE account_id=?').get(accountId);
+    return row ? z.object({version:z.number()}).parse(row).version : 0;
+  }
+  saveHistoryProjectionVersion(accountId: string): void {
+    this.db.prepare('INSERT INTO account_settings(account_id,history_projection_version) VALUES(?,1) ON CONFLICT(account_id) DO UPDATE SET history_projection_version=1').run(accountId);
+  }
+  mediaCacheId(accountId: string): string {
+    const saved = this.db.prepare('SELECT media_cache_id AS id FROM account_settings WHERE account_id=?').get(accountId);
+    const id = saved ? z.object({id:z.string().nullable()}).parse(saved).id : null;
+    if (id) return id;
+    this.db.prepare('INSERT INTO account_settings(account_id,media_cache_id) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET media_cache_id=COALESCE(media_cache_id,excluded.media_cache_id)').run(accountId,randomUUID());
+    return z.object({id:z.string()}).parse(this.db.prepare('SELECT media_cache_id AS id FROM account_settings WHERE account_id=?').get(accountId)).id;
+  }
+  historyGroup(accountId: string, conversationId: string): HistoryGroup {
+    const mapped = this.waCanonical(accountId,conversationId);
+    const canonical = (mapped === conversationId || /^\d+@lid$/.test(conversationId))
+      && /^\d+@s\.whatsapp\.net$/.test(mapped) && this.waCanonical(accountId,mapped) === mapped
+      && this.conversation(accountId,mapped)?.kind === 'direct' ? mapped : conversationId;
+    const aliases = /^\d+@s\.whatsapp\.net$/.test(canonical) && this.waCanonical(accountId,canonical) === canonical
+      && this.conversation(accountId,canonical)?.kind === 'direct'
+      ? this.db.prepare('SELECT alias FROM wa_aliases WHERE account_id=? AND canonical=? ORDER BY alias').all(accountId,canonical)
+        .map(row => z.object({alias:z.string()}).parse(row).alias).filter(id => /^\d+@lid$/.test(id) && !!this.conversation(accountId,id)) : [];
+    const memberIds = [...new Set([canonical,...aliases])].sort();
+    const state = this.db.prepare('SELECT revision,source_epoch AS sourceEpoch FROM history_group_state WHERE account_id=? AND conversation_id=?').get(accountId,canonical);
+    const versions = state ? z.object({revision:z.number(),sourceEpoch:z.number()}).parse(state)
+      : {revision:z.object({revision:z.number()}).parse(this.db.prepare('SELECT COALESCE(MAX(revision),0) AS revision FROM history_versions WHERE account_id=? AND conversation_id IN (SELECT value FROM json_each(?))').get(accountId,JSON.stringify(memberIds))).revision,sourceEpoch:0};
+    const last = this.historyRows(accountId,memberIds,Number.MAX_SAFE_INTEGER,1)[0];
+    const aiBlocked = mapped !== conversationId && canonical === conversationId || memberIds.some(id => {
+      const c = this.conversation(accountId,id);
+      return !c || c.excluded || c.mode === 'never_reply' || c.kind !== 'direct' && !(c.kind === 'unknown' && /^\d+@lid$/.test(id) && canonical !== id);
+    });
+    return {id:canonical,memberIds,...versions,lastMessageId:last?.id ?? null,aiBlocked};
+  }
+  bumpHistory(accountId: string, conversationId: string, source: boolean, revision = 0, epoch = 0): void {
+    const group = this.historyGroup(accountId,conversationId);
+    const id = group.id; revision = Math.max(revision,group.revision); epoch = Math.max(epoch,group.sourceEpoch);
+    this.db.prepare(`INSERT INTO history_group_state VALUES(?,?,?,?) ON CONFLICT(account_id,conversation_id)
+      DO UPDATE SET revision=MAX(revision,?)+1,source_epoch=MAX(source_epoch,?)+?`)
+      .run(accountId,id,revision+1,epoch+(source?1:0),revision,epoch,source?1:0);
+  }
+  private historyRows(accountId: string, memberIds: string[], fence: number, limit: number,
+    edge?: {at:number;id:string;direction:'before'|'after'}, filter?:'inbound'|'style'): Message[] {
+    const op = edge?.direction === 'after' ? '>' : '<';
+    const order = edge?.direction === 'after' ? 'ASC' : 'DESC';
+    const members = JSON.stringify(memberIds);
+    // The earliest physical row is the representative even when scanning a fenced window.
+    const where = edge ? `AND (json_extract(m.payload,'$.occurredAt') ${op} ? OR
+      (json_extract(m.payload,'$.occurredAt')=? AND m.id ${op} ?))` : '';
+    const params = edge ? [edge.at,edge.at,edge.id] : [];
+    const eligibility = filter === 'inbound' ? "AND json_extract(m.payload,'$.direction')='inbound'"
+      : filter === 'style' ? "AND json_extract(m.payload,'$.direction')='outbound' AND json_extract(m.payload,'$.authorship')='owner_written' AND length(trim(json_extract(m.payload,'$.text'))) BETWEEN 1 AND 600" : '';
+    return this.db.prepare(`SELECT result.payload FROM json_each(?) member JOIN messages result ON result.rowid IN (
+      SELECT m.rowid FROM messages m WHERE m.account_id=? AND m.conversation_id=member.value AND m.rowid<=?
+      AND m.rowid=(SELECT MIN(d.rowid) FROM messages d WHERE d.account_id=m.account_id
+        AND d.conversation_id IN (SELECT value FROM json_each(?))
+        AND json_extract(d.payload,'$.transportId')=json_extract(m.payload,'$.transportId')) ${where} ${eligibility}
+      ORDER BY json_extract(m.payload,'$.occurredAt') ${order},m.id ${order} LIMIT ?)
+      ORDER BY json_extract(result.payload,'$.occurredAt') ${order},result.id ${order} LIMIT ?`)
+      .all(members,accountId,fence,members,...params,limit,limit).map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload))));
+  }
+  eventMessages(accountId: string, conversationId: string, transportId: string): Message[] {
+    const group = this.historyGroup(accountId,conversationId);
+    return this.db.prepare(`SELECT payload FROM messages WHERE account_id=? AND conversation_id IN (SELECT value FROM json_each(?))
+      AND json_extract(payload,'$.transportId')=? ORDER BY rowid`).all(accountId,JSON.stringify(group.memberIds),transportId)
+      .map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload))));
+  }
+  historySource(accountId: string, conversationId: string, messageId: string, now = Date.now()): HistorySource | undefined {
+    const group = this.historyGroup(accountId,conversationId);
+    let original = this.message(accountId,messageId);
+    if (!original) {
+      const reference = /^wa:([^:]+):(.+)$/.exec(messageId);
+      if (!reference || !group.memberIds.includes(reference[1] ?? '')) return undefined;
+      original = this.eventMessages(accountId,conversationId,reference[2] ?? '')[0];
+    }
+    if (!original || !group.memberIds.includes(original.conversationId)) return undefined;
+    const candidates = this.eventMessages(accountId,conversationId,original.transportId);
+    const first = candidates[0];
+    if (!first) return undefined;
+    const evidence = candidates.map(m => this.rawEvidence(this.waMessage(accountId,m.conversationId,m.transportId)));
+    const allEvidence = group.memberIds.map(id => this.rawEvidence(this.waMessage(accountId,id,original.transportId)));
+    const expires = [...candidates.map(m => m.media?.expiresAt ?? null),...allEvidence.map(e => e.expiresAt)].filter((n): n is number => n !== null);
+    const expiresAt = expires.length ? Math.min(...expires) : null;
+    const identity = (m: Message, i: number) => {
+      const quote = m.quotedMessageId ? this.message(accountId,m.quotedMessageId) : undefined;
+      const ref = m.quotedMessageId ? /^wa:([^:]+):(.+)$/.exec(m.quotedMessageId) : null;
+      const transport = quote && group.memberIds.includes(quote.conversationId) ? quote.transportId
+        : ref && group.memberIds.includes(ref[1] ?? '') ? ref[2] : undefined;
+      return eventIdentity({...m,quotedMessageId:transport ? 'wa:'+group.id+':'+transport : m.quotedMessageId},evidence[i]?.mediaIdentity ?? null);
+    };
+    const recoveredPartial = (m:Message,i:number) => first.contentRecovered && partialMessage(m)
+      && m.direction===first.direction && m.occurredAt===first.occurredAt && m.authorship===first.authorship && m.source===first.source
+      && (!m.quotedMessageId || identity({...first,quotedMessageId:m.quotedMessageId},0)===identity(first,0))
+      && (!evidence[i]?.mediaIdentity || evidence[i]?.mediaIdentity===evidence[0]?.mediaIdentity);
+    const invalidSource = candidates.some(m=>{
+      const mapped=this.waCanonical(accountId,m.conversationId);
+      const kind=this.conversation(accountId,m.conversationId)?.kind;
+      return mapped!==m.conversationId && (!/^\d+@lid$/.test(m.conversationId) || mapped!==group.id
+        || kind!=='direct' && kind!=='unknown');
+    });
+    const state = allEvidence.some(e => e.deleted) ? 'deleted'
+      : candidates.some(m => m.media?.viewOnce) || allEvidence.some(e => e.viewOnce) ? 'view_once'
+      : candidates.some(m => m.media?.access === 'expired') || expiresAt !== null && expiresAt <= now ? 'expired'
+      : invalidSource || allEvidence.some(e => e.conflict) || candidates.some((m,i) => !recoveredPartial(m,i) && identity(m,i) !== identity(first,0)) ? 'conflict' : 'available';
+    let message = first;
+    if (state !== 'available') {
+      const {outgoingReceipt:_receipt,...unavailable}=first;
+      message = {...unavailable,text:state === 'deleted' ? '[Message deleted]' : '[Source unavailable]',
+        media:null,reaction:null,observedReactions:[],quotedMessageId:null};
+    }
+    else if (first.media) message = {...first,media:{...first.media,expiresAt}};
+    return {message,accountId,conversationId:first.conversationId,messageId:first.id,transportId:first.transportId,
+      candidateIds:candidates.map(m => m.id),state,expiresAt};
+  }
+  private historyMessage(accountId: string, conversationId: string, message: Message, now: number): Message {
+    const source = this.historySource(accountId,conversationId,message.id,now);
+    const projected = source?.message ?? message;
+    if (!projected.quotedMessageId) return projected;
+    const quote = this.historySource(accountId,conversationId,projected.quotedMessageId,now);
+    return {...projected,quotedMessageId:quote?.state === 'available' ? quote.messageId : projected.quotedMessageId};
+  }
+  historyPage(accountId: string, conversationId: string,
+    input: {limit?:number|undefined;before?:string|undefined;after?:string|undefined;around?:string|undefined} = {}, now = Date.now()): HistoryPage {
+    const group = this.historyGroup(accountId,conversationId);
+    if (!this.conversation(accountId,conversationId)) throw new DomainError('conversation_not_found',404);
+    const limit = input.around !== undefined ? Math.min(input.limit ?? 50,50) : input.limit ?? 50;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100
+      || [input.before,input.after,input.around].filter(v => v !== undefined).length > 1) throw new DomainError('invalid_history_page',422);
+    const digest = historyDigest(group.memberIds);
+    let fence = z.object({fence:z.number()}).parse(this.db.prepare(`SELECT COALESCE(MAX((SELECT MAX(rowid) FROM messages
+      WHERE account_id=? AND conversation_id=member.value)),0) AS fence FROM json_each(?) member`).get(accountId,JSON.stringify(group.memberIds))).fence;
+    let edge: {at:number;id:string;direction:'before'|'after'} | undefined;
+    const cursor = input.before ?? input.after;
+    if (cursor !== undefined) {
+      if (cursor.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new DomainError('invalid_history_cursor',422);
+      let parsed: z.infer<typeof HistoryCursor>;
+      try { parsed = HistoryCursor.parse(JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'))); }
+      catch { throw new DomainError('invalid_history_cursor',422); }
+      const [,account,id,members,epoch,bound,at,key] = parsed;
+      if (account !== accountId || id !== group.id) throw new DomainError('invalid_history_cursor',422);
+      if (members !== digest || epoch !== group.sourceEpoch) throw new DomainError('history_cursor_stale');
+      if (bound > fence) throw new DomainError('invalid_history_cursor',422);
+      const anchor = this.historySource(accountId,conversationId,key,now);
+      if (!anchor || anchor.messageId !== key || anchor.message.occurredAt !== at
+        || this.historyWatermark(accountId,anchor.conversationId,[key]) > bound) throw new DomainError('invalid_history_cursor',422);
+      fence = bound; edge = {at,id:key,direction:input.after !== undefined ? 'after' : 'before'};
+    }
+    let rows: Message[];
+    if (input.around !== undefined) {
+      const source = this.historySource(accountId,conversationId,input.around,now);
+      if (!source) throw new DomainError('history_source_unavailable',404);
+      const anchor = {at:source.message.occurredAt,id:source.messageId};
+      const before = this.historyRows(accountId,group.memberIds,fence,Math.floor((limit-1)/2),{...anchor,direction:'before'}).reverse();
+      const after = this.historyRows(accountId,group.memberIds,fence,limit-before.length-1,{...anchor,direction:'after'});
+      rows = [...before,source.message,...after];
+    } else {
+      rows = this.historyRows(accountId,group.memberIds,fence,limit+1,edge).slice(0,limit);
+      if (edge?.direction !== 'after') rows.reverse();
+    }
+    const first = rows[0]; const last = rows.at(-1);
+    const exists = (m: Message | undefined,direction:'before'|'after') => !!m && this.historyRows(accountId,group.memberIds,
+      direction === 'after' ? Number.MAX_SAFE_INTEGER : fence,1,{at:m.occurredAt,id:m.id,direction}).length > 0;
+    const encode = (m: Message | undefined) => {
+      if (!m) return null;
+      const value = Buffer.from(JSON.stringify([1,accountId,group.id,digest,group.sourceEpoch,fence,m.occurredAt,m.id])).toString('base64url');
+      if (value.length > 2048) throw new DomainError('invalid_history_cursor',422);
+      return value;
+    };
+    return {conversationId:group.id,messages:rows.map(m => this.historyMessage(accountId,conversationId,m,now)),
+      unavailableSourceIds:rows.filter(m => this.historySource(accountId,conversationId,m.id,now)?.state === 'conflict').map(m => m.id),
+      revision:group.revision,sourceEpoch:group.sourceEpoch,beforeCursor:encode(first),afterCursor:encode(last),
+      hasOlder:exists(first,'before'),hasNewer:exists(last,'after') || !!this.db.prepare(`SELECT 1 FROM messages WHERE account_id=?
+        AND conversation_id IN (SELECT value FROM json_each(?)) AND rowid>? LIMIT 1`).get(accountId,JSON.stringify(group.memberIds),fence),latestMessageId:group.lastMessageId};
+  }
+  contextMessages(accountId: string, conversationId: string, now = Date.now()): {messages:Message[];examples:Message[];memberIds:string[]} {
+    const group = this.historyGroup(accountId,conversationId);
+    if (group.aiBlocked) throw new DomainError('ai_access_denied',403);
+    const recent = this.historyRows(accountId,group.memberIds,Number.MAX_SAFE_INTEGER,20).reverse()
+      .map(m => this.historyMessage(accountId,conversationId,m,now)).filter(m => this.historySource(accountId,conversationId,m.id,now)?.state === 'available');
+    const selected = new Map<string,Message>();
+    const inboundRow = this.historyRows(accountId,group.memberIds,Number.MAX_SAFE_INTEGER,1,undefined,'inbound')[0];
+    const inbound = inboundRow ? this.historyMessage(accountId,conversationId,inboundRow,now) : undefined;
+    for (const m of [recent.at(-1),inbound]) if (m && this.historySource(accountId,conversationId,m.id,now)?.state === 'available') {
+      selected.set(m.id,m);
+      const quote = m.quotedMessageId ? this.historySource(accountId,conversationId,m.quotedMessageId,now) : undefined;
+      if (quote?.state === 'available') selected.set(quote.messageId,quote.message);
+    }
+    for (const m of recent.toReversed()) if (selected.size < 20) selected.set(m.id,m);
+    const examples = this.historyRows(accountId,group.memberIds,Number.MAX_SAFE_INTEGER,3,undefined,'style')
+      .filter(m => this.historySource(accountId,conversationId,m.id,now)?.state === 'available');
+    return {messages:[...selected.values()].sort((a,b) => a.occurredAt-b.occurredAt || a.id.localeCompare(b.id)),examples,memberIds:group.memberIds};
+  }
+  markViewedMessages(accountId: string, conversationId: string, ids: string[]): void {
+    if (!ids.length || ids.length > 100) throw new DomainError('invalid_viewed_messages',422);
+    const sources = [...new Set(ids)].map(id => {
+      if (!this.message(accountId,id)) throw new DomainError('message_not_found',404);
+      const source = this.historySource(accountId,conversationId,id);
+      if (!source) throw new DomainError('message_not_found',404);
+      return source;
+    });
+    for (const source of sources) for (const id of source.candidateIds) this.db.prepare('INSERT INTO message_views VALUES(?,?) ON CONFLICT DO NOTHING').run(accountId,id);
   }
   close(): void { this.db.close(); }
   saveImageUpload(accountId: string, conversationId: string, upload: ImageUpload, bytes: Uint8Array, createdAt: number): void {
@@ -80,6 +303,15 @@ export class SqliteStore {
     const row = this.db.prepare('SELECT id,mime,width,height,bytes FROM image_uploads WHERE account_id=? AND conversation_id=? AND id=?')
       .get(accountId,conversationId,id);
     return row ? ImageUpload.extend({bytes:z.instanceof(Uint8Array)}).parse(row) : undefined;
+  }
+  sentImageIdentity(accountId:string,conversationId:string,transportId:string): {id:string;identity:string;width:number;height:number;size:number}|undefined {
+    const row = this.db.prepare(`SELECT u.id,u.width,u.height,length(u.bytes) AS size,r.payload_hash AS identity FROM image_uploads u JOIN outbox o
+      ON o.account_id=u.account_id AND o.conversation_id=u.conversation_id JOIN json_each(o.payload,'$.components') p
+      ON json_extract(p.value,'$.uploadId')=u.id JOIN api_requests r ON r.account_id=u.account_id AND json_extract(r.result,'$.id')=u.id
+      WHERE u.account_id=? AND u.conversation_id=? AND json_extract(o.payload,'$.origin')='owner_manual'
+      AND json_extract(p.value,'$.kind')='image' AND json_extract(p.value,'$.state')='accepted'
+      AND json_extract(p.value,'$.transportId')=? LIMIT 1`).get(accountId,conversationId,transportId);
+    return row ? z.object({id:z.string(),identity:z.string(),width:z.number(),height:z.number(),size:z.number()}).parse(row) : undefined;
   }
   sentImageUpload(accountId:string,conversationId:string,transportId:string):(ImageUpload & {bytes:Uint8Array}) | undefined {
     const row=this.db.prepare(`SELECT u.id,u.mime,u.width,u.height,u.bytes FROM image_uploads u JOIN outbox o
@@ -128,11 +360,42 @@ export class SqliteStore {
   unreadCounts(accountId:string): Record<string,number> {
     const rows=this.db.prepare(`SELECT m.conversation_id,COUNT(*) AS count FROM messages m LEFT JOIN conversation_views v
       ON v.account_id=m.account_id AND v.conversation_id=m.conversation_id WHERE m.account_id=? AND m.rowid>COALESCE(v.last_rowid,0)
-      AND json_extract(m.payload,'$.direction')='inbound' AND json_extract(m.payload,'$.source')='live' GROUP BY m.conversation_id`).all(accountId);
-    return Object.fromEntries(rows.map(row=>{const r=z.object({conversation_id:z.string(),count:z.number()}).parse(row);return[r.conversation_id,r.count];}));
+      AND json_extract(m.payload,'$.direction')='inbound' AND json_extract(m.payload,'$.source')='live'
+      AND COALESCE(json_extract(m.payload,'$.contentState'),'complete')<>'partial' AND COALESCE(json_extract(m.payload,'$.contentRecovered'),0)=0
+      AND (length(trim(json_extract(m.payload,'$.text')))>0 OR json_type(m.payload,'$.media')<>'null' OR json_extract(m.payload,'$.reaction') IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM message_views exact WHERE exact.account_id=m.account_id AND exact.message_id=m.id)
+      GROUP BY m.conversation_id`).all(accountId);
+    const counts: Record<string,number> = {};
+    for (const row of rows) {
+      const r = z.object({conversation_id:z.string(),count:z.number()}).parse(row);
+      const id = this.historyGroup(accountId,r.conversation_id).id;
+      counts[id] = (counts[id] ?? 0)+r.count;
+    }
+    // Correct only multi-copy events; the ordinary count is an indexed SQL aggregate.
+    const duplicates = this.db.prepare(`SELECT json_extract(payload,'$.transportId') AS transportId,COUNT(*) AS copies
+      FROM messages WHERE account_id=? GROUP BY json_extract(payload,'$.transportId') HAVING COUNT(*)>1`).iterate(accountId);
+    for (const raw of duplicates) {
+      const {transportId} = z.object({transportId:z.string()}).parse(raw);
+      for (const c of this.conversations(accountId).filter(c => this.historyGroup(accountId,c.id).id === c.id)) {
+        const copies = this.eventMessages(accountId,c.id,transportId);
+        if (copies.length < 2) continue;
+        const visibility = copies.map(m => {
+          const position = this.historyWatermark(accountId,m.conversationId,[m.id]);
+          const floor = this.db.prepare('SELECT last_rowid AS floor FROM conversation_views WHERE account_id=? AND conversation_id=?').get(accountId,m.conversationId);
+          const viewed = position <= (floor ? z.object({floor:z.number()}).parse(floor).floor : 0)
+            || !!this.db.prepare('SELECT 1 FROM message_views WHERE account_id=? AND message_id=?').get(accountId,m.id);
+          return {viewed,unread:m.direction === 'inbound' && m.source === 'live' && automaticTrigger(m) && !viewed};
+        });
+        const unread = visibility.filter(value=>value.unread).length;
+        const source = this.historySource(accountId,c.id,copies[0]?.id ?? '');
+        const retained = unread > 0 && !visibility.some(value=>value.viewed) && source?.state === 'available' ? 1 : 0;
+        if (unread) counts[c.id] = Math.max(0,(counts[c.id] ?? 0)-unread+retained);
+      }
+    }
+    return Object.fromEntries(Object.entries(counts).filter(([,count]) => count > 0));
   }
   historyVersions(accountId:string): Record<string,number> {
-    return Object.fromEntries(this.db.prepare('SELECT conversation_id,revision FROM history_versions WHERE account_id=?').all(accountId).map(row=>{const r=z.object({conversation_id:z.string(),revision:z.number()}).parse(row);return[r.conversation_id,r.revision];}));
+    return Object.fromEntries(this.conversations(accountId).map(c=>[c.id,this.historyGroup(accountId,c.id).revision]));
   }
   historyWatermark(accountId:string,conversationId:string,messageIds:string[]): number {
     const row=this.db.prepare('SELECT COALESCE(MAX(rowid),0) AS position FROM messages WHERE account_id=? AND conversation_id=? AND id IN (SELECT value FROM json_each(?))').get(accountId,conversationId,JSON.stringify(messageIds));
@@ -163,12 +426,29 @@ export class SqliteStore {
     return row ? z.object({ canonical: z.string() }).parse(row).canonical : jid;
   }
   saveWaAlias(accountId: string, alias: string, canonical: string): void {
+    if (!this.db.isTransaction) {this.transaction(()=>this.saveWaAlias(accountId,alias,canonical));return;}
+    if (alias === canonical || this.waCanonical(accountId,canonical) !== canonical) throw new DomainError('wa_alias_conflict',403);
     const existing = this.waCanonical(accountId, alias);
     if (existing !== alias && existing !== canonical) throw new DomainError('wa_alias_conflict', 403);
+    if (existing === canonical) return;
+    const previous = this.historyGroup(accountId,alias);
     this.db.prepare('INSERT INTO wa_aliases(account_id,alias,canonical) VALUES(?,?,?) ON CONFLICT(account_id,alias) DO NOTHING').run(accountId, alias, canonical);
+    this.bumpHistory(accountId,canonical,true,previous.revision,previous.sourceEpoch);
   }
   saveWaMessage(accountId: string, conversationId: string, transportId: string, payload: string): void {
+    if (!this.db.isTransaction) {this.transaction(()=>this.saveWaMessage(accountId,conversationId,transportId,payload));return;}
+    const previous = this.waMessage(accountId,conversationId,transportId);
+    if (previous !== undefined) {
+      const old = this.rawEvidence(previous);
+      if (old.deleted) payload = JSON.stringify({deleted:true});
+      else {
+        const next = z.record(z.string(),z.unknown()).parse(JSON.parse(payload));
+        payload = JSON.stringify({...next,...(old.conflict ? {historyConflict:true} : {}),
+          ...(old.viewOnce ? {historyViewOnce:true} : {}),...(old.expiresAt !== null ? {historyExpiresAt:Math.min(old.expiresAt,this.rawEvidence(payload).expiresAt ?? Infinity)} : {})});
+      }
+    }
     this.db.prepare('INSERT INTO wa_messages VALUES(?,?,?,?) ON CONFLICT(account_id,conversation_id,transport_id) DO UPDATE SET payload=excluded.payload').run(accountId, conversationId, transportId, payload);
+    if (previous !== undefined && historyDigest(this.rawEvidence(previous)) !== historyDigest(this.rawEvidence(payload))) this.bumpHistory(accountId,conversationId,true);
   }
   waMessage(accountId: string, conversationId: string, transportId: string): string | undefined {
     const row = this.db.prepare('SELECT payload FROM wa_messages WHERE account_id=? AND conversation_id=? AND transport_id=?').get(accountId, conversationId, transportId);
@@ -229,7 +509,8 @@ export class SqliteStore {
       .all(chat,accountId,chat,accountId,transportId,accountId,transportId);
     if (!targets.length || targets.some(target => target.direction !== 'outbound')
       || targets.filter(target => target.kind === 'message').length > 1 || targets.filter(target => target.kind === 'component').length > 1
-      || new Set(targets.map(target => target.chat)).size > 1) return undefined;
+      || new Set(targets.map(target => target.chat)).size > 1
+      || targets.some(target => typeof target.chat === 'string' && this.rawEvidence(this.waMessage(accountId,target.chat,transportId)).conflict)) return undefined;
     return OutgoingReceipt.parse(row);
   }
   observeOutgoingReceipt(accountId: string, conversationId: string, transportId: string, input: OutgoingReceipt): boolean {
@@ -241,6 +522,7 @@ export class SqliteStore {
       const messages = chats.flatMap(c => this.messages(accountId,c.id)).filter(m => m.transportId === transportId);
       const outboxes = chats.flatMap(c => this.outboxes(accountId,c.id)).filter(o => o.components.some(p => p.transportId === transportId));
       const components = outboxes.flatMap(o => o.components).filter(p => p.transportId === transportId);
+      if (chats.some(c => this.rawEvidence(this.waMessage(accountId,c.id,transportId)).conflict)) return false;
       if (messages.length && outboxes.length && messages[0]?.conversationId !== outboxes[0]?.conversationId) return false;
       if (messages.some(m => m.direction !== 'outbound') || messages.length > 1 || components.length > 1
         || !messages.length && !components.some(p => ['dispatching','accepted','unknown'].includes(p.state))) return false;
@@ -249,6 +531,7 @@ export class SqliteStore {
       if (previous && rank[previous.level] >= rank[receipt.level]) return false;
       this.db.prepare('INSERT INTO wa_receipts VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,conversation_id,transport_id) DO UPDATE SET level=excluded.level,observed_at=excluded.observed_at,source=excluded.source')
         .run(accountId,conversationId,transportId,receipt.level,receipt.observedAt,receipt.source);
+      this.bumpHistory(accountId,conversationId,false);
       for (const id of new Set([conversationId,...messages.map(m => m.conversationId),...outboxes.map(o => o.conversationId)]))
         this.db.prepare('INSERT INTO history_versions VALUES(?,?,1) ON CONFLICT(account_id,conversation_id) DO UPDATE SET revision=revision+1').run(accountId,id);
       return true;
@@ -330,22 +613,30 @@ export class SqliteStore {
       .all(accountId,now,now).map(row => Conversation.parse(JSON.parse(Payload.parse(row).payload)));
   }
   conversations(accountId: string): Conversation[] { return this.list('conversations', accountId, Conversation); }
-  saveConversation(record: Conversation): void { this.put('conversations', Conversation.parse(record)); }
+  saveConversation(record: Conversation): void {
+    if (!this.db.isTransaction) {this.transaction(()=>this.saveConversation(record));return;}
+    const previous = this.conversation(record.accountId,record.id);
+    this.put('conversations', Conversation.parse(record));
+    const restrictions = (c: Conversation) => [c.kind,c.mode,c.excluded,c.control,c.hours,
+      c.pause ? {...c.pause,catchUpMessageId:null} : null];
+    if (previous && JSON.stringify(restrictions(previous)) !== JSON.stringify(restrictions(record))) this.bumpHistory(record.accountId,record.id,true);
+  }
   message(accountId:string,id:string):Message | undefined { const message = this.read('messages',accountId,id,Message); return message ? this.projectMessage(message) : undefined; }
   messages(accountId: string, conversationId: string): Message[] { return this.list('messages', accountId, Message, conversationId).map(message => this.projectMessage(message)); }
-  recentMessages(accountId: string, conversationId: string, limit = 100): Message[] {
-    return this.db.prepare("SELECT payload FROM messages WHERE account_id=? AND conversation_id=? ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT ?")
-      .all(accountId,conversationId,limit).map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload)))).reverse();
+  recentMessages(accountId: string, conversationId: string, limit = 100, now = Date.now()): Message[] {
+    return this.historyPage(accountId,conversationId,{limit},now).messages;
   }
-  lastMessages(accountId: string): Message[] {
-    return this.db.prepare(`SELECT m.payload FROM conversations c JOIN messages m ON m.rowid=(
-      SELECT rowid FROM messages WHERE account_id=c.account_id AND conversation_id=c.id
-      ORDER BY json_extract(payload,'$.occurredAt') DESC,rowid DESC LIMIT 1) WHERE c.account_id=?`)
-      .all(accountId).map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload))));
+  lastMessages(accountId: string, now = Date.now()): Message[] {
+    return this.conversations(accountId).filter(c => this.historyGroup(accountId,c.id).id === c.id)
+      .flatMap(c => this.historyPage(accountId,c.id,{limit:1},now).messages);
   }
   saveMessage(record: Message): void {
+    if (!this.db.isTransaction) {this.transaction(()=>this.saveMessage(record));return;}
+    const previous = this.message(record.accountId,record.id);
     const {outgoingReceipt: _receipt,...message}=Message.parse(record);this.put('messages',message);
     this.db.prepare('INSERT INTO history_versions VALUES(?,?,1) ON CONFLICT(account_id,conversation_id) DO UPDATE SET revision=revision+1').run(message.accountId,message.conversationId);
+    const content = (m: Message) => [m.text,m.direction,m.authorship,m.occurredAt,m.quotedMessageId,m.media,m.contentState,m.contentRecovered];
+    this.bumpHistory(message.accountId,message.conversationId,!!previous && JSON.stringify(content(previous)) !== JSON.stringify(content(message)));
   }
   drafts(accountId: string, conversationId?: string): Draft[] { return this.list('drafts', accountId, Draft, conversationId); }
   draft(accountId: string, id: string): Draft | undefined { return this.read('drafts', accountId, id, Draft); }

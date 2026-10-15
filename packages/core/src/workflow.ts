@@ -4,6 +4,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { Action, Component, Conversation, DomainError, Draft, Grant, Message, Outbox, Proposal, Snapshot, OwnerAction, ImageUpload, AudioUpload, ReactionObservation, actionUnits, normalizeGeneratedAction, type NameSource } from './contracts.ts';
 import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
+import { partialMessage, automaticTrigger } from './history.ts';
 import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
 import { SqliteStore } from './store.ts';
 import { OwnerInstructions, OwnerInstructionsInput, ContactNameSettings, ContactNamesInput, ContactNamesImportInput, ContactNamesImportResult } from './api.ts';
@@ -66,6 +67,17 @@ export class Workflow {
       for (const id of affected) this.invalidate(this.conversation(id),false,true);
       this.store.saveReleaseContextVersion(accountId,1);
     });
+    this.store.transaction(() => {
+      this.store.mediaCacheId(accountId);
+      if (this.store.historyProjectionVersion(accountId) >= 1) return;
+      for (const c of this.store.conversations(accountId)) {
+        const group = this.store.historyGroup(accountId,c.id);
+        if (group.id !== c.id) continue;
+        this.store.bumpHistory(accountId,c.id,true);
+        if (group.memberIds.length > 1) this.invalidate(c,false,true);
+      }
+      this.store.saveHistoryProjectionVersion(accountId);
+    });
   }
   onChange(listener: (conversationId: string, aiOnly?: boolean) => void): () => void {
     this.changes.add(listener);
@@ -75,6 +87,86 @@ export class Workflow {
     const c = this.store.conversation(this.accountId, id);
     if (!c) throw new DomainError('conversation_not_found', 404);
     return c;
+  }
+  effectiveConversation(id: string): Conversation {
+    const group = this.store.historyGroup(this.accountId,id);
+    const c = this.conversation(group.id);
+    const members = group.memberIds.map(member => this.conversation(member));
+    const mode = members.some(m => m.mode === 'never_reply') ? 'never_reply'
+      : members.some(m => m.mode === 'draft_only') ? 'draft_only' : c.mode;
+    const blocked = members.some(m => m.control === 'manual' || held(pauseState(m),this.clock()));
+    return {...c,mode,excluded:c.excluded || group.aiBlocked,control:blocked?'manual':c.control,
+      lastHumanActivityAt:Math.max(...members.map(m => m.lastHumanActivityAt)),
+      // An invalid hours rule denies through the existing shared hours evaluator.
+      hours:members.every(m => inPermittedHours(m,this.clock())) ? c.hours : {timezone:'invalid',start:0,end:0}};
+  }
+  effectiveConversations(): Conversation[] {
+    return this.store.conversations(this.accountId).filter(c => this.store.historyGroup(this.accountId,c.id).id === c.id)
+      .map(c => {const effective=this.effectiveConversation(c.id);return this.groupUnknown(c.id) ? {...effective,control:'manual' as const} : effective;});
+  }
+  assertFreshAction(id: string): void {
+    if (this.store.historyGroup(this.accountId,id).id !== id) throw new DomainError('retired_alias_read_only');
+  }
+  verifyAlias(alias: string, canonical: string): void {
+    this.store.transaction(() => {
+      if (this.store.waCanonical(this.accountId,alias) === canonical) return;
+      const original = this.store.conversation(this.accountId,alias);
+      if (original) {
+        const target = this.conversation(canonical);
+        for (const c of [original,target]) {
+          const pause = pauseState(c); pause.indefinite = true; pause.catchUpMessageId = null;
+          this.invalidatePhysical({...c,control:'manual',pause},true);
+          let cancelledOwner=false;
+          for (const outbox of this.store.outboxes(this.accountId,c.id)) {
+            if (outbox.origin === 'owner_manual' && c.id !== alias) continue;
+            if (outbox.origin === 'owner_manual' && outbox.components.some(p=>p.state==='queued')) cancelledOwner=true;
+            for (const part of outbox.components) if (part.state === 'queued') this.release(outbox,part,'cancelled');
+            outbox.state = outboxState(outbox.components); this.store.saveOutbox(outbox);
+          }
+          if (cancelledOwner && !this.store.outboxes(this.accountId,c.id).some(o=>o.components.some(p=>['queued','dispatching','unknown'].includes(p.state)))) {
+            const current=this.conversation(c.id);
+            this.store.saveConversation({...current,pause:{...pauseState(current),sending:false}});
+          }
+        }
+      }
+      this.store.saveWaAlias(this.accountId,alias,canonical);
+      if (original) this.store.mergeReleaseContext(this.accountId,alias,canonical);
+    });
+    this.refreshContactName(canonical);
+  }
+  groupUnknown(id: string, except?: string): boolean {
+    const members = this.store.historyGroup(this.accountId,id).memberIds;
+    return this.store.outboxes(this.accountId).some(o => members.includes(o.conversationId) && o.id !== except
+      && o.components.some(p => p.state === 'unknown' || p.state === 'dispatching'));
+  }
+  private resumeMembers(id: string, changingMode = false): void {
+    const group = this.store.historyGroup(this.accountId,id);
+    const blocked = group.memberIds.some(member => {
+      const c = this.conversation(member);
+      return c.excluded || c.mode === 'never_reply' && !(changingMode && member === id)
+        || c.kind !== 'direct' && !(c.kind === 'unknown' && member !== group.id && /^\d+@lid$/.test(member));
+    });
+    if (blocked) throw new DomainError(group.memberIds.length > 1 ? 'alias_policy_restricted' : 'ai_access_denied',group.memberIds.length > 1 ? 409 : 403);
+    if (this.groupUnknown(id)) throw new DomainError('delivery_unknown');
+    for (const member of group.memberIds) {
+      const c = this.conversation(member); const pause = pauseState(c);
+      if (pause.composing || this.store.hasComposer(this.accountId,member)) throw new DomainError('composer_has_text');
+      if (pause.sending) throw new DomainError('delivery_unknown');
+    }
+    for (const member of group.memberIds) {
+      if (member === id) continue;
+      const c = this.conversation(member); const pause = pauseState(c);
+      pause.indefinite = false; pause.handover = false; pause.until = null; pause.typingUntil = null; pause.catchUpMessageId = null;
+      this.store.saveConversation({...c,control:'assistant_allowed',pause});
+    }
+  }
+  private aliasPermission(id: string, mode: Conversation['mode']): void {
+    const group = this.store.historyGroup(this.accountId,id);
+    if (mode === 'never_reply') return;
+    if (group.memberIds.some(member => member !== id && (() => {
+      const c = this.conversation(member);
+      return c.excluded || c.mode === 'never_reply' || mode === 'auto_reply' && c.mode === 'draft_only';
+    })())) throw new DomainError('alias_policy_restricted');
   }
   stageImage(conversationId: string, image: Omit<ImageUpload, 'id'> & { bytes: Uint8Array }, requestId: string): ImageUpload {
     const metadata = ImageUpload.omit({id:true}).parse(image);
@@ -103,8 +195,9 @@ export class Workflow {
     const observation = ReactionObservation.parse(input);
     return this.store.transaction(() => {
       const c = this.conversation(conversationId);
-      const target = this.store.message(this.accountId,targetMessageId);
-      if (!target || target.conversationId !== c.id) throw new DomainError('invalid_reaction_target',422);
+      const source = this.store.historySource(this.accountId,c.id,targetMessageId,this.clock());
+      const target = source?.message;
+      if (!target || source.state !== 'available') throw new DomainError('invalid_reaction_target',422);
       const known = this.store.outboxes(this.accountId,c.id).find(o => o.components.some(p => p.kind === 'reaction' && p.transportId === observation.transportId && p.reaction?.targetMessageId === target.id));
       observation.actor = known ? known.origin === 'owner_manual' ? 'owner' : 'assistant'
         : verifiedOwner ? 'owner' : observation.actor === 'contact' ? 'contact' : 'unknown';
@@ -137,6 +230,13 @@ export class Workflow {
       if (saved) {
         if (saved.hash !== payloadHash) throw new DomainError('request_id_conflict');
         return schema.parse(saved.result);
+      }
+      const scoped = z.object({operation:z.string(),conversationId:z.string().optional(),id:z.string().optional()}).safeParse(payload);
+      if (scoped.success && scoped.data.operation !== 'viewed-messages') {
+        const {conversationId,id,operation:kind} = scoped.data;
+        const chat = conversationId ?? (id ? (kind === 'confirm' ? this.store.proposal(this.accountId,id)
+          : this.store.draft(this.accountId,id))?.conversationId : undefined);
+        if (chat) this.assertFreshAction(chat);
       }
       const result = schema.parse(operation());
       this.store.saveRequest(this.accountId, requestId, payloadHash, result);
@@ -242,6 +342,12 @@ export class Workflow {
     component.state = next;
   }
   private invalidate(c: Conversation, revokeGrant: boolean, aiOnly = false): Conversation {
+    for (const id of this.store.historyGroup(this.accountId,c.id).memberIds) {
+      if (id !== c.id) this.invalidatePhysical(this.conversation(id),revokeGrant,aiOnly);
+    }
+    return this.invalidatePhysical(c,revokeGrant,aiOnly);
+  }
+  private invalidatePhysical(c: Conversation, revokeGrant: boolean, aiOnly = false): Conversation {
     const next = { ...c, workflowVersion: c.workflowVersion + 1 };
     this.store.saveConversation(next);
     for (const draft of this.store.drafts(this.accountId, c.id)) {
@@ -308,7 +414,8 @@ export class Workflow {
       const c = this.conversation(conversationId); const pause = pauseState(c);
       pause.catchUpMessageId = null;
       if (action === 'resume') {
-        if (!aiAccess(c,this.accountId)) throw new DomainError('ai_access_denied',403);
+        this.resumeMembers(c.id);
+        if (!aiAccess(this.effectiveConversation(c.id),this.accountId)) throw new DomainError('ai_access_denied',403);
         if (pause.composing) throw new DomainError('composer_has_text',409);
         if (pause.sending || this.store.outboxes(this.accountId,c.id).some(o => o.components.some(p => p.state === 'unknown' || p.state === 'dispatching'))) throw new DomainError('delivery_unknown');
         pause.indefinite = false; pause.handover = false; pause.until = null; pause.typingUntil = null;
@@ -321,15 +428,16 @@ export class Workflow {
     });
   }
   private queueCatchUp(c: Conversation): void {
-    const messages = this.store.recentMessages(this.accountId,c.id);
+    const messages = this.store.recentMessages(this.accountId,c.id,100,this.clock());
     const last = messages.at(-1);
     const pause = pauseState(c);
-    pause.catchUpMessageId = last?.direction === 'inbound' && last.source === 'live' && !this.store.drafts(this.accountId,c.id).some(d => d.triggerMessageId === last.id && d.state === 'pending') ? last.id : null;
+    pause.catchUpMessageId = last?.direction === 'inbound' && last.source === 'live' && automaticTrigger(last) && !this.store.drafts(this.accountId,c.id).some(d => d.triggerMessageId === last.id && d.state === 'pending') ? last.id : null;
     this.store.saveConversation({ ...c,pause });
   }
   expirePauses(): { conversationId: string; messageId: string; workflowVersion:number }[] {
     return this.store.transaction(() => {
       for (const c of this.store.duePauses(this.accountId,this.clock())) {
+        if (this.store.historyGroup(this.accountId,c.id).id !== c.id) continue;
         const pause = pauseState(c);
         if (pause.until !== null && pause.until <= this.clock()) pause.until = null;
         if (pause.typingUntil !== null && pause.typingUntil <= this.clock()) pause.typingUntil = null;
@@ -339,7 +447,7 @@ export class Workflow {
       }
       return this.store.duePauses(this.accountId,this.clock()).flatMap(c => {
         const messageId = c.pause?.catchUpMessageId;
-        return c.control === 'assistant_allowed' && messageId ? [{ conversationId:c.id,messageId,workflowVersion:c.workflowVersion }] : [];
+        return this.store.historyGroup(this.accountId,c.id).id === c.id && this.effectiveConversation(c.id).control === 'assistant_allowed' && messageId ? [{ conversationId:c.id,messageId,workflowVersion:c.workflowVersion }] : [];
       });
     });
   }
@@ -347,48 +455,95 @@ export class Workflow {
     const c = this.conversation(conversationId);
     if (c.pause?.catchUpMessageId === messageId) this.store.saveConversation({ ...c,pause:{ ...c.pause,catchUpMessageId:null } });
   }
-  observe(input: Message, verifiedOwner = false): boolean {
+  observe(input: Message, verifiedOwner = false, rawPayload?: string): boolean {
     const message = Message.parse(input);
     if (message.accountId !== this.accountId) throw new DomainError('account_mismatch', 403);
     return this.store.transaction(() => {
       let c = this.conversation(message.conversationId);
-      if (this.store.messages(this.accountId, c.id).some(m => m.transportId === message.transportId)) return false;
+      if (this.store.eventMessages(this.accountId,c.id,message.transportId).length) return false;
       const echo = this.store.outboxes(this.accountId, c.id).some(o => o.components.some(p => p.transportId === message.transportId));
       if (message.direction === 'outbound' && echo) return false;
       if (message.direction === 'outbound') {
         message.authorship = verifiedOwner ? 'owner_written' : 'unknown';
-        if (message.source === 'live') {
+        if (message.source === 'live' && !partialMessage(message)) {
           c = this.takeOver(c);
           if (verifiedOwner) { this.ownerSent(c,message.occurredAt,!!message.text.trim() || message.media?.kind === 'image' || message.media?.kind === 'audio'); c = this.conversation(c.id); }
         }
-      } else c = this.invalidate(c, false);
+      } else if (!partialMessage(message)) c = this.invalidate(c, false);
       this.store.saveMessage(message);
-      if (message.direction === 'inbound' || verifiedOwner) this.store.saveConversation({ ...c,
+      if (rawPayload !== undefined) this.store.saveWaMessage(this.accountId,message.conversationId,message.transportId,rawPayload);
+      if (!partialMessage(message) && (message.direction === 'inbound' || verifiedOwner)) this.store.saveConversation({ ...c,
         lastHumanActivityAt: Math.max(c.lastHumanActivityAt, message.occurredAt) });
       return true;
     });
   }
-  context(conversationId: string) {
-    const c = this.conversation(conversationId);
-    if (!this.store.modelConsent(this.accountId)) return buildContext(c,this.accountId,this.store.messages(this.accountId,c.id),[],8000,this.clock());
-    return buildContext(c, this.accountId, this.store.messages(this.accountId, c.id), [], 8000, this.clock(), new Map(), this.store.ownerInstructions(this.accountId));
+  restrictSource(conversationId:string,transportId:string,restriction:'deleted'|'conflict'|'view_once'|'expiry',expiresAt?:number):void {
+    this.store.transaction(()=>{
+      const group=this.store.historyGroup(this.accountId,conversationId);
+      for(const id of group.memberIds){
+        const payload=this.store.waMessage(this.accountId,id,transportId);
+        if(restriction==='deleted')this.store.saveWaMessage(this.accountId,id,transportId,JSON.stringify({deleted:true}));
+        else {
+          const value=payload ? z.record(z.string(),z.unknown()).parse(JSON.parse(payload)) : {};
+          const marker=restriction==='conflict' ? {historyConflict:true} : restriction==='view_once' ? {historyViewOnce:true}
+            : {historyExpiresAt:Math.min(typeof value.historyExpiresAt==='number'?value.historyExpiresAt:Infinity,expiresAt ?? 0)};
+          this.store.saveWaMessage(this.accountId,id,transportId,JSON.stringify({...value,...marker}));
+        }
+      }
+      if(restriction==='deleted')for(const m of this.store.eventMessages(this.accountId,conversationId,transportId))
+        this.store.saveMessage({...m,text:'[Message deleted]',media:null,reaction:null,observedReactions:[]});
+      this.store.bumpHistory(this.accountId,conversationId,true);
+      for(const id of group.memberIds)this.invalidatePhysical(this.conversation(id),false,true);
+    });
+  }
+  recoverMessage(conversationId: string, input: Message, rawPayload?: string): boolean {
+    return this.store.transaction(() => {
+      const source = this.store.historySource(this.accountId,conversationId,input.id,this.clock());
+      if (!source || source.state !== 'available') return false;
+      const previous = source.message;
+      if (input.accountId !== this.accountId || input.transportId !== previous.transportId || input.direction !== previous.direction
+        || input.occurredAt !== previous.occurredAt || !partialMessage(previous) || partialMessage(input)
+        || !input.text.trim() && (!input.media || !['image','sticker','animated_sticker','gif','audio'].includes(input.media.kind))
+        || input.media?.access === 'unsupported' || input.media?.viewOnce || input.media?.expiresAt != null && input.media.expiresAt <= this.clock()) return false;
+      this.store.saveMessage({...previous,text:input.text,media:input.media,quotedMessageId:previous.quotedMessageId ?? input.quotedMessageId,
+        contentState:'complete',contentRecovered:true});
+      if (rawPayload !== undefined) this.store.saveWaMessage(this.accountId,previous.conversationId,previous.transportId,rawPayload);
+      for (const id of this.store.historyGroup(this.accountId,conversationId).memberIds) {
+        const c = this.conversation(id); const pause = pauseState(c);
+        if (pause.catchUpMessageId === previous.id) pause.catchUpMessageId = null;
+        this.invalidatePhysical({...c,pause},false,true);
+      }
+      return true;
+    });
+  }
+  viewedMessages(conversationId: string, messageIds: string[], requestId: string): {viewed:true} {
+    return this.request(requestId,{operation:'viewed-messages',conversationId,messageIds},z.object({viewed:z.literal(true)}),() => {
+      this.conversation(conversationId); this.store.markViewedMessages(this.accountId,conversationId,messageIds); return {viewed:true};
+    });
+  }
+  context(conversationId: string, transcripts: ReadonlyMap<string,import('./contracts.ts').AudioTranscript> = new Map()) {
+    const c = this.effectiveConversation(conversationId);
+    if (!inPermittedHours(c,this.clock())) throw new DomainError('ai_access_denied',403);
+    const inputs = this.store.contextMessages(this.accountId,c.id,this.clock());
+    return buildContext(c,this.accountId,inputs.messages,[],8000,this.clock(),transcripts,
+      this.store.modelConsent(this.accountId) ? this.store.ownerInstructions(this.accountId) : undefined,inputs);
   }
   private targets(c: Conversation, action: OwnerAction, quotedMessageId: string | null = null): void {
-    const messages = this.store.messages(this.accountId, c.id);
+    const valid = (id: string) => this.store.historySource(this.accountId,c.id,id,this.clock())?.state === 'available';
     if ('quotedMessageId' in action && action.quotedMessageId && quotedMessageId && action.quotedMessageId !== quotedMessageId)
       throw new DomainError('quote_conflict',422);
     quotedMessageId ??= 'quotedMessageId' in action ? action.quotedMessageId ?? null : null;
     if (quotedMessageId && !('text' in action) && action.kind !== 'image' && action.kind !== 'audio') throw new DomainError('quote_requires_text', 422);
-    if (quotedMessageId && !messages.some(m => m.id === quotedMessageId)) throw new DomainError('invalid_quote', 422);
+    if (quotedMessageId && !valid(quotedMessageId)) throw new DomainError('invalid_quote', 422);
     if (action.kind === 'text_sequence') {
-      for (const part of action.messages) if (part.quotedMessageId && !messages.some(m => m.id === part.quotedMessageId)) throw new DomainError('invalid_quote',422);
+      for (const part of action.messages) if (part.quotedMessageId && !valid(part.quotedMessageId)) throw new DomainError('invalid_quote',422);
     }
-    if ('reaction' in action && !messages.some(m => m.id === action.reaction.targetMessageId)) throw new DomainError('invalid_reaction_target', 422);
+    if ('reaction' in action && !valid(action.reaction.targetMessageId)) throw new DomainError('invalid_reaction_target', 422);
   }
   private checkAudioSources(c:Conversation,ids:string[]):void {
     for(const id of ids){
-      const message=this.store.message(this.accountId,id);const media=message?.media;
-      if(message?.conversationId!==c.id || media?.kind!=='audio' || media.viewOnce || media.access!=='available'
+      const source=this.store.historySource(this.accountId,c.id,id,this.clock());const media=source?.message.media;
+      if(source?.state!=='available' || media?.kind!=='audio' || media.viewOnce || media.access!=='available'
         || media.expiresAt!==null && media.expiresAt<=this.clock())throw new DomainError('audio_source_unavailable',410);
     }
   }
@@ -396,14 +551,15 @@ export class Workflow {
     const action = normalizeGeneratedAction(proposed);
     return this.request(requestId, { operation: 'draft', conversationId, action, expectedVersion, ...(audioSourceIds.length ? {audioSourceIds} : {}) }, Draft, () => {
       let c = this.conversation(conversationId);
-      if (!aiAccess(c, this.accountId) || c.control === 'manual') throw new DomainError('ai_access_denied', 403);
+      const effective = this.effectiveConversation(c.id);
+      if (!aiAccess(effective, this.accountId) || effective.control === 'manual' || !inPermittedHours(effective,this.clock())) throw new DomainError('ai_access_denied', 403);
       if (c.workflowVersion !== expectedVersion) throw new DomainError('stale_workflow');
       this.targets(c, action);this.checkAudioSources(c,audioSourceIds);
-      const trigger = this.store.messages(this.accountId, c.id).filter(m => m.direction === 'inbound').sort((a,b) => b.occurredAt-a.occurredAt)[0];
+      const trigger = this.store.contextMessages(this.accountId,c.id,this.clock()).messages.filter(m => m.direction === 'inbound').at(-1);
       if (!trigger) throw new DomainError('no_inbound_message', 422);
       if (action.kind === 'handover') c = this.takeOver(c,true);
       const draft = Draft.parse({ id: randomUUID(), accountId: this.accountId, conversationId, triggerMessageId: trigger.id,
-        workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, revision: 1, action, ...(audioSourceIds.length ? {audioSourceIds} : {}),
+        workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, sourceEpoch:this.store.historyGroup(this.accountId,c.id).sourceEpoch, revision: 1, action, ...(audioSourceIds.length ? {audioSourceIds} : {}),
         state: action.kind === 'handover' ? 'needs_owner' : action.kind === 'silence' ? 'dismissed' : 'pending',
         createdAt: this.clock(), handoverAt: action.kind === 'handover' ? this.clock() : null, edited: false });
       this.store.saveDraft(draft); return draft;
@@ -415,8 +571,9 @@ export class Workflow {
       const draft = this.store.draft(this.accountId, id);
       if (!draft) throw new DomainError('draft_not_found', 404);
       let c = this.conversation(draft.conversationId);
-      if (!aiAccess(c, this.accountId)) throw new DomainError('ai_access_denied', 403);
-      if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion) throw new DomainError('stale_draft');
+      if (!aiAccess(this.effectiveConversation(c.id), this.accountId)) throw new DomainError('ai_access_denied', 403);
+      if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion
+        || draft.sourceEpoch !== undefined && draft.sourceEpoch !== this.store.historyGroup(this.accountId,c.id).sourceEpoch) throw new DomainError('stale_draft');
       this.targets(c, action);
       if (action.kind === 'handover') c = this.takeOver(c,true);
       const next: Draft = { ...draft, action, workflowVersion: c.workflowVersion, revision: revision + 1, edited: true, handoverAt: action.kind === 'handover' ? this.clock() : null,
@@ -434,6 +591,7 @@ export class Workflow {
   propose(conversationId: string, input: ProposalInput, requestId: string): Proposal {
     return this.request(requestId, { operation: 'propose', conversationId, input }, Proposal, () => {
       const c = this.conversation(conversationId);
+      this.aliasPermission(c.id,input.mode ?? c.mode);
       if ((input.kind === 'change_mode' || input.kind === 'configure') && !input.mode) throw new DomainError('mode_required', 422);
       if (input.kind === 'delegate' && c.mode !== 'auto_reply') throw new DomainError('invalid_delegation',422);
       const configured = input.kind === 'configure';
@@ -463,8 +621,10 @@ export class Workflow {
       if (p.confirmBy <= this.clock()) throw new DomainError('confirmation_expired', 410);
       let c = this.conversation(p.conversationId);
       if (c.workflowVersion !== p.workflowVersion || c.policyVersion !== p.policyVersion) throw new DomainError('stale_proposal');
+      this.aliasPermission(c.id,p.mode ?? c.mode);
       if (p.kind === 'change_mode') c = this.invalidate({ ...c, mode: p.mode, policyVersion: c.policyVersion+1 }, true);
       if (p.kind === 'resume') {
+        this.resumeMembers(c.id);
         const pause = pauseState(c);
         pause.indefinite = false; pause.handover = false; pause.until = null; pause.typingUntil = null;
         c = this.invalidate({ ...c, pause, control: held(pause,this.clock()) ? 'manual' : 'assistant_allowed' },true);
@@ -475,17 +635,19 @@ export class Workflow {
         && (p.maxUnits===null || p.maxUnits>20 || p.expiresAt===null || p.expiresAt>this.clock()+86400000)
         && !p.riskAccepted)throw new DomainError('delegation_warning_required',422);
       if (p.kind === 'delegate') {
-        if (!aiAccess(c, this.accountId) || c.mode !== 'auto_reply' || c.control === 'manual') throw new DomainError('delegation_denied', 403);
-        if (this.store.outboxes(this.accountId, c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
+        const effective = this.effectiveConversation(c.id);
+        if (!aiAccess(effective, this.accountId) || effective.mode !== 'auto_reply' || effective.control === 'manual' || !inPermittedHours(effective,this.clock())) throw new DomainError('delegation_denied', 403);
+        if (this.groupUnknown(c.id)) throw new DomainError('delivery_unknown');
         c = this.invalidate(c, true);
         this.store.saveGrant({ id: randomUUID(), accountId: this.accountId, conversationId: c.id,
           expiresAt: p.expiresAt, maxUnits: p.maxUnits, successfulUnits: 0, reservedUnits: 0, state: 'active' });
       }
       if (p.kind === 'configure') {
+        if (p.mode !== 'never_reply') this.resumeMembers(c.id,true);
         if (!p.mode) throw new DomainError('mode_required',422);
         if (p.mode !== 'never_reply' && (c.excluded || c.kind !== 'direct')) throw new DomainError('ai_access_denied',403);
         if (p.mode === 'auto_reply') {
-          if (this.store.outboxes(this.accountId,c.id).some(o => o.components.some(part => part.state === 'unknown'))) throw new DomainError('delivery_unknown');
+          if (this.groupUnknown(c.id)) throw new DomainError('delivery_unknown');
         }
         const pause = pauseState(c);
         pause.indefinite = p.mode === 'never_reply'; pause.handover = false; pause.until = null; pause.typingUntil = null; pause.catchUpMessageId = null;
@@ -514,13 +676,14 @@ export class Workflow {
     let grant: Grant | undefined;
     if (origin !== 'owner_manual') {
       this.checkAudioSources(c,audioSourceIds);
-      if (!aiAccess(c, this.accountId) || c.control === 'manual' || !inPermittedHours(c, this.clock())) throw new DomainError('send_denied', 403);
-      if (this.store.outboxes(this.accountId, c.id).some(o => o.components.some(p => p.state === 'unknown'))) throw new DomainError('delivery_unknown');
+      const effective = this.effectiveConversation(c.id);
+      if (!aiAccess(effective, this.accountId) || effective.control === 'manual' || !inPermittedHours(effective, this.clock())) throw new DomainError('send_denied', 403);
+      if (this.groupUnknown(c.id)) throw new DomainError('delivery_unknown');
       grant = this.grant(c.id);
       if (grant && grant.expiresAt!==null && grant.expiresAt <= this.clock()) {
         this.store.saveGrant({ ...grant, state: 'ended' }); grant = undefined;
       }
-      if (origin === 'assistant_auto' && (c.mode !== 'auto_reply' || !grant)) throw new DomainError('autonomy_denied', 403);
+      if (origin === 'assistant_auto' && (effective.mode !== 'auto_reply' || !grant)) throw new DomainError('autonomy_denied', 403);
       if (grant && (grant.expiresAt!==null && grant.expiresAt <= this.clock() || grant.maxUnits!==null && grant.successfulUnits+grant.reservedUnits+units > grant.maxUnits)) throw new DomainError('grant_limit');
       if (grant) this.store.saveGrant({ ...grant, reservedUnits: grant.reservedUnits + units });
     }
@@ -534,7 +697,7 @@ export class Workflow {
     if (action.kind === 'image') components.push({ id: randomUUID(), kind:'image', uploadId:action.uploadId, text:action.caption, reaction:null, state:'queued', transportId:null });
     if(action.kind==='audio')components.push({id:randomUUID(),kind:'audio',uploadId:action.uploadId,text:null,reaction:null,state:'queued',transportId:null});
     const outbox = Outbox.parse({ id: randomUUID(), accountId: this.accountId, conversationId: c.id, requestId,
-      workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, action, origin, authoredAs, ...(audioSourceIds.length ? {audioSourceIds} : {}),
+      workflowVersion: c.workflowVersion, policyVersion: c.policyVersion, ...(origin === 'owner_manual' ? {} : {sourceEpoch:this.store.historyGroup(this.accountId,c.id).sourceEpoch}), action, origin, authoredAs, ...(audioSourceIds.length ? {audioSourceIds} : {}),
       state: 'queued', components, quotedMessageId, grantId: grant?.id ?? null, units, transportId: null, createdAt: this.clock() });
     this.store.saveOutbox(outbox); return outbox;
   }
@@ -543,7 +706,8 @@ export class Workflow {
       const draft = this.store.draft(this.accountId, id);
       if (!draft) throw new DomainError('draft_not_found', 404);
       const c = this.conversation(draft.conversationId);
-      if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion || draft.policyVersion !== c.policyVersion) throw new DomainError('stale_draft');
+      if (draft.state !== 'pending' || draft.revision !== revision || draft.workflowVersion !== c.workflowVersion || draft.policyVersion !== c.policyVersion
+        || draft.sourceEpoch !== undefined && draft.sourceEpoch !== this.store.historyGroup(this.accountId,c.id).sourceEpoch) throw new DomainError('stale_draft');
       const outbox = this.queue(c, draft.action, requestId, 'assistant_approved', draft.edited ? 'owner_edited_assistant' : 'assistant_written', null, draft.audioSourceIds);
       this.store.saveDraft({ ...draft, state: 'approved' }); return outbox;
     });
@@ -553,7 +717,8 @@ export class Workflow {
       const draft = this.store.draft(this.accountId, id);
       if (!draft) throw new DomainError('draft_not_found', 404);
       const c = this.conversation(draft.conversationId);
-      if (draft.state !== 'pending' || draft.workflowVersion !== c.workflowVersion || draft.policyVersion !== c.policyVersion) throw new DomainError('stale_draft');
+      if (draft.state !== 'pending' || draft.workflowVersion !== c.workflowVersion || draft.policyVersion !== c.policyVersion
+        || draft.sourceEpoch !== undefined && draft.sourceEpoch !== this.store.historyGroup(this.accountId,c.id).sourceEpoch) throw new DomainError('stale_draft');
       const outbox = this.queue(c, draft.action, requestId, 'assistant_auto', 'assistant_written', null, draft.audioSourceIds);
       this.store.saveDraft({ ...draft, state: 'approved' }); return outbox;
     });
@@ -571,8 +736,11 @@ export class Workflow {
       return;
     }
     this.checkAudioSources(c,outbox.audioSourceIds ?? []);
-    if (this.store.outboxes(this.accountId, c.id).some(other => other.id !== outbox.id && other.components.some(p => p.state === 'unknown'))) throw new DomainError('delivery_unknown');
-    if (!aiAccess(c, this.accountId) || c.control === 'manual' || !inPermittedHours(c, this.clock())
+    if (this.groupUnknown(c.id,outbox.id)) throw new DomainError('delivery_unknown');
+    const effective = this.effectiveConversation(c.id);
+    if (outbox.sourceEpoch !== undefined && outbox.sourceEpoch !== this.store.historyGroup(this.accountId,c.id).sourceEpoch) throw new DomainError('stale_delivery');
+    if (!aiAccess(effective, this.accountId) || effective.control === 'manual' || !inPermittedHours(effective, this.clock())
+      || outbox.origin === 'assistant_auto' && effective.mode !== 'auto_reply'
       || c.workflowVersion !== outbox.workflowVersion || c.policyVersion !== outbox.policyVersion) throw new DomainError('stale_delivery');
     if (outbox.grantId) {
       const g = this.store.grants(this.accountId, c.id).find(g => g.id === outbox.grantId);
@@ -582,7 +750,7 @@ export class Workflow {
   async dispatch(id: string, handoff: (component: Component) => Promise<TransportResult>, options: DispatchOptions = {}): Promise<Outbox> {
     const outbox = this.store.outbox(this.accountId, id);
     if (!outbox) throw new DomainError('outbox_not_found', 404);
-    const key = outbox.conversationId;
+    const key = this.store.historyGroup(this.accountId,outbox.conversationId).id;
     const previous = this.lanes.get(key) ?? Promise.resolve();
     const run = previous.then(() => this.dispatchInLane(id, handoff, options));
     const settled = run.then(() => {}, () => {}); this.lanes.set(key, settled);
@@ -618,12 +786,9 @@ export class Workflow {
             options.check?.(); this.fresh(outbox);
             if (component.dueAt && component.dueAt > this.clock()) throw new DomainError('delivery_not_due');
             const quoteId = component.quotedMessageId !== undefined ? component.quotedMessageId : outbox.quotedMessageId;
+            if (component.reaction && this.store.historySource(this.accountId,outbox.conversationId,component.reaction.targetMessageId,this.clock())?.state !== 'available') throw new DomainError('invalid_reaction_target',422);
             if (quoteId) {
-              const quote = this.store.message(this.accountId,quoteId);
-              const raw = quote && this.store.waMessage(this.accountId,outbox.conversationId,quote.transportId);
-              if (!quote || quote.conversationId !== outbox.conversationId || quote.media?.viewOnce
-                || quote.media?.expiresAt != null && quote.media.expiresAt <= this.clock()
-                || raw && z.object({deleted:z.literal(true)}).safeParse(JSON.parse(raw)).success) throw new DomainError('invalid_quote',422);
+              if (this.store.historySource(this.accountId,outbox.conversationId,quoteId,this.clock())?.state !== 'available') throw new DomainError('invalid_quote',422);
             }
           } catch (error) {
             if (!(error instanceof DomainError)) throw error;
@@ -660,7 +825,7 @@ export class Workflow {
                 statusReply: false, statusContext: null, media: !deleted && audio ? {kind:'audio',access:'available',fixture:null,description:'Owner voice note',viewOnce:false,expiresAt:null,mime:audio.mime,duration:audio.duration} : !deleted && upload ? {kind:'image',access:'available',fixture:null,
                   description:'Owner image',viewOnce:false,expiresAt:null,mime:upload.mime,width:upload.width,height:upload.height} : null, reaction: null });
             } else if (component.reaction) {
-              const target = this.store.messages(this.accountId, outbox.conversationId).find(m => m.id === component.reaction?.targetMessageId);
+              const target = this.store.historySource(this.accountId,outbox.conversationId,component.reaction.targetMessageId,this.clock())?.message;
               const currentReaction=target?.observedReactions?.filter(r=>r.actor==='owner' || r.actor==='assistant').at(-1);
               if(target && (!currentReaction || currentReaction.transportId===reactionBefore || currentReaction.transportId===result.transportId)) {
                 const actor = outbox.origin === 'owner_manual' ? 'owner' : 'assistant';
@@ -699,7 +864,7 @@ export class Workflow {
         const c = this.conversation(id);
         if (c.control === 'assistant_allowed') this.resolveHandovers(c.id);
         else {
-          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && (m.text.trim() || m.media?.kind === 'image' || m.media?.kind === 'audio')).sort((a,b) => b.occurredAt-a.occurredAt)[0];
+          const ownerReply = this.store.messages(this.accountId,c.id).filter(m => m.direction === 'outbound' && m.authorship === 'owner_written' && m.source === 'live' && automaticTrigger(m) && (m.text.trim() || m.media?.kind === 'image' || m.media?.kind === 'audio')).sort((a,b) => b.occurredAt-a.occurredAt)[0];
           if (ownerReply) this.resolveHandovers(c.id,ownerReply.occurredAt);
         }
       }

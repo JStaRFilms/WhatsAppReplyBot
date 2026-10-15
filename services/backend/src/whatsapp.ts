@@ -45,13 +45,20 @@ export class WhatsAppAdapter {
     try { await this.starting; } finally { this.starting = undefined; }
   }
   private async connect(generation: number): Promise<void> {
-    if (this.requireOwnerLock) {
-      try { z.object({ owner: z.string().min(1) }).parse(JSON.parse(readFileSync(join(this.authDir, 'owner-identity.json'), 'utf8'))); }
+    const ownerPath = join(this.authDir, 'owner-identity.json');
+    let owner: string | undefined;
+    if (this.requireOwnerLock || existsSync(ownerPath)) {
+      try { owner = z.object({ owner: z.string().min(1) }).parse(JSON.parse(readFileSync(ownerPath, 'utf8'))).owner; }
       catch { throw new DomainError('owner_identity_required', 409); }
     }
     mkdirSync(this.authDir, { recursive: true, mode: 0o700 });
     const { state, saveCreds } = await this.loadAuth(this.authDir);
     if (this.stopped || this.sealed || generation !== this.generation) return;
+    if (owner && state.creds.me && jidNormalizedUser(state.creds.me.id) !== owner) {
+      this.stopped = true;
+      this.fail('Saved WhatsApp login belongs to a different number. In Settings, use Repair this number for the original number, or Use another number for a separate profile.');
+      return;
+    }
     this.status = { ...this.status, state: 'connecting', qr: null, error: null };
     const socket = this.makeSocket({ auth: state, logger: pino({ level: 'silent' }),
       browser: ['Otherme','Chrome','1.0'], markOnlineOnConnect: false, syncFullHistory: false,
@@ -99,7 +106,7 @@ export class WhatsAppAdapter {
         this.socket = undefined; this.verifiedSocket = undefined; this.status = { ...this.status, state: 'disconnected', qr: null };
         const parsed = z.object({ output: z.object({ statusCode: z.number() }) }).safeParse(update.lastDisconnect?.error);
         if (parsed.success && parsed.data.output.statusCode === DisconnectReason.loggedOut) {
-          this.stopped = true; this.fail('WhatsApp logged out. The saved session needs re-pairing.');
+          this.stopped = true; this.fail('WhatsApp logged out. In Settings, use Repair this number to re-link it, or Use another number for a separate profile.');
         } else if (!this.stopped) this.reconnect = setTimeout(() => { void this.start().catch(() => this.fail('WhatsApp reconnection failed. Use Connect WhatsApp again.')); }, 3000);
       }
     });

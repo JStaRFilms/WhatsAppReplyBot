@@ -71,12 +71,16 @@ async function showPairing() {
     });
     if (!current()) return;
     if (!response.ok) throw new Error('Pairing request failed. Check phone Settings.');
-    console.info('Waiting for pairing QR. Keep it private. Scan with original WhatsApp > Linked devices.');
+    console.info('Waiting for pairing QR. Keep it private. In WhatsApp, select the number for this profile, then Linked devices.');
     for (let i = 0; i < 30 && current(); i++) {
       const state = await fetch('http://127.0.0.1:3210/v1/whatsapp', { headers, signal: AbortSignal.timeout(2500), redirect: 'error' });
       if (!state.ok) throw new Error('Pairing status unavailable.');
       const status = await state.json();
       if(!current())return;
+      if (status.state === 'error') {
+        console.info(typeof status.error === 'string' ? status.error : 'WhatsApp pairing failed. Check Settings for details.');
+        return;
+      }
       if (status.state === 'connected') { console.info('WhatsApp connected.'); return; }
       if (typeof status.qr === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(status.qr) && status.qr.length < 100000) {
         mkdirSync(runtime, { recursive: true });
@@ -122,7 +126,7 @@ try {
   }
   console.info('Use your Wi-Fi adapter address. DHCP may change it. Phone token stays in .runtime/owner-token.txt.');
   console.info('Phone setup: open .runtime/owner-token.txt on this PC and enter its private token in phone Settings, then Connect.');
-  console.info('For first WhatsApp pairing, type P and press Enter to show the QR on this PC. Scan with original WhatsApp > Linked devices.');
+  console.info('For first WhatsApp pairing, type P and press Enter to show the QR on this PC. In WhatsApp, select the number for this profile, then Linked devices.');
   console.info(service.owned ? 'Type Q and press Enter to stop Otherme safely. Keep this window open while using the app.' : 'Type Q and press Enter to close this status window. Stop the backend from its original window.');
   input = createInterface({ input: process.stdin, output: process.stdout });
   let status = service.identity.whatsapp;

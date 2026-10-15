@@ -73,6 +73,25 @@ test('newly started service must match the launch nonce before claiming ownershi
     }}));
   }finally{if(child?.connected)await stopOwned(child);}
 });
+test('pairing errors print the safe backend reason immediately without suggesting another P retry', async () => {
+  const source = readFileSync(new URL('../start-otherme.mjs', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('async function showPairing()'), source.indexOf('async function stop()'));
+  const logs = []; let reads = 0, waits = 0;
+  const reason = 'Saved WhatsApp login belongs to a different number. Use another number in Settings.';
+  const context = { pairing: false, stopping: false, restarting: undefined, rootId: identity.rootId,
+    serviceIdentity: identity, readToken: () => token, inspectService: async () => identity,
+    fetch: async url => url.endsWith('/connect') ? { ok: true } : { ok: true, json: async () => {
+      reads++; return { state: 'error', error: reason, qr: null };
+    } }, randomUUID: () => 'synthetic', AbortSignal, console: { info: message => logs.push(message) },
+    setTimeout: callback => { waits++; callback(); },
+    mkdirSync: () => assert.fail('must not create QR'), writeFileSync: () => assert.fail('must not write QR'),
+    spawn: () => assert.fail('must not open QR') };
+  await vm.runInNewContext(code+'\nshowPairing();', context);
+  assert.equal(reads, 1); assert.equal(waits, 0);
+  assert.ok(logs.some(message => message.includes(reason)));
+  assert.ok(logs.every(message => !message.includes('P to retry')));
+});
+
 test('pairing QR arriving after launcher exit is never written or opened',async()=>{
   const source=readFileSync(new URL('../start-otherme.mjs',import.meta.url),'utf8');
   const code=source.slice(source.indexOf('async function showPairing()'),source.indexOf('async function stop()'));

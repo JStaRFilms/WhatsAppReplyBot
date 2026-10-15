@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setImmediate as flush } from 'node:timers/promises';
@@ -19,13 +19,15 @@ function fixture(requireLock = true) {
 test('same-owner repair verifies before ingestion; wrong owner and a removed lock never ingest', async () => {
   for (const scenario of ['same', 'different', 'missing'] as const) {
     const f = fixture(); const ev = new EventEmitter(); let ended = 0;
-    const state = { creds: { me: { id: scenario === 'different' ? '999:1@s.whatsapp.net' : '456:1@s.whatsapp.net' } }, keys: {} };
+    const creds: { me?: { id: string } } = {};
+    const state = { creds, keys: {} };
     Object.defineProperties(f.adapter, {
       loadAuth: { value: async () => ({ state, saveCreds: async () => {} }) },
       makeSocket: { value: () => ({ ev, end: () => { ended++; } }) },
     });
     try {
       await f.adapter.start(); if (scenario === 'missing') unlinkSync(join(f.auth, 'owner-identity.json'));
+      state.creds.me = { id: scenario === 'different' ? '999:1@s.whatsapp.net' : '456:1@s.whatsapp.net' };
       ev.emit('connection.update', { connection: 'open' });
       ev.emit('contacts.upsert', [{ id: '123@s.whatsapp.net', name: 'Synthetic' }]);
       ev.emit('messages.upsert', { type: 'notify', messages: [{ key: { remoteJid: '123@s.whatsapp.net', id: 'same-id', fromMe: false }, messageTimestamp: Math.floor(Date.now()/1000), message: { conversation: 'Synthetic only' } }] });
@@ -33,6 +35,33 @@ test('same-owner repair verifies before ingestion; wrong owner and a removed loc
       assert.equal(f.store.conversations('a').length, scenario === 'same' ? 1 : 0);
       assert.equal(f.store.messages('a', '123@s.whatsapp.net').length, scenario === 'same' ? 1 : 0);
       if (scenario !== 'same') { assert.equal(f.adapter.snapshot().state, 'error'); assert.equal(ended, 1); }
+    } finally { await f.adapter.stop(); f.dispose(); }
+  }
+});
+
+test('saved mismatched owner never opens a socket or rewrites auth; registered false alone does not reject the right owner', async () => {
+  for (const sameOwner of [false, true]) {
+    const f = fixture(); const ev = new EventEmitter(); let sockets = 0;
+    const state = { creds: { registered: false, me: { id: sameOwner ? '456:1@s.whatsapp.net' : '999:1@s.whatsapp.net' } }, keys: {} };
+    const path = join(f.auth, 'creds.json'); const saved = JSON.stringify(state.creds);
+    writeFileSync(path, saved); const lock = readFileSync(join(f.auth, 'owner-identity.json'));
+    Object.defineProperties(f.adapter, {
+      loadAuth: { value: async () => ({ state, saveCreds: async () => assert.fail('must not rewrite auth') }) },
+      makeSocket: { value: () => { sockets++; return { ev, end: () => {} }; } },
+    });
+    try {
+      await f.adapter.start();
+      assert.equal(sockets, sameOwner ? 1 : 0);
+      if (sameOwner) {
+        ev.emit('connection.update', { connection: 'open' });
+        assert.equal(f.adapter.snapshot().state, 'connected');
+      } else {
+        assert.equal(f.adapter.snapshot().state, 'error');
+        assert.match(f.adapter.snapshot().error ?? '', /different number.*Use another number/);
+      }
+      assert.equal(readFileSync(path, 'utf8'), saved);
+      assert.deepEqual(readFileSync(join(f.auth, 'owner-identity.json')), lock);
+      assert.deepEqual(f.store.conversations('a'), []);
     } finally { await f.adapter.stop(); f.dispose(); }
   }
 });

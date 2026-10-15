@@ -92,9 +92,39 @@ count were retained, and AI was paused. Proof is in ignored
 `.runtime/original-pairing-repair-proof.json`. A successful login was not claimed
 before the owner scanned the QR.
 
-No live profile switch, test send or private model diagnostic was performed.
-Real QR scans, native hardware and background behavior remain owner checks.
-Designer and contact-memory documentation were left untouched.
+At release verification, no live profile switch, test send or private model
+diagnostic had been performed. The later owner-approved recovery below verifies
+profile creation and a QR, not a completed WhatsApp login. Real QR scans, native
+hardware and background behavior remain owner checks. Designer and contact-memory
+documentation were left untouched.
+
+## Pairing recovery, 15 October 2026
+
+The live original profile had a saved login for a different owner than its
+preserved owner lock. Baileys used that saved identity to attempt login instead
+of generating a fresh QR. Repeated P did not switch profiles or reset credentials.
+The launcher also hid the error and misleadingly suggested another retry.
+
+The adapter now rejects a mismatched saved identity before opening a socket.
+Post-handshake owner verification still protects fresh scans. Authentication and
+owner-lock files are not deleted or rewritten by this guard. A matching saved
+identity is not rejected merely because Baileys has `registered: false`.
+P now prints the safe backend error immediately instead of waiting thirty polls.
+
+The owner explicitly selected a different number. One confirmed create request
+made the separate Second account profile through the verified launcher protocol.
+Its controlled source exit and replacement completed. Original owner-lock bytes,
+credential bytes and chat/message row counts were unchanged. AI remains off.
+A single fresh pairing request produced a QR without error. The QR was not logged
+or sent in chat, and the agent did not scan it, send messages or enable AI.
+Private evidence is in `.runtime/second-profile-recovery-proof.json`.
+
+Both new regressions failed before the fix and passed afterward. All 58 backend
+and 16 launcher tests, backend typechecking and diff checks passed. This is a
+backend/launcher fix, so APK 0.1.1 remains compatible. The prior intermittent
+startup/shutdown timeout was not reproduced or claimed fixed. This recovery's
+verified controlled restart succeeded; do not delete a lock after an unverified
+exit.
 
 ## Owner update steps
 

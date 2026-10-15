@@ -39,20 +39,32 @@ notes block dispatch. Existing serialized rows remain valid.
 The existing authenticated media endpoint returns `audio/mpeg`. Safe WhatsApp
 URL validation, ciphertext authentication and deadlines still apply. FFmpeg
 rejects unsupported input, notes over five minutes and input over 10MB. It does
-not silently truncate a long note. Transient playback/transcript caches hold at
+not silently truncate a long note. The transient normalized-byte cache holds at
 most ten notes for five minutes, with two concurrent preparation/transcription
-jobs. Deletion, view-once and expiry invalidate access and cached content.
+jobs. Transcript text now has separate bounded source-linked SQLite reuse and
+paid-attempt protection, not the byte TTL. Deletion, view-once, expiry and
+applicable privacy/consent changes invalidate access and retained text.
 
 ## Transcription
 
-The owner requested [durable source-linked transcripts and an ASR comparison](Conversation_Context_and_Writing_Profile.md#durable-audio-transcripts)
-as follow-up work. Current transcripts remain temporary as described here.
-Gemini's working integration is not evidence it is cheaper or faster than
-Whisper; no replacement or paid benchmark is authorized by that documentation.
+The owner's later cost request explicitly approved economical ASR and bounded
+source-linked reuse. Full [conversation/transcript sessions and writing profiles](Conversation_Context_and_Writing_Profile.md#durable-audio-transcripts)
+remain separate follow-up work. No new paid benchmark is authorized or performed.
 
-Gemini 3.8 Flash transcribes through the backend-only OpenRouter key. Set
-`OPENROUTER_AUDIO_MODEL` to override the default `google/gemini-3.8-flash`.
-Otherme attribution remains. GPT-6 Luna still drafts text and reactions.
+Whisper Large V3 Turbo now uses the backend-only existing OpenRouter key and
+`/api/v1/audio/transcriptions`. Exact model is `openai/whisper-large-v3-turbo`.
+Missing/default and the previous exact Gemini setting map to Turbo without
+editing real.env; unsupported overrides fail before export. No expensive fallback
+or automatic paid retry. Otherme attribution and Luna text/reaction replies remain.
+See [cost decision](ASR_Cost_Review.md) and [accepted46 handoff](Economical_ASR_Handoff.md).
+
+Completed eligible text reuses before byte download or export, across byte expiry,
+eviction and service/DB restart. Durable reserved/complete/unknown/suppressed
+attempt state prevents automatic resubmission after uncertain paid outcomes.
+Text retention is1,000 entries/4MiB UTF-8 per profile DB;10,000 markers/account
+fails closed. Eviction/revocation removes text without converting old work into
+a new paid cache miss. This is not a complete historic billing ledger or a
+broker exactly-once guarantee.
 
 The generator selects at most two recent eligible incoming notes. It rechecks
 contact permission, consent and workflow before export and reply generation.
@@ -63,7 +75,12 @@ combined text context stays within its 8000-byte budget.
 
 ## Verification and remaining limits
 
-85 tests, workspace typecheck, Android/web exports and diff checks passed.
+Current46 parent acceptance passed363 workspace tests and all types, using fake
+ASR responses/source/storage. Language/accuracy/savings and current provider access
+are not proven by those checks. Source acceptance is not final combined release.
+
+The following evidence is historical from the original Gemini voice implementation,
+not a new paid Whisper test:85 tests, types, Android/web exports and diff checks passed.
 The isolated HTTP LAN flow covered local selection/play/pause/delete, composer
 holds, zero pre-Send uploads, simulated sends and authenticated playback. A paid
 request using 5.44 seconds of generated speech passed through the actual client

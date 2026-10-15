@@ -22,6 +22,7 @@ Existing mobile files:
 - `apps/mobile/lib/api.ts`, `app-state.tsx`, `history-cache.ts`, `conversation-scroll.ts`.
 - `apps/mobile/app/conversation/[id].tsx`, `components/media-attachment.tsx`, `message-bubble.tsx`, `chat-list.tsx`, `chat-row.tsx`, `draft-card.tsx`.
 - `apps/mobile/app/(tabs)/review.tsx` and `assistant.tsx` only for original-source View/group-aware read navigation, not new assistant features.
+- `apps/mobile/app/(tabs)/settings.tsx` only to change the existing Gemini consent-copy sentence to Whisper Large V3 Turbo. No new settings/cost UI.
 - `apps/mobile/lib/audio-lane.ts`, `components/voice-composer.tsx` only for synchronous recorder/viewer exclusion using current lifecycle guards. `media-lease.ts` may change only if needed to preserve existing submitted-upload ownership, not merge caches.
 - Focused existing mobile tests; optional new `test/history-paging.test.cjs`, `test/media-cache.test.cjs`, `test/media-viewer.test.cjs`.
 
@@ -35,8 +36,10 @@ No package/app config/lock/version/native/script/core/backend/docs/status change
 
 41 accepted source32fe269 and actual contract handoff is
  docs/features/History_and_Media_Backend_Handoff.md. Parent342 workspace tests and
-all types passed, including known-arrival duplicate/unread regression.46 now runs
-on that source, so await its final handoff too.41 is not an active writer anymore.
+all types passed, including known-arrival duplicate/unread regression.46 is also
+accepted; docs/features/Economical_ASR_Handoff.md is its actual constructor/store/
+source/default handoff. Parent363 workspace tests/all types pass on integrated
+backend. No backend writer remains. Read these handoffs, not stale constructors.
 
 ## Required history behavior
 

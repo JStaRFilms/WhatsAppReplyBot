@@ -1,4 +1,28 @@
-# WhatsAppReplyBot execution summary
+# Otherme execution summary
+
+## Current release handoff
+
+The approved release round is complete. Otherme0.1.3/code4 signed APK is at
+`.runtime/releases/Otherme-0.1.3.apk`,76080237 bytes, SHA256
+41d8ab4b746e181dc378c6b3e5f1c487776c153aa236429da780c88b74645e9b.
+Production desktop assets are at apps/mobile/dist,28 files/5226702 bytes. Same
+approved package/certificate, actual Contacts/PiP/service/resize/private-data checks
+passed. Prior release APKs remain byte-identical. No live rollout or phone install.
+
+The one combined review's two confirmed findings were fixed and parent verified.
+Application freeze645f569, verifier-only namespace/CRLF correction2c8d658. All465
+source/packaging tests and types pass;108 independent full synthetic browser checks
+pass. The initial worker's verifier-blocked handoff is preserved, with final parent
+resolution and exact hashes in .runtime/releases/build-0.1.3/final-artifact-report.json.
+
+Read docs/features/Release_0.1.3_Handoff.md for verified Q shutdown, normal PC backend
+restart and install-over-existing instructions. PC update is required for Whisper
+and new APIs; do not uninstall, clear data, delete locks or re-link. Hardware
+mic/keyboard/contacts/codec/receipts/profile/Windows acceptance remains owner-owned.
+Deferred insights and full Batch2 remain future scope. All current task packets are
+completed; no source/build agent or watcher remains.
+
+## Historical foundation record
 
 Session `orch-20261014-015412` is in Build. Genesis is complete and the user
 accepted V2 UI design for offline implementation. Work stayed inside the

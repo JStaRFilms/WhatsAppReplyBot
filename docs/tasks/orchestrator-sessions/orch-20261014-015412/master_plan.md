@@ -131,6 +131,17 @@ but only one writer owns a file at a time.
 
 ## Notes
 
+Owner explicitly directs continuation through the entire approved round, not a
+stop after46 voice transcription. Advance46 acceptance ->42 cached-first chats/
+drafts/photos ->43 approved foreground video ->44 integrated browser ->38 combined
+source review -> parent source/version/verifier freeze ->33 browser/same-key APK
+artifacts and final handoff. Fix confirmed scoped blockers and keep work single-
+writer. Do not ask routine technical/dependency approvals or wait for a fresh
+'continue' after each result. Use T3 completion notifications, not polling/watchers.
+No contact-insights/full Batch2 expansion, live account/data/service operations or
+phone actions are authorized by this sequencing directive. Final handoff includes
+owner-only device checks; synthetic/build success is not hardware acceptance.
+
 Use T3-owned delegation with the explicitly selected Takomi provider.
 Architect route is openai-codex/gpt-6.1-sol with medium thinking. Coding route is
 Sol high for safety-sensitive state and delivery work; bounded normalizations

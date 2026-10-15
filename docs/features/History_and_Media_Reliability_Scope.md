@@ -73,8 +73,11 @@ Installed Expo57 nominates expo-video ~57.0.5; it is not installed. Existing
 expo-image/file-system/Reanimated are available; gesture-handler is not a direct
 mobile dependency. Architecture must verify actual public APIs and exact video
 version/permissions before proposing an install. Prior authorization covered Expo
-Contacts only. Any necessary Expo Video install requires separate exact-target
-approval, no toolchain upgrade or silent second dependency.
+Contacts only. Owner has now separately approved exact expo-video57.0.5 and canonical mobile
+package/root lock plus disabled-background/PiP app/plugin config.43 installs only
+after accepted42, with normal native dependency refresh in existing approved
+C:/Otherme-build after source freeze. No install occurred at approval, no SDK/
+toolchain upgrade, gallery permission or silent second npm module is authorized.
 
 ## Later cached-first opening requirement
 

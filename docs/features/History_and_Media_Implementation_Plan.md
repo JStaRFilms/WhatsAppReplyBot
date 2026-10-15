@@ -183,7 +183,11 @@ The module's config plugin supports `{supportsBackgroundPlayback:false,supportsP
 
 Library Android manifest adds INTERNET, already used by Otherme, no camera/mic/gallery permission. Default plugin path adds no foreground service. Enabling background playback would add FOREGROUND_SERVICE and FOREGROUND_SERVICE_MEDIA_PLAYBACK plus ExpoVideoPlaybackService, which this task forbids. Android Gradle brings Media3 1.9.0 playback/session/DASH/HLS/UI/OkHttp and AndroidX Fragment1.8.9 through the normal native module. Those capabilities are not authorization to use streaming. Apple pod minimum is iOS/tvOS16.4, Swift5.9, ExpoModulesCore; no Apple build/toolchain work is included. Local authenticated playback needs no new runtime user permission or media-library read access. Real codec playback/audio interruption and merged manifest still need later native evidence.
 
-Parent must confirm approval for only `expo-video@57.0.5` in canonical `apps/mobile/package.json`, root `pnpm-lock.yaml`, explicit disabled-background/PiP entries in `apps/mobile/app.json`, and narrow existing plugin changes. Proposed command after approval only is `pnpm --filter @replybot/mobile add --save-exact expo-video@57.0.5 --ignore-scripts`. Contacts approval does not cover it. No SDK upgrade, second npm module, native bridge, toolchain install or version/signing change. If blocked,41/42 can finish; ordinary video UI must say unavailable until43, and the full requested combined release is not accepted.
+Owner explicitly approved `expo-video@57.0.5` via the Video module question.
+Installation remains43-only after accepted42, not an immediate planning side effect.
+Approval includes normal native module dependency refresh in existing approved
+C:/Otherme-build after source freeze, with no SDK/toolchain upgrade or gallery
+permission. No package has been installed yet. Approved targets are canonical `apps/mobile/package.json`, root `pnpm-lock.yaml`, explicit disabled-background/PiP entries in `apps/mobile/app.json`, and narrow existing plugin changes. Proposed command after approval only is `pnpm --filter @replybot/mobile add --save-exact expo-video@57.0.5 --ignore-scripts`. Contacts approval does not cover it. No SDK upgrade, second npm module, native bridge, toolchain install or version/signing change. If blocked,41/42 can finish; ordinary video UI must say unavailable until43, and the full requested combined release is not accepted.
 
 Public evidence URLs checked by40:
 

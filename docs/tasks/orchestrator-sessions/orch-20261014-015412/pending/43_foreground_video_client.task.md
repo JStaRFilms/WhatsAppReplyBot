@@ -10,7 +10,16 @@ Read docs/Coding_Guidelines.md, Project_Requirements, History_and_Media_Reliabil
 
 Display and explicitly play one eligible ordinary video in Otherme's existing full-screen modal from one bounded authenticated local download/cache hit. No video sending, AI analysis, background/PiP, streaming/range/resume or export/share.
 
-41 and42 must be integrated/accepted,39's old export finished, and no other mobile writer active. Parent must separately obtain/record approval for exact expo-video57.0.5 and targets below. Prior Contacts consent is insufficient. This packet does not authorize an installation by itself. If approval is absent or a launch/install is blocked, stop and report; do not retry or choose another version/module.41/42 remain separable but the full requested release is still held.
+41 and42 must be integrated/accepted,39's old export finished, and no other mobile writer active. Owner has explicitly approved exact expo-video57.0.5 through the Video module
+question. Approval covers canonical apps/mobile/package.json, root pnpm-lock.yaml,
+existing app/plugin configuration to disable background/PiP, and normal module
+native dependency refresh in approved C:/Otherme-build only after source freeze.
+No SDK/toolchain upgrade, gallery permission or additional npm module is approved. This packet does not authorize an installation by itself. If approval is absent or a launch/install is blocked, stop and report; do not retry or choose another version/module.41/42 remain separable but the full requested release is still held.
+
+Installation is authorized only when this43 task launches after accepted42 and
+no mobile writer is active. No installation occurred at approval time. Preserve
+the existing build copy/caches; this is not authority to recreate it or run
+prepare-copy. Parent records installed-version/lock/config evidence before release.
 
 ## Exclusive ownership
 

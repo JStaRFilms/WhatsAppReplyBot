@@ -46,4 +46,6 @@ one desktop/APK release. Do not claim success from mocks as hardware proof.
 
 ## Execution
 
-Not launched yet.
+Running as a T3-owned task with Takomi Sol High.
+Task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-mic-keyboard-batch1-20261015-r1`.
+Parent owns acceptance and source-scoped commits; no live actions are authorized.

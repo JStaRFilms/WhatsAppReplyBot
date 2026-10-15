@@ -19,7 +19,10 @@ PC authentication/reachability, accepted profile binding, WhatsApp pairing and A
 consent are separate states. Successful service authentication must not show simply
 Offline while waiting for Continue or WhatsApp Link. Connect to PC shows pending,
 Connected to PC or actionable reconnect/auth failure. Saved token entry is one-time;
-never reveal it or ask for provider keys on the phone. Clear obsolete transient
+never reveal it or ask for provider keys on the phone. Reconnect to the same saved
+service must reuse its credential when the input is blank, not call native local
+provisioning or force re-entry. Never send a saved token to a newly entered host;
+new-host credentials and confirmation are separate. Clear obsolete transient
 read errors after a successful refresh, not uncertain-send or domain failures.
 
 ## Keyboard and microphone

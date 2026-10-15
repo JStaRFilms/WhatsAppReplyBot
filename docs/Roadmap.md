@@ -65,6 +65,15 @@ owner's supplied template in full. This is planning, not implemented behavior
 or authorization for paid/private-data tests. Coordinate with account-switching
 and UI work rather than overwriting it.
 
+## Deferred contact insights
+
+Owner proposed a per-contact page from the avatar/chat-header name, with recorded
+message/authorship counts, human interventions, activity and model spend. First
+[audit available versus missing data](features/Contact_Insights_and_Activity_Log.md),
+agree on what Intercepted means and verify provider-reported usage/cost. Then run
+a UI/UX design pass. Do not invent missing history or costs, collect private logs
+now or add this to the current release gate. This is separate from account profiles.
+
 ## Later, not daily-use blockers
 
 Longer-term contact facts/style memory beyond recent transcript examples,

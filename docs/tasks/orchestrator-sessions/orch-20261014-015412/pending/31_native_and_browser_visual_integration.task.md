@@ -58,4 +58,24 @@ regressions, not speculative refactors. Then freeze source for desktop/APK build
 
 ## Execution
 
-Pending. Do not launch until functional owners have handed off.
+Running after accepted28/30 source handoffs.
+T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-visual-integration-batch1-20261015-r1`.
+Provider takomi, model openai-codex/gpt-6.1-sol, thinking high, async implementation.
+Client request ID: otherme-visual-integration-batch1-20261015-r1. Lifecycle commit dd49d77
+and sync/profile commit9da586d are the functional baseline. Parent has
+validated87 mobile tests, mobile types and60 core tests. Final backend29 source
+is still owned by its active coder. Its public DTOs are now committed with30,
+and its known session contract is `GET /v1/session?capabilities=1`. New client
+consumption is already integrated, including404 and missing-metadata fallback.
+Do not change those contracts or compete with backend/scripts/core work.
+
+Parent found no physical reproduction of the mic issue. Keep its lifecycle tests
+and candidate permission-query fix intact, and leave device acceptance explicit.
+Do not touch app-state/api/voice-recorder logic for styling. If a confirmed
+functional blocker requires those changes, report it to parent before editing.
+
+Use only ignored project-local preview output for synthetic browser screenshots.
+A preview export is allowed; final production desktop export and APK release are
+reserved for33 after review. No Metro or server use on3210/8081/8083. No installs,
+private runtime, live profile/WhatsApp actions, phone input, paid model/image calls
+or source versions/signing changes. Commit/stage/push remain parent-only.

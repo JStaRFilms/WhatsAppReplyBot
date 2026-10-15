@@ -44,13 +44,19 @@ Show connecting, offline, draft, sending, accepted, failed, and unknown states o
 
 ## Current status and boundaries
 
-Core messaging, media handling, review, contact permissions, and voice-note recording/playback/transcription are implemented in development. The current interaction-fix pass is **in progress**, not complete: it includes the mic/Send/Stop composer behavior, reaction synchronization and emoji support, acknowledged Resume feedback, typing presence, and optional paced two-to-five-message replies. Do not represent those fixes as finished or assume the final interaction is proven on a real phone.
+Core messaging, media handling, review, contact permissions, and voice-note recording/playback/transcription are implemented in development. The interaction-fix pass is implemented in commit `4fe50d7`, including Mic/Send/Stop, reaction synchronization, acknowledged Resume feedback, outbound typing presence, and optional paced two-to-five-message replies. The feature note records synthetic verification. Native behavior and actual WhatsApp typing/reaction visibility still need owner-device evidence.
 
 An installable signed Android APK and click-to-start Windows launcher are **planned**, not shipped. The first Android APK has authorization for dedicated release signing in a separate build pass after the current bug fixes. Daily use must not depend on Expo Go or Metro. The Windows PC still needs to be awake and reachable on the same LAN. Longer-term memory of facts and writing style beyond the three most recent examples, schedules, calendar features, and commercial hosting are future work, not current UI promises.
 
+## Code-backed state handoff
+
+Read [Otherme UI states and flows](Otherme_UI_States.md) before implementing or interpreting the mockups. It traces the current code's local drafts, filter activity, avatar unread counts, source-anchored suggestions, authorship, control acknowledgment, media, and uncertain sends. These meanings take precedence over the simpler first composition boards. Apply the visual direction to the existing behavior; do not replace that behavior with the mockups.
+
+The DOOP composition row at y=1800 is an earlier visual study, not a complete state specification. The new code-backed flow row separates implemented behavior from proposed interactions. Unread filtering, Review filter/count controls, jump-to-latest, pinning, and a richer unknown-outcome UI remain proposals. No app code changes are part of this handoff.
+
 ## WhatsApp-led composition update
 
-This section responds to the owner's three WhatsApp Android screenshots. It is the current visual brief for the new DOOP studies. Keep the product, permission, privacy, and delivery rules above. Preserve the earlier accepted charcoal/blue direction. The new glass direction is a comparison, not an approved replacement. Do not edit application code as part of this handoff.
+This section responds to the owner's three WhatsApp Android screenshots. It defines proposed composition and styling, not proof of the current app's exact geometry. Keep the product, permission, privacy, and delivery rules above and the state companion. Preserve the earlier accepted charcoal/blue direction. Glass is a comparison, not an approved replacement.
 
 ### Reference reading
 
@@ -95,9 +101,9 @@ Use one safe-area owner per edge. Android gesture navigation, three-button navig
 
 Use 12 to 16 side padding. Set avatars to 48, avatar-to-text gap to 12, and reserve a 56 to 64-wide trailing lane. Contact names use 17 semibold; previews use 14 to 15 regular; timestamps use 12. Names and previews truncate independently. Keep unread counts distinct from assistant-work counts. Unread here means unread in Otherme and does not imply WhatsApp read-receipt synchronization.
 
-Filters are All, Unread, Drafts, and Needs me. They scroll horizontally rather than wrap into another row. Preserve the selected filter, list position, and search when returning from a conversation. Use one-line previews such as Your draft, AI draft, Photo, or Voice note with the applicable text. Do not add a permanent mode badge to every row. Surface exceptions and expose the mode on the contact screen.
+Current filters are All, Drafts, and Needs me. Unread filtering is a proposal, not implemented. Preserve filter activity dots separately from unread counts on avatars. Local text displays Your draft; otherwise show the latest message or media fallback, not the AI proposal text. Pending AI work can tint the preview. Keep the existing mode/control badge and its precedence. Draft can mean draft-only mode without a waiting suggestion. Drafts counts pending records plus local draft IDs, not distinct contacts. Horizontal scrolling and exact filter geometry are visual proposals.
 
-Keep Chats, Review, Assistant, and Settings. An active navigation item has an icon pill and visible label. A review badge counts actionable items, not unread chats. Avoid unrelated WhatsApp destinations such as Calls or Updates because they are outside current scope. No inert camera or new-contact button merely to resemble the reference.
+Keep Chats, Review, Assistant, and Settings. An active navigation item has an icon pill and visible label. A Review count badge was proposed in the first study; the current tab has no count badge. Do not depict it as existing behavior. Avoid unrelated WhatsApp destinations such as Calls or Updates because they are outside current scope. No inert camera or new-contact button merely to resemble the reference.
 
 ### Conversation
 
@@ -109,7 +115,7 @@ Quotes have an accent rail, author label, and up to three preview lines. They re
 
 Voice notes use a minimum 44 play target, honest duration, progress, and explicit playback state. Do not invent an audio waveform without audio-derived data in the real app. Photos keep their aspect ratio, can open into a viewer, and use meaningful unavailable/expired states. A pinned row occupies the reserved context lane only when an actual pin is supported; the study does not authorize implementing pinning.
 
-The history follows new messages only when the owner is already at the bottom. Otherwise show a 48 jump-to-latest target above the composer, preserve reading position, and show a new-message count. Loading earlier history must not jump the viewport. Keep draft proposals separate from chronological sent-message status.
+The history follows new messages only when the owner is already at the bottom. Otherwise preserve reading position. A 48 jump-to-latest target and new-message count are proposals absent from the current code. Loading earlier history must not jump the viewport. Keep draft proposals separate from chronological sent-message status.
 
 ### Composer, drafts, and takeover
 
@@ -117,13 +123,13 @@ Use a 48-minimum composer field and separate 48 circular primary action with an 
 
 Selected images and recordings get a local preview tray above the field, with delete and explicit Send. A quoted reply gets a compact source tray with dismiss. Distinguish recording, stopped local preview, uploading, sending, failed, and unknown. Preserve unsent text and local media when a request fails. Do not use a disabled-looking composer to represent a service connection failure if local writing remains possible.
 
-An AI proposal shows AI draft, exact editable text, and Send reply, Edit, and Dismiss. It has a dashed or otherwise distinct unsent outline. It never has receipt ticks or a sent timestamp. For reactions and two-to-five-message sequences, preview every action, its order, target, and reply-unit cost before approval. Approval affordances collapse to one primary action and an overflow only if all alternatives remain accessible.
+A pending AI proposal currently shows Suggested reply and Not sent, exact text, and Send reply, Edit, and Dismiss. Place the latest draft for each trigger immediately beneath that trigger message. Keep outdated cards beside their earlier turns. Save draft edits without sending; send requires a separate approval. It has a dashed or otherwise distinct unsent outline. It never has receipt ticks or a sent timestamp. For reactions and two-to-five-message sequences, preview every action, its order, target, and reply-unit cost before approval. Approval affordances collapse to one primary action and an overflow only if all alternatives remain accessible.
 
-On acknowledged takeover, show Paused while you reply or a countdown such as Paused 4:32. Use a slim 48-minimum strip with a 48 Resume target. During acknowledgment show Requesting pause or Resuming, not a success state. Failed acknowledgment stays explicit. Indefinite pause and unresolved Needs me require owner action. Never reply has no assistant-generation controls.
+Preserve the code's Your draft, Typing pause, Cooldown · N min, Paused, Needs you, Manual, and Auto allowance labels. Resume now is disabled during composing. Its busy state is Applying… and success follows the acknowledged Conversation. Seconds-based countdowns were a visual proposal. Use a slim 48-minimum strip with a 48 Resume target. During acknowledgment show Requesting pause or Resuming, not a success state. Failed acknowledgment stays explicit. Indefinite pause and unresolved Needs me require owner action. Never reply has no assistant-generation controls.
 
 ### Review, Assistant, and Settings
 
-Review uses the same app toolbar and tab bar, a compact Drafts/Needs me filter, and a scrolling list. Opening an item reveals its source messages and exact proposed action. Always name the contact. Show stale proposals as unavailable for sending, with a plain reason and a fresh-review path. A list selection or swipe must never send a proposal.
+Review contains local Your draft links plus pending, needs_owner, and stale server cards. It currently has no subfilter. Always name the contact. Local entries open the owner's composer, not an AI approval card. Outdated draft has Dismiss; Needs you has Handled, which does not resume automation. Review subfilters and regeneration/review-change actions are proposals. A list selection or swipe must never send a proposal.
 
 Assistant is an owner-only conversation with the same full-height history and composer grammar. It has no contact Auto-reply switch. Proposed sends and permission changes show exact recipients, content, and consequences before confirmation. Typing a command is not approval. An unknown send outcome cannot be repeated through another assistant confirmation.
 

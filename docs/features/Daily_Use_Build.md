@@ -23,11 +23,13 @@ package/public-API verification and confirmed install target. No module was
 installed during planning. No other dependency/SDK/toolchain change is authorized.
 Canonical apps/mobile package/config plus canonical lockfile are source authority.
 
-C:/Otherme-build below is the historically approved short physical copy, not
-permission to inspect/delete/overwrite it now. prepare-android-copy requires a
-nonexistent destination. Parent must confirm that exact approved target is
-nonexistent or obtain a new exact target before release copy/dependency writes.
-Canonical installation and fresh copy installation are separate confirmed targets.
+C:/Otherme-build remains the owner's sole approved short physical build copy.
+Preserve its caches and path/codegen fixes. It is not an implementation target.
+Before33, parent verifies the exact directory and credential-free allowlist, then
+confirms only an input/dependency refresh after source freeze. Do not delete or
+recreate it, rerun prepare-android-copy into an existing destination, clear caches
+or choose another path. That script refuses overwrite; it does not revoke the
+owner's existing target authorization.
 No delegated planner/implementation writer may write outside project, touch actual
 signing/credentials or perform final builds. Final merged native manifest must
 verify contact read permission only if used, no WRITE_CONTACTS, with all existing

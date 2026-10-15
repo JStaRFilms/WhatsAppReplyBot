@@ -117,7 +117,8 @@ partial contact updates. Explicit Android foreground sync reads minimal name/pho
 fields, matches exact international numbers locally and sends only matched existing
 chat/name pairs to PC. No inbox creation, book upload or automatic background read.
 Off deletes saved-book/phone aliases and recomputes fallback; Android permission
-remains separate. Chunked bounded phone imports commit as one replacement.
+remains separate. One bounded matched-name request commits an atomic replacement;
+no chunk/staging protocol. Its exact request ID supports read-only reconciliation.
 
 The simple owner field is About me and reply instructions,2,000 code points and
 4,000 UTF-8 bytes, explicit versioned save per profile. No automatic extraction or
@@ -134,9 +135,10 @@ preserving all history and dispatching/unknown reservations. No automatic redraf
 Installed Expo57.0.28 nominates expo-contacts ~57.0.7 in its local compatibility
 manifest. Proposed exact pin57.0.7 still needs package/public-API verification and
 parent confirmation of canonical install target before installation. The historical
-short copy C:/Otherme-build must not be overwritten; release33 needs a confirmed
-approved nonexistent copy target. No install, outside-root write or final build
-occurred in task34.
+short copy C:/Otherme-build remains the sole approved release target, with caches
+and path fixes preserved. Parent must verify it before a credential-free allowlist
+refresh in33; never delete/recreate it or run prepare-copy into it again. No install,
+outside-root write or final build occurred in task34.
 
 Pending36 owns all backend/core shared contracts/store/WhatsApp/context work.
 Pending37 follows36 and owns the client/controller/conversation/Settings/native

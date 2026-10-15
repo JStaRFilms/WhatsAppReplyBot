@@ -68,15 +68,17 @@ transition admission/drain, body limits and no-store/privacy rules.
 - GET/POST `/v1/owner-instructions` uses `{text,revision}`; POST strict input is
   `{requestId,expectedRevision,text}`. Empty clears; max2,000 code points/4,000
   UTF-8 bytes, no silent truncation. Conflict409 owner_instructions_changed.
-- GET/POST `/v1/contact-names` uses `{enabled,revision,lastPhoneSyncAt}`; POST is
+- GET/POST `/v1/contact-names` uses
+  `{enabled,revision,lastPhoneSyncAt,lastPhoneImportRequestId}`; POST is
   `{requestId,expectedRevision,enabled}`. Default off, conflict contact_names_changed.
-- POST `/v1/contact-names/import` is a bounded explicit matched-name import with
-  `{requestId,importId,expectedRevision,chunkIndex,final,entries}`. Each entry is
-  `{conversationId,name}`. Max20/chunk,500/import, five-minute memory staging, one
-  active import/profile, final atomic replacement. Name max120 code points/512
-  UTF-8 bytes. Return `{importId,nextChunkIndex,committed,settings}`, no names in
-  ack cache/logs. Revision/off/scope changes reject stale work. No actual book reads
-  or import during development. Plan contains exact replay/expiry/failure semantics.
+- POST `/v1/contact-names/import` takes `{requestId,expectedRevision,entries}`.
+  Each entry is `{conversationId,name}`. One atomic replacement, max500 matches,
+  ID max128 characters, name max120 code points/512 UTF-8 bytes. Only this scoped
+  route allows512KiB; all other owner body limits stay unchanged. Return `{settings}`
+  with lastPhoneImportRequestId for exact read-only lost-response reconciliation.
+  No chunks/staging/TTL, names in ack cache/logs or automatic mutation retry.
+  Revision/off/scope conflict rejects the whole input, retaining prior rows.
+  No real book reads/imports during development.
 
 Optional ownerInstructions/contactBookNames capability flags appear only on
 `GET /v1/session?capabilities=1`. Preserve plain protocol2 discovery exactly.

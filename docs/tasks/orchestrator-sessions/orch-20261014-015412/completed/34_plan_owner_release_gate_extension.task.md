@@ -68,9 +68,24 @@ as an unproven ingestion issue, not permission to run live diagnostics or repair
 
 ## Execution
 
-Running docs-only with Takomi openai-codex/gpt-6.1-sol, thinking medium.
+Completed docs-only with Takomi openai-codex/gpt-6.1-sol, thinking medium.
 T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-release-extension-plan-20261015-r1`.
 Client request ID: otherme-release-extension-plan-20261015-r1.
 Scope and contact/AI choices are recorded. Parent owns source, master plan, board,
 task status and commits. Architect authors the bounded implementation plan and
 new36+ packets only.35 remains the separate pending ingestion investigation.
+
+## Parent acceptance
+
+Authored plan/contracts and36/37/38 packets are committed as c33e479. Parent made
+one simplification pass: replace chunk/staging imports with one scoped bounded
+atomic POST, preserve exact request-ID reconciliation, and retain the already
+approved C:/Otherme-build target/caches rather than require a nonexistent copy.
+These corrections precede code launch and are authoritative in the updated plan.
+
+The installed Expo SDK nominates ~57.0.7; public registry metadata confirms exact
+expo-contacts57.0.7 exists with MIT license and the expected Expo/React/RN peers.
+No package was installed. Native public API/permission verification and confirmed
+canonical install target remain gates before37 installs.36 has no dependency need.
+Markdown whitespace checks pass. No product checks are claimed for docs-only work.
+Implementation order is36 backend/core,37 client,38 integrated review,33 release.

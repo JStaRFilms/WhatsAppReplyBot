@@ -2,7 +2,10 @@
 
 ## Status and authority
 
-Planning only, awaiting the owner's approval of this sequence before implementation.
+Owner approved Batch 1 implementation, including the additions captured in
+[the implementation contract](Daily_Use_Batch_1_Contract.md): foreground resync,
+truthful PC connection state, keyboard persistence and a browser desktop entry.
+Batch 2 remains the following separately scoped continuity work.
 Baseline is commit `399cc99`, Android 0.1.2/code3. The owner confirmed installation
 succeeded after resending the same APK. Recording still fails with the new local
 cancellation message after microphone permission was granted. That is an open
@@ -164,8 +167,9 @@ mockup-to-code replacement.
 Apply compact whole-screen composition to Chats, Conversation, Review, Assistant
 and Settings. Keep actual safe areas, keyboard behavior, adequate tap targets,
 readable long text and font scaling. Headers/composer remain outside history. Check 320/360/390-width phones and font
-scaling. The wide two-pane study is a reference, not an extra desktop-client
-implementation scope in this Android-first batch.
+scaling. The owner additionally requested the desktop browser view, so the approved
+wide composition is now in scope, reusing the same scoped client/state and exposed
+through the PC launcher without Metro.
 Replace noisy persistent success strips with compact connection/control status,
 while keeping actionable failures and pending acknowledgments visible.
 

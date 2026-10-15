@@ -82,6 +82,12 @@ account access, provider requests, real sends and deployment remain gated.
 | 25 | Signed profile update0.1.1/code2 | worker | vibe-build | 24 | completed, actualAPKverified withsamecert, originalliveaccountunswitched |
 | 26 | Keyboard, smart chat scrolling and microphone retry | coder / reviewer / worker | vibe-build | owner usability reports | Completed, 190 tests/types and web export pass; actual signed 0.1.2/code3 independently verified, owner hardware checks remain |
 | 27 | Reconcile design/context references and plan the next batch | architect / designer | vibe-genesis | owner requested plan only | Completed plan with both source investigations; implementation awaits owner approval |
+| 28 | Mic cancellation and persistent chat keyboard | coder | vibe-build | approved contract | Pending execution |
+| 29 | Launcher lifecycle, explicit PC QR and browser host | coder | vibe-build | approved contract | Pending execution |
+| 30 | Foreground sync and profile/service UX | coder | vibe-build | approved contract, optional29 fields | Pending execution |
+| 31 | Approved native/browser visual integration | coder | vibe-build | 28/30 functional handoff | Planned after functional work |
+| 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Planned after integration |
+| 33 | Built desktop assets and signed Android update | worker | vibe-build | 32/source freeze | Planned after acceptance |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

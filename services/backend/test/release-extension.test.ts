@@ -72,19 +72,20 @@ test('single import accepts up to 500 existing pairs beyond 16KiB; count, body a
   } finally {await app.close();}
 });
 
-async function adapterFixture(send?: (chat:string,content:unknown,options:{messageId:string}) => Promise<unknown>) {
+async function adapterFixture(send?: (chat:string,content:unknown,options:{messageId:string}) => Promise<unknown>, seed = true) {
   const auth = mkdtempSync(join(tmpdir(),'replybot-extension-adapter-'));
   writeFileSync(join(auth,'owner-identity.json'),JSON.stringify({owner}));
   const store = new SqliteStore(); const flow = new Workflow(store,'a',() => 1000);
-  store.saveConversation(conversation()); store.saveMessage(message());
-  const adapter = new WhatsAppAdapter(flow,auth,async () => {},undefined,() => 1000,true);
+  if (seed) {store.saveConversation(conversation()); store.saveMessage(message());}
+  const incoming: Message[] = [];
+  const adapter = new WhatsAppAdapter(flow,auth,async message => {incoming.push(message);},undefined,() => 1000,true);
   const ev = new EventEmitter(); let reads = 0;
   Object.defineProperties(adapter,{
     loadAuth:{value:async () => ({state:{creds:{me:{id:owner}},keys:{}},saveCreds:async () => {}})},
     makeSocket:{value:() => ({ev,user:{id:owner},end:() => {},readMessages:() => {reads++;},sendMessage:send})},
   });
   await adapter.start(); ev.emit('connection.update',{connection:'open'});
-  return {store,flow,adapter,ev,reads:() => reads,dispose:async () => {await adapter.stop();store.close();rmSync(auth,{recursive:true,force:true});}};
+  return {store,flow,adapter,ev,incoming,reads:() => reads,dispose:async () => {await adapter.stop();store.close();rmSync(auth,{recursive:true,force:true});}};
 }
 
 test('verified direct status events before HTTP/Message completion are monotonic and never transmit reads', async () => {
@@ -155,6 +156,92 @@ test('contacts updates preserve saved source over push names, omissions do not c
     f.ev.emit('contacts.update',[{id,name:'Ignored while off'}]); await f.adapter['events']; assert.equal(f.flow.conversation(id).name,'Incoming push');
   } finally {await f.dispose();}
 });
+
+for (const enabled of [false,true]) {
+  test(`review38 paired contact observations remember aliases without inbox chats, names ${enabled ? 'on' : 'off'}`, async () => {
+    for (const event of ['contacts.upsert','contacts.update','messaging-history.set','lid-mapping.update']) {
+      const f = await adapterFixture(undefined,false);
+      const phone = '15550000050@s.whatsapp.net', lid = '50050@lid';
+      try {
+        if (enabled) f.flow.setContactNames({requestId:'on',expectedRevision:0,enabled:true});
+        const contact = {id:lid,phoneNumber:phone,name:'Invented saved name',notify:'Invented push name'};
+        const payload = event === 'messaging-history.set' ? {contacts:[contact],messages:[]}
+          : event === 'lid-mapping.update' ? {lid,pn:phone} : [contact];
+        f.ev.emit(event,payload); await f.adapter['events'];
+        assert.equal(f.adapter.snapshot().error,null,event);
+        assert.equal(f.store.waCanonical('a',lid),phone,event);
+        assert.equal(f.store.waCanonical('other',lid),lid);
+        assert.deepEqual(f.store.conversations('a'),[],event);
+        assert.deepEqual(f.store.contactNames('a',phone),[]);
+        assert.equal(f.incoming.length,0);
+        // A later genuine message with only the LID must use the persisted pair.
+        f.ev.emit('messages.upsert',{type:'notify',messages:[{key:{remoteJid:lid,id:'later',fromMe:false},
+          pushName:'Later push',messageTimestamp:1,message:{conversation:'Invented later message'}}]});
+        await f.adapter['events'];
+        assert.equal(f.adapter.snapshot().error,null);
+        assert.deepEqual(f.store.conversations('a').map(c => c.id),[phone]);
+        assert.equal(f.store.messages('a',phone)[0]?.transportId,'later');
+        assert.equal(f.store.messages('a',lid).length,0);
+        assert.equal(f.incoming.length,1); assert.equal(f.incoming[0]?.conversationId,phone);
+        assert.equal(f.flow.conversation(phone).control,'assistant_allowed');
+        assert.equal(f.flow.conversation(phone).name,'Later push');
+        await f.adapter.stop();
+        f.ev.emit('contacts.upsert',[{id:'50051@lid',phoneNumber:'15550000051@s.whatsapp.net',name:'Stale socket'}]);
+        await f.adapter['events'];
+        assert.equal(f.store.waCanonical('a','50051@lid'),'50051@lid');
+        assert.equal(f.store.conversations('a').length,1);
+      } finally {await f.dispose();}
+    }
+  });
+  test(`review38 contact mapping joins existing physical LID history with policy and unknown holds, names ${enabled ? 'on' : 'off'}`, async () => {
+    for (const event of ['contacts.upsert','contacts.update','messaging-history.set','lid-mapping.update']) {
+      const f = await adapterFixture(undefined,false);
+      const phone = '15550000050@s.whatsapp.net', lid = '50050@lid';
+      try {
+        if (enabled) f.flow.setContactNames({requestId:'on',expectedRevision:0,enabled:true});
+        f.ev.emit('messaging-history.set',{contacts:[],messages:[{key:{remoteJid:lid,id:'history',fromMe:false},
+          messageTimestamp:1,message:{conversation:'Invented physical LID history'}}]});
+        await f.adapter['events'];
+        const physical = f.store.messages('a',lid)[0]; assert.ok(physical);
+        const raw = f.store.waMessage('a',lid,'history'), epoch = f.store.historyGroup('a',lid).sourceEpoch;
+        const queued = f.flow.manualSend(lid,action,'retired-queued');
+        const unknown = f.flow.manualSend(lid,action,'retired-unknown');
+        f.store.saveOutbox({...unknown,state:'unknown',components:unknown.components.map(part => ({...part,state:'unknown'}))});
+        const durableUnknown = f.store.outbox('a',unknown.id), request = f.store.request('a','retired-unknown');
+        f.store.saveConversation({...f.flow.conversation(lid),mode:'never_reply'});
+        const contact = {id:phone,lid,name:'Invented saved name'};
+        const payload = event === 'messaging-history.set' ? {contacts:[contact],messages:[]}
+          : event === 'lid-mapping.update' ? {lid,pn:phone} : [contact];
+        f.ev.emit(event,payload); await f.adapter['events'];
+        assert.equal(f.adapter.snapshot().error,null,event);
+        assert.equal(f.store.waCanonical('a',lid),phone);
+        const group = f.store.historyGroup('a',phone);
+        assert.deepEqual(new Set(group.memberIds),new Set([phone,lid])); assert.ok(group.sourceEpoch > epoch);
+        assert.equal(f.store.conversations('a').length,2);
+        assert.deepEqual(f.store.messages('a',lid),[physical]); assert.deepEqual(f.store.messages('a',phone),[]);
+        assert.equal(f.store.waMessage('a',lid,'history'),raw);
+        assert.equal(f.store.historySource('a',phone,physical.id)?.conversationId,lid);
+        assert.equal(f.store.outbox('a',queued.id)?.state,'cancelled');
+        assert.deepEqual(f.store.outbox('a',unknown.id),durableUnknown);
+        assert.deepEqual(f.store.request('a','retired-unknown'),request);
+        for (const chat of [phone,lid]) {
+          assert.equal(f.flow.conversation(chat).control,'manual');
+          assert.equal(f.flow.conversation(chat).pause?.indefinite,true);
+        }
+        assert.equal(f.flow.conversation(phone).name,enabled && event !== 'lid-mapping.update' ? 'Invented saved name' : phone.split('@')[0]);
+        assert.throws(() => f.flow.quickControl(phone,'resume','restricted'),/alias_policy_restricted/);
+        f.store.saveConversation({...f.flow.conversation(lid),mode:null});
+        assert.throws(() => f.flow.quickControl(phone,'resume','unknown'),/delivery_unknown/);
+        assert.throws(() => f.flow.manualSend(lid,action,'fresh-retired'),/retired_alias_read_only/);
+        const unchangedEpoch = f.store.historyGroup('a',phone).sourceEpoch;
+        f.ev.emit(event,payload); await f.adapter['events'];
+        assert.equal(f.store.historyGroup('a',phone).sourceEpoch,unchangedEpoch);
+        assert.deepEqual(f.store.outbox('a',unknown.id),durableUnknown);
+        assert.deepEqual(f.incoming,[]); assert.deepEqual(f.store.drafts('a'),[]);
+      } finally {await f.dispose();}
+    }
+  });
+}
 
 test('returned transport ID conflict keeps durable attempted ID and unknown accounting', async () => {
   const f = await adapterFixture(async () => ({key:{id:'conflict',remoteJid:id,fromMe:true}}));

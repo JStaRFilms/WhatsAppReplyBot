@@ -132,7 +132,7 @@ export class Workflow {
       this.store.saveWaAlias(this.accountId,alias,canonical);
       if (original) this.store.mergeReleaseContext(this.accountId,alias,canonical);
     });
-    this.refreshContactName(canonical);
+    if (this.store.conversation(this.accountId,canonical)) this.refreshContactName(canonical);
   }
   groupUnknown(id: string, except?: string): boolean {
     const members = this.store.historyGroup(this.accountId,id).memberIds;

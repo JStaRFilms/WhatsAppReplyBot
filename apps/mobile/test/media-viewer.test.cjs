@@ -27,6 +27,52 @@ test('explicit photo viewer requests only image, fits private local URI, respect
   label(tree,'Close photo').props.onPress();tree.props.onRequestClose();f.keys.get('keydown')({key:'Escape',preventDefault(){}});assert.equal(f.events.filter(event=>event.kind==='close').length,3);
   assert.ok(label(tree,'Close photo').props.style.minHeight>=48);f.h.unmount();assert.equal(f.keys.size,0);assert.equal(f.events.filter(event=>event.kind==='release').length,1);
 });
+test('review38 viewer acquired before React commit is released on close',async()=>{
+  const f=fixture();f.render();f.response.resolve(f.handle);await settle();f.h.unmount();
+  assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+});
+test('review38 photo closing render before passive cleanup retains ownership of a late acquisition',async()=>{
+  const f=fixture();f.render();f.props.message={...photo,media:{...photo.media,kind:'video'}};
+  const closing=f.h.render(f.draw);assert.equal(nodes(closing).some(node=>node.type==='image'),false);
+  f.response.resolve(f.handle);await settle();f.h.flush();f.render();
+  assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+  assert.equal(nodes(f.render()).some(node=>node.type==='image'),false);
+  f.h.unmount();assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+});
+test('review38 scope change releases an uncommitted old viewer without publishing it in the new scope',async()=>{
+  const f=fixture();f.render();f.app.client={};
+  f.app.mediaCache={...f.app.mediaCache,acquire:()=>new Promise(()=>{})};
+  const changed=f.h.render(f.draw);assert.equal(nodes(changed).some(node=>node.type==='image'),false);
+  f.response.resolve(f.handle);await settle();f.h.flush();
+  assert.equal(nodes(f.render()).some(node=>node.type==='image'),false);
+  assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+  f.h.unmount();assert.equal(f.events.filter(event=>event.kind==='release').length,1);
+});
+test('review38 repeated uncommitted photo closes free the real shared photo/video viewer slot',async()=>{
+  const {z}=require('zod'),records=new Map();
+  const storage={persistent:false,list:async()=>[...records.values()],read:async()=>({uri:'blob:synthetic-cache',release(){}}),
+    write:async record=>{records.set(JSON.stringify(record.key),record);},touch:async()=>{},remove:async record=>{records.delete(JSON.stringify(record.key));},sweep:async()=>{}};
+  const {MediaCache}=load('lib/media-cache.ts',{'zod':{z},'./api':{ApiError:class extends Error{}},'./media-cache-storage':{createMediaStorage:()=>storage}},
+    {URL,Uint8Array,AbortController,performance:{now:()=>0},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){}});
+  const client={baseUrl:'http://synthetic.local',scope:{profileId:'synthetic-profile',accountId:photo.accountId,revision:1},assertActive(){},
+    mediaSource:async(chat,id,variant)=>({cacheNamespace:'00000000-0000-4000-8000-000000000050',conversationId:chat,messageId:id,sourceVersion:'a'.repeat(64),variant,
+      state:'available',mime:variant==='video'?'video/mp4':'image/jpeg',maxBytes:3,expiresAt:null,validatedAt:100,validUntil:30100}),
+    mediaContent:async source=>({mime:source.mime,bytes:new Uint8Array([1,2,3])})};
+  const cache=new MediaCache(client,{now:()=>100},storage,()=>0),acquire=cache.acquire.bind(cache);
+  try{
+    for(let opening=0;opening<3;opening++){
+      const f=fixture();f.app.mediaCache=cache;
+      cache.acquire=(...args)=>acquire(...args).then(handle=>{f.response.resolve(handle);return handle;});
+      try{
+        f.render();await f.response.promise;await settle();assert.equal(cache.slots,1);
+        if(opening===1)assert.ok(label(f.render(),'Full-screen photo'));
+      }finally{f.h.unmount();}
+      assert.equal(cache.slots,0);
+      const video=await acquire({...photo,id:'video',transportId:'video'},'video','viewer');
+      assert.equal(video.getSnapshot(),true);assert.equal(cache.slots,1);video.release();video.release();assert.equal(cache.slots,0);
+    }
+  }finally{cache.dispose(false);}
+});
 test('zoom, reset, bounded pan and two-touch pinch stay between 1x and 3x',async()=>{
   const f=fixture();f.render();f.response.resolve(f.handle);await settle();f.render();
   label(f.render(),'Photo viewing area').props.onLayout({nativeEvent:{layout:{width:320,height:400}}});

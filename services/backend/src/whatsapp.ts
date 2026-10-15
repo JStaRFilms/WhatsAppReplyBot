@@ -225,7 +225,9 @@ export class WhatsAppAdapter {
     const phone = [first,second].find(j => j?.endsWith('@s.whatsapp.net'));
     const lid = [first,second].find(j => j?.endsWith('@lid'));
     if (phone && lid) {
-      this.conversation(phone);
+      // Only an existing LID chat needs a canonical target for the guarded join.
+      // Trusted contact mappings can otherwise precede the first real message.
+      if (this.flow.store.conversation(this.flow.accountId,lid)) this.conversation(phone);
       this.flow.verifyAlias(lid,phone);
     }
     return this.flow.store.waCanonical(this.flow.accountId, first);

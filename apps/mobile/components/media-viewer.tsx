@@ -25,15 +25,20 @@ export function MediaViewer({message,onClose,canPlay}:{message:Message;onClose:(
   const [zoom,setZoom]=useState(1),[pan,setPan]=useState({x:0,y:0}),[size,setSize]=useState({width:1,height:1});
   const gesture=useRef({x:0,y:0,zoom:1,distance:0});
   const close=useRef(onClose);close.current=onClose;
-  useLayoutEffect(()=>()=>handle?.release(),[handle]);
+  const committed=useRef<MediaHandle | undefined>(undefined);
+  useLayoutEffect(()=>{committed.current=handle;return()=>{committed.current=undefined;handle?.release();};},[handle]);
   useLayoutEffect(()=>{if(handle && !valid){handle.release();close.current();}},[handle,valid]);
   useEffect(()=>{
-    const abort=new AbortController();let active=true;setOwned(null);setError(null);
+    const abort=new AbortController();let active=true,acquired:MediaHandle | undefined;setOwned(null);setError(null);
     if(isVideo)return()=>{active=false;abort.abort();};
     const variant=message.media?.kind==='image'?'image':'preview';
-    void mediaCache.acquire(message,variant,'viewer',abort.signal).then(handle=>{if(active)setOwned({cache:mediaCache,identity,handle});else handle.release();})
+    void mediaCache.acquire(message,variant,'viewer',abort.signal).then(handle=>{if(active && !abort.signal.aborted){acquired=handle;setOwned({cache:mediaCache,identity,handle});}else handle.release();})
       .catch(reason=>{if(active)setError(reason instanceof Error?reason.message:'Photo unavailable.');});
-    return()=>{active=false;abort.abort();};
+    return()=>{active=false;abort.abort();
+      // Layout cleanup owns committed handles. Discarded state updates leave
+      // the acquiring effect responsible for releasing their handles.
+      if(acquired && acquired!==committed.current)acquired.release();
+    };
   },[mediaCache,client,identity,attempt,isVideo]);
   useEffect(()=>{
     if(typeof window==='undefined')return;

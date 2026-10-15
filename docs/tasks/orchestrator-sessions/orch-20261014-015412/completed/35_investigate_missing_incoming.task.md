@@ -53,5 +53,7 @@ Report: docs/issues/Incoming_Message_Gaps_Investigation.md. Confirmed synthetic
 identity/history split and conditional blank-then-full recovery defect, plus the
 existing100-message UI limit. Parent independently reproduced the alias-store
 split in memory. Actual incident cause remains unproven; no real runtime examined.
-Owner decision is pending before source fixes or release scope change. No source
-fix or live repair/relink/reset is authorized by this completed investigation.
+Owner subsequently approved the three identified history fixes and cached/tappable
+image/video viewing.40 plans that explicit release extension. Actual incident cause
+remains unproven. This investigation itself performed no fix; live repair/relink/
+reset/private-data access remains unauthorized.

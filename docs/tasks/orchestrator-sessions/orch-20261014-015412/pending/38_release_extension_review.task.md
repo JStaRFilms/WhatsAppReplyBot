@@ -16,7 +16,14 @@ Review32 covered74f26af, not this extension. Its one P2 withheld acceptance beca
 
 Other prior resolved findings remain regression checks: optional session `?capabilities=1` discovery and404 classification, strict legacy plain discovery response, encoded static API GET/HEAD auth/profile protection, no released native recorder access, manual keyboard-hide/profile/focus guards. Physical mic cancellation has no proven device root cause. Real native keyboard, Windows QR/browser and actual WhatsApp receipt/contact behavior remain unverified.
 
-The owner's missing incoming messages report is a separate unproven ingestion issue in35. Do not diagnose live, infer a cause or demand speculative repair as this release's scope. Report a related source defect only with concrete evidence and separate the finding from that report.
+35 completed read-only investigation and reproduced verified LID/phone history and
+quote splitting, conditional blank/full recovery loss and a newest100 local display
+window. Parent independently reproduced the alias-store split. Actual incident
+cause remains unproven. Owner subsequently approved all three local fixes plus
+cached/tappable image/video viewing. Read History_and_Media_Reliability_Scope.md,
+40's finalized implementation plan and41+ handoffs. Those integrated fixes now join
+this gate. No live diagnosis/repair/full WhatsApp sync is authorized; do not infer
+the owner's actual cause from a synthetic reproduction.
 
 ## Objective
 
@@ -30,7 +37,9 @@ new name UI does not bypass it. Parent282 tests/types passed after the correctio
 
 ## Scope
 
-One focused integrated correctness/security/requirement review of36/37 and the retained baseline safety, not a style review or Batch2 design review. Parent must supply actual finalized contracts/dependency resolution and synthetic checks. Read product source but no private runtime/credentials/book data.
+One focused integrated correctness/security/requirement review of36/37, the
+owner-approved40/41+ history/media work and retained baseline safety. Not a style,
+Batch2 or unrelated cleanup review. Parent must supply actual finalized contracts/dependency resolution and synthetic checks. Read product source but no private runtime/credentials/book data.
 
 Check these boundaries:
 
@@ -50,6 +59,27 @@ Check these boundaries:
 - Actual constructed provider text/roles/schema/owner/name fields are budgeted, not merely the old context JSON. Mandatory overflow rejects before fake fetch; output cap and image uncertainty remain explicit. No extra model call, tokenizer dependency or Batch2 context expansion.
 - Additive settings/tables reopen safely with defaults, API headers/auth/no-store/origin/static checks apply, protocol2 plain discovery stays compatible and missing capabilities disable new controls honestly. Pinned Expo Contacts and target authorization were verified before any install, with no other dependency/toolchain drift.
 
+Additional history/media boundaries from the owner's later approval:
+
+- Verified same-account alias reads join existing history/raw/quotes/context without
+  record deletion/renumbering, invented quoted originals, ACL/source weakening or
+  rebind of client intents, requests, outboxes, holds, grants and unknown accounting.
+- Partial/full recovery cannot override tombstones/view-once, duplicate events or
+  trigger historical generation/send. Old and newly learned mappings are covered.
+- Scoped local paging reaches older stored rows, preserves viewport/typing/source
+  anchors and Latest, and never acknowledges newer unseen messages from an old
+  page's bottom. Incoming revisions do not replace an older reading position.
+- Private bounded cached bytes require current source authority, stable variant/
+  content identity, exact scope and correct expiry/delete/view-once invalidation.
+  Cache hits avoid binary re-download; stale reads and profile changes cannot
+  display another account. No secret URL/public cache or unsupported erase/offline
+  guarantee. Human viewing does not expand AI visual inputs or context budget.
+- Image viewer is genuinely tappable, closable and scoped. Ordinary video is
+  explicit foreground playback only, not sending/AI/background/PiP. Close/route/
+  profile/background/deletion/expiry stops media and coordinates audio/recording.
+  Exact native dependency, file limits and actual artifact permissions must be
+  approved/verified, not assumed. No hidden microphone or spontaneous focus resume.
+
 ## Definition of done
 
 Return evidence-backed confirmed blockers with path/line/scenario/severity and a focused reproduction or reasoning trace, or accept source with explicit hardware limits. Review findings are recommendations; parent decides fixes. Do not expand into abstractions, cleanup, speculative edge cases, new UI or unrelated ingestion.
@@ -62,8 +92,11 @@ Read-only report naming reviewed baseline/range, actual checks/results, confirme
 
 ## Dependencies and release gate
 
-36 backend/core integrated,37 client integrated, exact dependency handoff and parent validation precede this review. No active shared-file writer during review. Review32 is prior context only.33 remains held until confirmed blockers are resolved, source accepted/frozen and exact final build-copy/dependency targets confirmed. Hardware checks are owner-owned and must remain explicit in release handoff; no final exports/builds or device actions here.
+36/37 and all owner-approved40/41+ history/media implementation must be integrated,
+with exact dependency approval/handoff, parent validation and updated isolated
+browser evidence before this review.39 on69f01fd is baseline evidence only. No active shared-file writer during review. Review32 is prior context only.33 remains held until confirmed blockers are resolved, source accepted/frozen and exact final build-copy/dependency targets confirmed. Hardware checks are owner-owned and must remain explicit in release handoff; no final exports/builds or device actions here.
 
 ## Limits
 
-No source/docs/status/board/master-plan writes, package/version/lock changes, installs, actual DB/migration/.env/auth/token/signing/runtime/book reads, model/image quota, live backend/WhatsApp/profile/API actions, services/viewers/phone input or final web/APK build. Only documented synthetic `.runtime/ui-task31` artifacts may be inspected. Tests use isolated temporary data/ports, not3210/8081/8083. No Git stage/commit/push or outside-project writes. Preserve full future context/style guidance and parent source work.
+No source/docs/status/board/master-plan writes, package/version/lock changes, installs, actual DB/migration/.env/auth/token/signing/runtime/book reads, model/image quota, live backend/WhatsApp/profile/API actions, services/viewers/phone input or final web/APK build. Only documented synthetic `.runtime/ui-task31` and `.runtime/ui-task37` artifacts,
+plus a parent-explicitly approved integrated synthetic handoff, may be inspected. Tests use isolated temporary data/ports, not3210/8081/8083. No Git stage/commit/push or outside-project writes. Preserve full future context/style guidance and parent source work.

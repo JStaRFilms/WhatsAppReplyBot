@@ -26,7 +26,9 @@ its allowlist only, preserving short pnpm store/codegen fixes and native cache.
 Sign using original env privately; never put keys/env/session into build copy or
 print credentials. No SDK/toolchain installs, licenses, firewall/services or cloud build. Only a
 parent-confirmed frozen dependency refresh in the existing approved short copy is
-allowed when required by37's exact Expo Contacts pin, with no new package choices.
+allowed for the exact frozen approved native pins, including Contacts and only
+separately owner-approved Expo Video if present. No worker package choice/install
+outside that confirmed refresh. Read40's accepted plan and41+ dependency handoffs.
 
 ## Definition of done
 
@@ -46,7 +48,12 @@ recordings, models or private content diagnostics. No debug APK fallback.
 36 and37 integrated,38's confirmed blockers resolved, parent validation accepted,
 parent-owned version/config/defaults and final source snapshot frozen. Original32
 alone is insufficient. Owner-added send/receipt/name/prompt/punctuation gate must
-be complete. Preserve existing C:/Otherme-build caches/path fixes and refresh only
+be complete. The later owner-approved history and cached/full-screen image/video
+work from40/41+ and updated integrated browser evidence must also be accepted by38.
+39's69f01fd baseline alone cannot authorize this build. If Video is included, verify
+actual foreground-only/native permission/plugin configuration and explicit module
+approval. No source changes or new dependency choices in this artifact task.
+Preserve existing C:/Otherme-build caches/path fixes and refresh only
 the verified credential-free allowlist; do not run prepare-copy into it again.
 Worker does not commit/push or alter scopes. Parent independently verifies final
 artifacts, commits exact owned changes and guides owner install/service update.

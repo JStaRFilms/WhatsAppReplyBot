@@ -3,12 +3,12 @@
     "name": "Otherme",
     "slug": "whatsapp-reply-bot",
     "scheme": "replybot",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.jstarstudios.otherme",
-      "versionCode": 3,
+      "versionCode": 4,
       "softwareKeyboardLayoutMode": "resize",
       "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW", "android.permission.READ_MEDIA_AUDIO", "android.permission.WRITE_CONTACTS", "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"]
     },

@@ -31,6 +31,26 @@ select **Continue with this profile**, then use Connect WhatsApp to pair it.
 The regular inbox hides contact-only rows; search can still find them. Bottom tabs
 now include the Android navigation inset. See `docs/features/Account_Switching.md`.
 
+## Browser app in the current source
+
+Batch1 browser support is implemented, but the combined release and final assets
+are still pending visual integration and review. It is not part of the installed
+0.1.2 Android update. Once the public assets are prepared, D in Otherme.cmd opens
+`http://127.0.0.1:3210/` on this PC. The backend serves the app itself; daily use
+needs no Metro or second service. A source checkout can rebuild the public assets
+with `pnpm desktop:build` using its existing local tools.
+
+The source uses separate Create profile, Switch profile, Link WhatsApp and Relink
+this profile actions. It distinguishes PC authentication, profile acceptance,
+WhatsApp connection and AI permission. Returning to the foreground refreshes reads
+without replaying sends or approvals. Native Link can request a private QR on the
+owning PC; P remains fallback. A viewer launch acknowledgment is not proof the QR
+is visible. The browser renders its own QR without requesting another window.
+
+Q now reports the shutdown drain phase. If exit cannot be verified, ownership and
+the launcher lock remain. Do not delete the lock to bypass that condition. Actual
+Windows viewer/browser and phone mic/keyboard behavior remain release checks.
+
 ## Development live connection
 
 Use Node 24 and pnpm 10. Keep the PC awake and on the same trusted Wi-Fi as your
@@ -154,8 +174,8 @@ pnpm test
 pnpm --filter @replybot/mobile exec expo export --platform web
 ```
 
-190 focused tests, strict workspace typechecks, web export and the actual signed
-0.1.2 Android build/verifier pass. Keyboard avoidance, bounded draft editing,
+For release0.1.2,190 focused tests, strict workspace typechecks, web export and
+the actual signed Android build/verifier passed. Keyboard avoidance, bounded draft editing,
 intelligent chat following and Latest are included. Physical keyboard and mic
 behavior still require the owner to try the installed update. Browser checks
 verified live Settings, authenticated connection and pairing QR rendering with

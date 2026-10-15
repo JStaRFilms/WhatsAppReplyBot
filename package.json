@@ -10,6 +10,7 @@
     "test": "pnpm --filter @replybot/core test && pnpm --filter @replybot/backend test && pnpm --filter @replybot/mobile test && pnpm test:packaging",
     "test:packaging": "node --test scripts/test/*.test.mjs",
     "android:release": "node scripts/build-android.mjs",
+    "desktop:build": "node scripts/build-desktop.mjs",
     "otherme": "node scripts/start-otherme.mjs",
     "typecheck": "pnpm -r typecheck",
     "backend": "pnpm --filter @replybot/backend dev",

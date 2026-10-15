@@ -35,10 +35,21 @@ export async function inspectService(port, token, expected) {
   return identity;
 }
 
+export async function openDesktop({ port, token, identity, open }) {
+  if (!await inspectService(port, token, identity)) throw new Error('Otherme is offline.');
+  const response = await fetch('http://127.0.0.1:'+port+'/v1/session?capabilities=1', {
+    headers: { authorization: 'Bearer '+token }, signal: AbortSignal.timeout(2500), redirect: 'error',
+  });
+  if (!response.ok || (await response.json()).capabilities?.desktopBrowser !== true)
+    throw new Error('Desktop assets are unavailable. Rebuild with pnpm desktop:build after UI integration.');
+  await open('http://127.0.0.1:'+port+'/');
+}
+
 // Dependency injection keeps launcher checks isolated from the real service and account.
-export async function ensureService({ port, rootId, instanceId, profileScope, readToken, start, attempts = 60, interval = 500 }) {
+export async function ensureService({ port, rootId, instanceId, profileScope, readToken, start, shouldStop = () => false, attempts = 60, interval = 500 }) {
   if(!rootId || !instanceId)throw new Error('Launcher identity is missing. Nothing was started.');
   const existing = await inspectService(port, readToken(),{rootId, ...(profileScope ? { instanceId, profileScope } : {})});
+  if (shouldStop()) throw new Error('Startup cancelled. Waiting for owned work to stop.');
   if (existing) return { owned: false, child: null, identity: existing };
   const child = start();
   let spawnFailed = false;
@@ -46,8 +57,10 @@ export async function ensureService({ port, rootId, instanceId, profileScope, re
   for (let i = 0; i < attempts; i++) {
     if (spawnFailed || child.exitCode !== null || child.signalCode !== null) throw new Error('Backend exited before becoming ready.');
     await delay(interval);
+    if (shouldStop()) throw new Error('Startup cancelled. Waiting for owned work to stop.');
     try {
       const identity = await inspectService(port, readToken(),{rootId,instanceId,profileScope});
+      if (shouldStop()) throw new Error('Startup cancelled. Waiting for owned work to stop.');
       if (identity) return { owned: true, child, identity };
     } catch (error) {
       // A newly bound server may still be starting, but no unrelated PID is stopped.
@@ -57,7 +70,7 @@ export async function ensureService({ port, rootId, instanceId, profileScope, re
   throw new Error('Backend did not become ready. Inspect its window output before trying again.');
 }
 
-export async function stopOwned(child, timeoutMs = 15000) {
+export async function stopOwned(child, timeoutMs = 15000, identity) {
   if (!child?.pid) return;
   if (child.exitCode !== null || child.signalCode !== null) {
     if (child.exitCode === 0 && !child.signalCode) return;
@@ -65,14 +78,20 @@ export async function stopOwned(child, timeoutMs = 15000) {
   }
   if (!child.connected) throw new Error('Owned backend IPC is unavailable. Nothing was forcibly stopped.');
   let timer, onExit;
+  let phase = 'stop acknowledgement';
+  const onMessage = message => {
+    if (identity && message?.type === 'otherme-stopping' && message.rootId === identity.rootId && message.instanceId === identity.instanceId
+      && ['gating', 'transport', 'requests', 'reply-work', 'workflow', 'profile-transition', 'storage', 'stopped'].includes(message.phase)) phase = message.phase;
+  };
+  child.on('message', onMessage);
   try {
     await new Promise((resolve, reject) => {
       onExit = (code, signal) => code === 0 && !signal ? resolve() : reject(new Error('Backend did not exit cleanly.'));
       child.once('exit', onExit);
-      timer = setTimeout(() => reject(new Error('Backend exit timed out. Nothing was forcibly stopped.')), timeoutMs);
+      timer = setTimeout(() => reject(new Error('Backend exit timed out while waiting for '+phase+'. Nothing was forcibly stopped.')), timeoutMs);
       child.send({ type: 'otherme-stop' }, error => { if (error) reject(new Error('Owned backend IPC failed.')); });
     });
-  } finally { clearTimeout(timer); if (onExit) child.off('exit', onExit); }
+  } finally { clearTimeout(timer); if (onExit) child.off('exit', onExit); child.off('message', onMessage); }
 }
 
 const restarts = new WeakMap();
@@ -83,7 +102,7 @@ export function restartOwned(options) {
   restarts.set(options.child, { requestId: options.requestId, work });
   return work;
 }
-async function restart({ child, identity, port, readToken, registry, requestId, instanceId, start, timeoutMs = 15000, attempts = 60, interval = 500 }) {
+async function restart({ child, identity, port, readToken, registry, requestId, instanceId, start, shouldStop = () => false, timeoutMs = 15000, attempts = 60, interval = 500 }) {
   try {
     if (!child?.pid || !child.connected || child.exitCode !== null || child.signalCode !== null) throw new Error('Owned child is unavailable.');
     await inspectService(port, readToken(), { rootId: identity.rootId, instanceId: identity.instanceId, profileScope: identity.profileScope });
@@ -98,11 +117,12 @@ async function restart({ child, identity, port, readToken, registry, requestId, 
         child.send({ type: 'otherme-profile-ack', requestId, rootId: identity.rootId, instanceId: identity.instanceId }, error => error ? reject(error) : resolve());
       });
     } finally { clearTimeout(acknowledgementTimer); }
-    await stopOwned(child, timeoutMs);
+    await stopOwned(child, timeoutMs, identity);
     // A deadline failure leaves the journal blocked. Never prepare or start a target
     // until the verified child exit AND durable acknowledgement have both happened.
+    if (shouldStop()) throw new Error('Profile restart cancelled by the launcher stop.');
     const profileScope = registry.prepareAfterExit(requestId);
-    const result = await ensureService({ port, rootId: identity.rootId, instanceId, profileScope, readToken, start, attempts, interval });
+    const result = await ensureService({ port, rootId: identity.rootId, instanceId, profileScope, readToken, start, shouldStop, attempts, interval });
     if (!result.owned) throw new Error('Replacement child is not owned.');
     const response = await fetch('http://127.0.0.1:'+port+'/v1/profile-operations/'+encodeURIComponent(requestId), {
       headers: { authorization: 'Bearer '+readToken() }, signal: AbortSignal.timeout(2500), redirect: 'error',

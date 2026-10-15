@@ -32,6 +32,29 @@ unknown accounting. No new receipt/sync/hardware claims from synthetic results.
 Read-only final report with confirmed blockers or clean acceptance and limitations.
 Report tests actually run. No edits/builds/live API/real data/phone actions.
 
+## Findings already resolved before this review
+
+-28 dd49d77 preserves input identity/edit revisions and queries granted permission
+before requesting it. Parent41 focused tests passed, but real busy/hold/snapshot
+rerenders did not reproduce the owner's microphone cancellation. No hardware root
+cause or successful recording is claimed.
+-30 9da586d initially missed29's optional capability query. Parent added the
+`?capabilities=1` request and preserved404 upgrade classification. The new
+regression failed before the fix, then all87 mobile tests/types and60 core tests
+passed. Plain session discovery deliberately omits metadata for older strict
+protocol2 clients.
+-29's first static-host exemption used only a raw API-prefix check. A synthetic
+encoded API request bypassed authentication. Parent fixed classification using
+both the raw URL and matched route. The new regression failed before, then70
+backend tests,29 packaging tests and backend/core types passed. Verify the fix
+still denies encoded GET/HEAD without auth and missing/stale scoped reads, while
+public assets and the authenticated app still work. None of this code was released
+or exercised against the real account during validation.
+
+These findings are responses for this first integrated review, not invitations to
+expand scope. No unresolved source blocker is known at this handoff. Native device,
+Windows viewer and original intermittent startup incident remain acceptance limits.
+
 ## Dependencies and execution
 
 28–31 integrated and source diff available; parent provides exact baselines,

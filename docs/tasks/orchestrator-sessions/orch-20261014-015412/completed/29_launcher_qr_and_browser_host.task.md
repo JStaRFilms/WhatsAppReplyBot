@@ -48,4 +48,28 @@ one desktop/APK release. Do not claim success from mocks as hardware proof.
 
 Running as a T3-owned task with Takomi Sol High.
 Task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-launcher-desktop-batch1-20261015-r1`.
-Parent owns acceptance and source-scoped commits; no live actions are authorized.
+Source implementation accepted after parent validation. Parent reran70 backend
+tests,29 packaging tests, backend/core typechecks and all four changed launcher/
+build-helper syntax checks successfully. No live runtime, account, service, viewer,
+phone, recording or send was used.
+
+Parent confirmed and repaired one security regression before accepting the source.
+The new public-static exemption used a raw API-prefix test, while Fastify's router
+decodes literal segments. Encoded API GET/HEAD could therefore bypass auth and
+profile guards. The exemption now checks the matched route as well. A regression
+failed before the fix and passes after it, including missing/stale scope and
+unchanged access to the public root. Final integrated review must retain it.
+
+Final contract: GET /v1/session?capabilities=1 opts into optional pcQrDisplay and
+desktopBrowser metadata; plain discovery remains byte-shape compatible with strict
+older clients. The parent integrated the client query and additive core DTOs in
+9da586d. Optional displayOnPc/pcDisplay and nonce-bound IPC match the contract.
+Browser export is pnpm desktop:build through mobile-node, output apps/mobile/dist;
+D opens the token-free loopback root after a verified identity/capability read.
+
+Synthetic evidence covers retained early-stop intent, blocked drain reporting and
+idle keep-alive shutdown. The original intermittent owner incident remains
+unreproduced. Physical Windows viewer/browser and phone acceptance remain pending.
+External rendered QR pixels cannot be revoked by deleting their source file;
+OS-locked cleanup failures report manual cleanup. Production export remains33's
+work after31 and32. No release version, keys or actual APK were changed.

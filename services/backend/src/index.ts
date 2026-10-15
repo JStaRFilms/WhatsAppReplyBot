@@ -9,7 +9,7 @@ import { SqliteStore } from '@replybot/core';
 import { createApp } from './server.ts';
 import { OpenRouterClient } from './openrouter.ts';
 import { DEMO_ACCOUNT } from './seed.ts';
-import { hasSavedPairing, rootIdentifier } from './launcher-startup.ts';
+import { hasSavedPairing, rootIdentifier, manageServer } from './launcher-startup.ts';
 
 const runtime = fileURLToPath(new URL('../../../.runtime/', import.meta.url));
 mkdirSync(runtime, { recursive: true, mode: 0o700 });
@@ -51,6 +51,15 @@ const addresses = Object.entries(networkInterfaces()).flatMap(([name, entries]) 
 const app = createApp({ store, token, accountId, profileScope,
   ...(registry ? { profiles: { registry, activation, ...(owningLauncher ? { onQuiesced: operation => notifyQuiesced(operation.requestId) } : {}) } } : {}),
   launcher:{rootId,instanceId},
+  desktopDir: fileURLToPath(new URL('../../../apps/mobile/dist/', import.meta.url)),
+  ...(owningLauncher ? { onPcDisplay: (intent: import('./pc-display.ts').PcDisplayIntent) => new Promise<void>((resolve, reject) => {
+    if (!process.connected || !process.send) return reject(new Error('launcher_ipc_unavailable'));
+    process.send(intent, error => error ? reject(new Error('launcher_ipc_unavailable')) : resolve());
+  }) } : {}),
+  onShutdownPhase: phase => {
+    console.info('Stopping Otherme: '+phase);
+    if (process.connected && process.send) process.send({ type: 'otherme-stopping', rootId, instanceId, phase }, () => {});
+  },
   allowedOrigins: lan ? addresses.map(i => 'http://'+i.address+':8081') : [],
   ...(live ? { whatsapp: { authDir: paths.auth, requireOwnerLock: registry?.requiresOwnerLock(profileScope.profileId) ?? false } } : {}),
   ...(remote ? { remoteModel: { generate: (context,visuals) => new OpenRouterClient({
@@ -61,20 +70,24 @@ const app = createApp({ store, token, accountId, profileScope,
     appName:process.env.OPENROUTER_APP_NAME || 'Otherme',appUrl:process.env.OPENROUTER_APP_URL || 'http://localhost:8081',
   }).transcribe(bytes,guard) } } : {}),
 });
-await app.listen({ host: lan ? '0.0.0.0' : '127.0.0.1', port: 3210 });
-if (activation && registry && activationId) registry.complete(activationId, profileScope);
-console.info((live ? 'Live' : 'Demo')+' backend ready. Pair through Settings or the Otherme launcher.');
-if (lan) for (const { name, address } of addresses) console.info('Phone service address: http://'+address+':3210 ('+name+'). Owner token required.');
-let closing: Promise<void> | undefined;
-const close = () => closing ??= app.close().then(() => { if (process.connected) process.disconnect?.(); });
-for (const signal of ['SIGINT','SIGTERM'] as const) process.on(signal, () => { void close(); });
-if (process.send) {
-  process.on('message', message => {
-    if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'otherme-stop') void close();
-  });
-  process.on('disconnect', () => { void close(); });
+process.on('message', app.acknowledgePcDisplay);
+const lifecycle = manageServer({ events: process,
+  listen: () => app.listen({ host: lan ? '0.0.0.0' : '127.0.0.1', port: 3210 }),
+  gate: app.beginShutdown, close: () => app.close(),
+  onClosed: () => { process.off('message', app.acknowledgePcDisplay); if (process.connected) process.disconnect?.(); },
+  onError: () => { console.error('Otherme could not stop cleanly. Ownership is retained until exit is verified.'); process.exitCode = 1; },
+});
+try {
+  if (await lifecycle.ready) {
+    if (activation && registry && activationId) registry.complete(activationId, profileScope);
+    console.info((live ? 'Live' : 'Demo')+' backend ready. Pair through Settings or the Otherme launcher.');
+    if (lan) for (const { name, address } of addresses) console.info('Phone service address: http://'+address+':3210 ('+name+'). Owner token required.');
+  }
+} catch {
+  console.error('Otherme startup failed. Closing owned resources.'); process.exitCode = 1;
+  await lifecycle.stop().catch(() => { console.error('Startup cleanup is blocked. No resources were forcibly released.'); });
 }
-if (live && !activation && !registry?.blocked() && process.argv.includes('--restore-pairing')) {
+if (!lifecycle.stopping && live && !activation && !registry?.blocked() && process.argv.includes('--restore-pairing')) {
   const authDir = paths.auth;
   try {
     if (hasSavedPairing(authDir)) {

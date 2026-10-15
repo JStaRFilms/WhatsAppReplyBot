@@ -13,12 +13,16 @@ import { MediaService,readableMedia } from './media.ts';
 import { ReplyWindow } from './reply-window.ts';
 import { AudioService, readableAudio, registerAudioUploads } from './audio.ts';
 import { registerImageUploads } from './image-uploads.ts';
+import { desktopAvailable, isDesktopRequest, registerDesktop } from './desktop.ts';
+import { PcQrDisplay, type PcDisplayIntent } from './pc-display.ts';
 
 const Request = z.object({ requestId: z.string().min(1).max(96) });
 const Id = z.object({ id: z.string().min(1).max(128) });
 const localOrigin = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 export function createApp(options: { store: SqliteStore; token: string; accountId?: string; profileScope?: ProfileScope;
   profiles?: { registry: ProfileRegistry; onQuiesced?: (operation: ProfileOperation) => Promise<void>; activation?: boolean; drainTimeoutMs?: number };
+  desktopDir?: string; onPcDisplay?: (intent: PcDisplayIntent) => Promise<void>;
+  onShutdownPhase?: (phase: 'gating' | 'transport' | 'requests' | 'reply-work' | 'workflow' | 'profile-transition' | 'storage' | 'stopped') => void;
   now?: () => number; seed?: boolean; remoteModel?: RemoteModel; whatsapp?: { authDir: string; requireOwnerLock?: boolean }; allowedOrigins?: string[]; launcher?: { rootId:string; instanceId:string } }) {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const now = options.now ?? Date.now;
@@ -30,6 +34,9 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   const admitted = new Map<string, { promise: Promise<void>; resolve: () => void }>();
   let transitionWork: Promise<void> | undefined;
   const blocked = () => gated || (registry?.blocked() ?? false);
+  const pcDisplay = new PcQrDisplay({ rootId: options.launcher?.rootId ?? '', instanceId: options.launcher?.instanceId ?? '', profileScope: scope }, now);
+  const pcQrDisplay = !!(options.launcher && options.onPcDisplay);
+  const desktopBrowser = !!options.desktopDir && desktopAvailable(options.desktopDir);
   const flow = new Workflow(options.store, accountId, now);
   if (!options.whatsapp && options.seed !== false) seedDemo(options.store, now());
   flow.recover(gated || options.profiles?.activation);
@@ -85,6 +92,10 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     if (!(ip === '::1' || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip))) return reply.code(403).send({ error: 'private_network_only' });
     const origin = request.headers.origin;
     if (origin && !allowedOrigin(origin)) return reply.code(403).send({ error: 'origin_denied' });
+    // The router decodes literal segments before these hooks. Check its matched
+    // route too, so an encoded API prefix cannot inherit public-asset access.
+    if (options.desktopDir && ['GET', 'HEAD'].includes(request.method)
+      && isDesktopRequest(request.url) && isDesktopRequest(request.routeOptions.url ?? request.url)) return;
     if (request.url === '/v1/health' || request.url === '/v1/local-provision' || request.method === 'OPTIONS') return;
     const auth = request.headers.authorization;
     const provided = Buffer.from(auth?.startsWith('Bearer ') ? auth.slice(7) : '');
@@ -92,6 +103,7 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     if (!provided.length || provided.length !== expected.length || !timingSafeEqual(provided, expected))
       return reply.code(401).send({ error: 'owner_auth_required' });
     const path = request.url.split('?')[0];
+    if (shutdownStarted) return reply.code(503).send({ error: 'service_stopping' });
     if (path === '/v1/session' || path === '/v1/launcher' || /^\/v1\/profile-operations\/[^/]+$/.test(path ?? '')) return;
     if (options.profileScope) {
       const profile = request.headers['x-otherme-profile']; const revision = request.headers['x-otherme-revision'];
@@ -111,6 +123,10 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
       admitted.set(request.id, { promise, resolve });
     }
   });
+  app.addHook('onSend', async (_request, reply, payload) => {
+    if (shutdownStarted) reply.header('Connection', 'close');
+    return payload;
+  });
   app.addHook('onResponse', async request => {
     admitted.get(request.id)?.resolve(); admitted.delete(request.id);
   });
@@ -119,6 +135,7 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     if (error instanceof z.ZodError) return reply.code(422).send({ error: 'invalid_request' });
     return reply.code(500).send({ error: 'service_error' });
   });
+  if (options.desktopDir) registerDesktop(app, options.desktopDir);
   registerImageUploads(app,flow);
   registerAudioUploads(app,flow);
   const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), profileScope:scope, serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
@@ -134,8 +151,9 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     return {service:'otherme-backend',protocol:2,accountId,profileScope:scope,...options.launcher,
       demo:!whatsapp,whatsapp:whatsapp?.snapshot().state ?? 'disconnected'};
   });
-  app.get('/v1/session', async () => ({ protocol: 2, scope,
-    label: registry?.list().find(p => p.profileId === scope.profileId)?.label ?? 'Original account', transition: registry?.current() ?? null }));
+  app.get('/v1/session', async request => ({ protocol: 2, scope,
+    label: registry?.list().find(p => p.profileId === scope.profileId)?.label ?? 'Original account', transition: registry?.current() ?? null,
+    ...(z.object({ capabilities: z.literal('1') }).safeParse(request.query).success ? { capabilities: { pcQrDisplay, desktopBrowser } } : {}) }));
   app.get('/v1/profile-operations/:requestId', async request => {
     if (!registry) throw new DomainError('profile_operation_not_found', 404);
     return registry.operation(z.object({ requestId: z.string() }).parse(request.params).requestId);
@@ -153,6 +171,7 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     if (profile !== scope.profileId || Number(revision) !== scope.revision) throw new DomainError('profile_scope_changed', 409);
     // Admission closes before the handoff check, with no await before suspension.
     gated = true;
+    pcDisplay?.expire();
     let operation: ProfileOperation;
     try {
       if (flow.hasActiveHandoff()) throw new DomainError('profile_handoff_active', 409);
@@ -187,19 +206,41 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   });
   app.post('/v1/local-provision', async request => {
     z.object({ confirmLocalDemo: z.literal(true) }).strict().parse(request.body);
-    if (!['127.0.0.1', '::1'].includes(request.ip) || !request.headers.origin || !localOrigin(request.headers.origin))
+    if (!['127.0.0.1', '::1'].includes(request.ip.replace(/^::ffff:/, '')) || !request.headers.origin || !localOrigin(request.headers.origin))
       throw new DomainError('local_browser_provision_only', 403);
     return { token: options.token, demo: !whatsapp };
   });
   app.get('/v1/snapshot', async () => snapshot());
-  app.get('/v1/whatsapp', async () => whatsapp?.snapshot() ?? { state: 'disconnected', qr: null, error: null, historyMessages: 0 });
+  const whatsappStatus = () => {
+    const status = whatsapp?.snapshot() ?? { state: 'disconnected', qr: null, error: null, historyMessages: 0 };
+    if (status.state === 'connected' || status.state === 'error' || blocked()) pcDisplay?.expire();
+    const display = pcDisplay?.snapshot();
+    return { ...status, ...(display ? { pcDisplay: display } : {}) };
+  };
+  app.get('/v1/whatsapp', async () => whatsappStatus());
+  const connects = new Map<string, { displayOnPc: boolean; work: Promise<void> }>();
   app.post('/v1/whatsapp/connect', async request => {
-    Request.extend({ confirm: z.literal(true) }).strict().parse(request.body);
+    const input = Request.extend({ confirm: z.literal(true), displayOnPc: z.boolean().optional() }).strict().parse(request.body);
     if (!whatsapp) throw new DomainError('start_live_backend',409);
-    await whatsapp.start(); return whatsapp.snapshot();
+    const displayOnPc = input.displayOnPc === true;
+    let operation = connects.get(input.requestId);
+    if (operation && operation.displayOnPc !== displayOnPc) throw new DomainError('request_id_conflict', 409);
+    if (!operation) {
+      const intent = displayOnPc ? pcDisplay.request(input.requestId, pcQrDisplay) : undefined;
+      const work = (async () => {
+        try {
+          await whatsapp.start();
+          if (intent && pcQrDisplay && options.onPcDisplay && !blocked() && !shutdownStarted) {
+            try { await options.onPcDisplay(intent); } catch { pcDisplay?.unavailable(intent); }
+          }
+        } catch (error) { if (intent) pcDisplay?.expire(); throw error; }
+      })();
+      operation = { displayOnPc, work }; connects.set(input.requestId, operation);
+    }
+    await operation.work; return whatsappStatus();
   });
   app.post('/v1/whatsapp/disconnect', async request => {
-    Request.strict().parse(request.body);replyWindow.clear(); await whatsapp?.stop(); return { disconnected: true };
+    Request.strict().parse(request.body);pcDisplay?.expire();replyWindow.clear(); await whatsapp?.stop(); return { disconnected: true };
   });
   app.post('/v1/model-consent', async request => {
     const body = Request.extend({ consent: z.boolean() }).strict().parse(request.body);
@@ -321,11 +362,30 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
     }
   },1000);
   timer.unref();
-  app.addHook('onClose', async () => {
-    gated = true; clearInterval(timer);
-    await whatsapp?.quiesce(); await replyWindow.close(); await Promise.allSettled(catchUps.values()); await flow.drain();
-    await transitionWork;
-    audio.close(); options.store.close();
+  let shutdownStarted = false;
+  let transportStopped: Promise<void> | undefined;
+  const phase = options.onShutdownPhase ?? (() => {});
+  const beginShutdown = () => {
+    if (shutdownStarted) return;
+    shutdownStarted = true; gated = true; pcDisplay?.expire(); clearInterval(timer); replyWindow.clear();
+    phase('gating');
+    phase('transport');
+    transportStopped = (async () => { await whatsapp?.quiesce(); })();
+    // Attach a handler now even if an admitted HTTP request delays onClose.
+    void transportStopped?.catch(() => {});
+  };
+  app.addHook('preClose', async () => {
+    beginShutdown(); phase('requests'); app.server.closeIdleConnections();
   });
-  return app;
+  app.addHook('onClose', async () => {
+    beginShutdown();
+    phase('transport'); await transportStopped;
+    phase('requests'); await Promise.all([...admitted.values()].map(a => a.promise));
+    phase('reply-work'); await replyWindow.close(); await Promise.allSettled(catchUps.values());
+    phase('workflow'); await flow.drain();
+    phase('profile-transition'); await transitionWork;
+    phase('storage'); audio.close(); options.store.close();
+    phase('stopped');
+  });
+  return Object.assign(app, { beginShutdown, acknowledgePcDisplay: (message: unknown) => pcDisplay?.acknowledge(message) });
 }

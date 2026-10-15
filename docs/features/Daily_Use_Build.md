@@ -28,7 +28,44 @@ Launcher targets this backend only, preserves SQLite/session and cannot start a
 duplicate service or attach to an unverified occupied port. PC remains awake and
 on the same network. Existing unknown-send recovery remains authoritative.
 
-## Build evidence
+## Batch 1 source, awaiting the integrated release
+
+The source now supports a production browser client on the existing service.
+`pnpm desktop:build` exports credential-isolated public assets to
+`apps/mobile/dist`, with same-origin API discovery. After those assets are built,
+D in Otherme.cmd opens `http://127.0.0.1:3210/` without a token in the URL. Daily
+browser use needs no Metro, second server or installer. Final assets are not yet
+accepted; visual integration and the combined release are still pending.
+
+Only known app routes and allowlisted built assets are public. API authentication,
+profile/revision checks, private-network/origin restrictions and loopback-only
+credential provisioning remain. Source, runtime, dotfiles, traversal, symlinks and
+source maps cannot fall through to the SPA. The auth guard checks the matched route
+as well as the raw URL, since the router decodes encoded literal path segments.
+
+Explicit native Link can request the owning launcher's private QR viewer. Session
+capabilities are opt-in through `/v1/session?capabilities=1`; the plain response
+stays compatible with strict older protocol2 clients. IPC contains only scoped
+identity/request/nonce/status, never QR bytes. Ready acknowledges the OS launch
+request, not visible pixels. P remains fallback; read polling alone never opens a
+viewer or retries connect. QR files are cleaned up on expiry, change and exit.
+An already-open external image viewer can retain rendered pixels. If Windows locks
+the file, the launcher reports manual cleanup instead of claiming deletion.
+
+Stop handlers are installed before listen yields. Q gates admission and reports
+its drain phase, closes idle HTTP connections and waits for admitted work before
+SQLite closes. A timeout does not force-stop a process, release unknown accounting,
+remove an unverified lock or cancel outstanding work. The original owner startup/
+shutdown incident remains unreproduced; the fixes have synthetic lifecycle evidence.
+
+Parent reran70 backend tests,29 packaging tests, backend/core typechecks and
+launcher/helper syntax checks. The encoded-route authentication regression failed
+before the fix and passes after it, including HEAD and missing/stale profile scope.
+No live launcher, viewer, pairing, profile or device operation was used. Final web
+export, signed APK and actual Windows/device acceptance follow UI integration and
+focused integrated review.
+
+## Initial 0.1.0 build evidence
 
 The native ARM64/x86_64 assembleRelease build passed in the owner-approved short
 physical copy C:/Otherme-build. Fresh local dependencies and shorter pnpm/codegen

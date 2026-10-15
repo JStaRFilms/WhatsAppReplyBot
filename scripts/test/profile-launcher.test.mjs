@@ -87,6 +87,21 @@ test('lost IPC acknowledgement times out without stopping the source or starting
   }
 });
 
+test('Q during restart waits for verified exit but never prepares or starts the target', async () => {
+  const runtime = mkdtempSync(join(tmpdir(), 'otherme-synthetic-restart-stop-')); const registry = new ProfileRegistry(runtime);
+  const source = registry.scope(); const port = await portNumber(); let child;
+  try {
+    const service = await ensureService({ port, rootId, instanceId: 'stopping-source', readToken: () => token, interval: 20,
+      start: () => (child = spawn(port, 'stopping-source')) });
+    registry.begin({ kind: 'create', requestId: 'cancelled-restart', label: 'B', confirm: true }, source); registry.update('cancelled-restart', 'restarting');
+    const pendingScope = registry.scope();
+    await assert.rejects(restartOwned({ child, identity: service.identity, port, readToken: () => token, registry,
+      requestId: 'cancelled-restart', instanceId: 'must-not-start', shouldStop: () => true, start: () => assert.fail('No target after Q') }), /cancelled/);
+    assert.equal(child.exitCode, 0); assert.deepEqual(registry.scope(), pendingScope); assert.equal(registry.current().state, 'failed');
+    assert.throws(() => registry.prepareAfterExit('cancelled-restart'));
+  } finally { if (child?.connected) await stopOwned(child); rmSync(runtime, { recursive: true, force: true }); }
+});
+
 test('an already abnormal exit is never treated as a clean stop', async () => {
   await assert.rejects(stopOwned({ pid: 123, exitCode: 1, signalCode: null }), /did not exit cleanly/);
   await assert.rejects(stopOwned({ pid: 123, exitCode: null, signalCode: 'SIGTERM' }), /did not exit cleanly/);

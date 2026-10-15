@@ -96,8 +96,21 @@ Running Takomi Sol High, sole diagnosis/source worker, after terminal partial44 
 T3 task ID is
 `node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-thumbnail-cancellation-fix-20261015-r1`.
 Client request ID is `otherme-thumbnail-cancellation-fix-20261015-r1`.
-Source edits require a diagnosed cause and failing-before regression. Current
-product remains35cba0c. No review38 or artifact33 is launched.
+Completed and parent accepted `24539121aabb37fd9c1bd2df78a74890c76da1d7`.
+Two deterministic causes were fixed: canceled successful writes marked shared
+current bytes pendingPurge, and uncommitted thumbnail handles had no cleanup owner.
+Only media-attachment.tsx, media-cache.ts and their focused test files changed.
+No automatic retry, cap increase, API/provider/scroll/native/dependency change.
+
+Parent reviewed code and red/green evidence, hash-verified186 public inputs,
+28 export and160 sealed artifacts without mismatch. Parent452 serialized tests,
+all types and diff checks pass. Parent independent full primary91 and supplements17
+browser assertions pass, all14 viewed sets exact and zero unexpected/errors/device
+calls. New parent output directories preserve every earlier result. Historical r3
+stacks remain unknown; the controlled matching failure is explicitly attributed.
+
+Task44 is accepted on the same candidate through that independent full replay,
+not another repeated worker gate. One combined38 review follows;33 remains held.
 
 ## Safety
 

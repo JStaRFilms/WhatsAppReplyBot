@@ -183,6 +183,38 @@ evidence-summary/browser log and supplements remain, but the current raw file do
 not contain the original69-check run or match its old manifest. Do not rely on that
 raw result/hash or silently repair it. Use fresh44 r3 for integrated acceptance.
 
+## Final browser acceptance and49 correction
+
+Parent now accepts44 on24539121aabb37fd9c1bd2df78a74890c76da1d7. Read
+`docs/features/Integrated_Release_Browser_Acceptance.md` and
+`docs/issues/Thumbnail_Cancellation_Availability.md` before reviewing this layer.
+The r3 Retry failures remain historical partial evidence, not silently erased.
+Controlled real IndexedDB write/cancel timing reproduced a matching12second Retry.
+Canceling an old successful write marked the pinned shared key pendingPurge and
+rejected an uncanceled current handle. Local cancellation now leaves authorized
+bytes cached. Actual expiry/revoke/source guards still purge. A separate uncommitted
+thumbnail-handle leak exhausted four slots; acquiring effects now own handles that
+never reach layout commit, while committed detach-before-release ownership stays.
+No automatic retry, cap increase, API/provider/geometry/dependency/native change.
+
+Parent452 serialized tests and all types pass. Parent verified186 public inputs,
+28 export files and160 sealed artifacts, then independently passed full primary91
+and supplements17 browser assertions on the same export, all14 viewed sets exact,
+zero unexpected/errors/device calls and zero ordinary anchor deltas. Evidence is
+explicitly approved under ui-task44/fix49, including verification.json,
+hash-final-002.json and parent-full-1792101595016-primary/ plus -supplements/.
+Do not add the delegate's extra15 isolated repetitions as independent requirements.
+Do not claim historical original Retry stack recovery, phone/native proof or release.
+
+Review49's cancellation versus source-revocation distinction and committed versus
+uncommitted ownership with retained current-source/cap/lease constraints. This is
+part of the one combined source review, not a new generic review round.
+
+Final requested range is released399cc99 through24539121aabb37fd9c1bd2df78a74890c76da1d7,
+focused on approved28–31/36/37/41/42/43/46/47/48/49 and32's narrow response. Docs-only
+HEAD may advance; product is frozen, no source writer.33/version/verifier artifact
+metadata is still held until this review and confirmed corrections are resolved.
+
 ## Dependencies and release gate
 
 36/37 and all owner-approved40/41+ history/media implementation must be integrated,

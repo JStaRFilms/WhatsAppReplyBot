@@ -42,6 +42,31 @@ These diagnostic successes do not accept44 or prove the cancellation race fixed.
 Original r3 failures, runners, outputs and hash manifests were preserved. Parent
 output names are fresh and refuse overwrites. No further product changes occurred.
 
+## Correction49 accepted
+
+Source `24539121aabb37fd9c1bd2df78a74890c76da1d7` corrects two deterministic defects.
+Canceling a successful write previously invoked shared-key remove while old and
+current reads pinned it. That set pendingPurge and rejected a valid current handle.
+Local consumer cancellation now rejects/unpins without source-wide purge. Actual
+expiry and privacy invalidation retain their purge branches.
+
+An acquired thumbnail whose state update never committed had no layout cleanup
+owner. Four controlled cancellations leaked the four slots. The acquiring effect
+now owns uncommitted handles; committed handles retain their detach-before-release
+layout cleanup. No retry loop, limit increase or provider/API/scroll change.
+
+The historical r3 failures did not log their actual rejection. They cannot be
+retroactively assigned an exact stack. A controlled real IndexedDB successful-write
+barrier reproduced the same visible Retry for12seconds on old source, then passed
+after the fix. Separate deterministic red/green tests prove uncommitted ownership.
+
+Parent accepted the narrow diff and verified all186 public source inputs,28 export
+files and160 sealed artifacts. Parent452 serialized source/packaging tests and all
+types pass. Parent full primary91 and supplements17 browser checks pass, all14
+viewed POST sets exact, zero unexpected calls/errors/device calls. This accepts44
+on the corrected source; see Integrated_Release_Browser_Acceptance.md. Review38 and
+artifact33 still remain. No released update or native hardware proof yet.
+
 ## Scope and acceptance for49
 
 Diagnose current thumbnail acquire/publication/release and cancellation ownership.

@@ -197,6 +197,23 @@ stale publication. Diagnostic-only parent probes distinguish it from actual Retr
 Original r3 failure and hash evidence is preserved. Source is still35cba0c until
 49 proves and returns a correction. No blanket retry/limit increase is authorized.
 
+## Final parent acceptance after49
+
+Accepted on `24539121aabb37fd9c1bd2df78a74890c76da1d7`. Earlier partial rounds remain
+partial. Parent accepted the two proven49 fixes, verified all186 public inputs,
+28 export files and160 sealed artifacts and independently reran the full primary
+and all supplements. Primary91 and supplements17 assertions pass,14 exact actual
+viewed sets, zero failures/unexpected/browser/device errors. Every ordinary recorded
+anchor delta is0px. All452 serialized source/packaging tests and workspace types pass.
+
+Authoritative report is `docs/features/Integrated_Release_Browser_Acceptance.md`.
+Evidence is fix49/hash-final-002.json and independent
+fix49/parent-full-1792101595016-primary/ and -supplements/. The same final export
+matches committed inputs. This is not a relabeling of r3 or lost r2 raw data and
+not123 independent requirements. Parent full replay avoids another redundant44
+worker round. Source writer is done. One combined38 review follows, then final
+source/version/verifier freeze and33 artifacts. All native/hardware limits remain.
+
 ## Safety limits
 
 No real DB/auth/.env/token/key/book/message/log/media/runtime reads, live API/model/WhatsApp/profile/download/history actions, original gallery/private-phone storage, paid/image quota, device/service/OS viewer control, production3210/8081/8083, installation/SDK/toolchain work, outside-project writes, final desktop/APK build or stage/commit/push. Only the explicitly documented synthetic directories and normal synthetic test temp data are permitted. No source fixes or other agent launches.

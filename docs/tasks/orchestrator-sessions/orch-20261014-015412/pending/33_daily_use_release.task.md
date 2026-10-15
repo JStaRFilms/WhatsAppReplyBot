@@ -17,7 +17,8 @@ features require explicit coordinated owner rollout instructions.
 
 ## Scope and artifacts
 
-Only credential-isolated web export under canonical ignored runtime, allowlisted
+Credential-isolated production web export at canonical apps/mobile/dist, optional
+ignored-runtime verification preview, allowlisted
 inputs/generated build files/cache in approved C:/Otherme-build and canonical
 ignored release APK/report/log. No canonical source/docs/env/auth/key/DB edits.
 Preserve all previous releases byte-for-byte and original signing material.
@@ -64,7 +65,44 @@ artifacts, commits exact owned changes and guides owner install/service update.
 
 ## Execution
 
-Not launched yet. Version and artifact names will be supplied after source freeze.
+Authorized after source review and parent freeze. Version0.1.3/code4,
+packagecom.jstarstudios.otherme, frozen645f5699477328a0abe5520f6f8a428d4c9b68b5.
+Read docs/features/Release_0.1.3_Freeze.md and completed38/50 plus current verifier.
+Inputs are canonical .runtime/releases/Otherme-0.1.3-inputs.json,184 public and84
+allowlisted Android inputs with hashes. Previous three APK hashes were verified;
+canonical0.1.3 target did not exist. Parent464 source/packaging tests/types and fresh
+full108 browser checks pass. No source writer, unresolved review blocker or new
+permission/dependency question. Existing exact native module refresh is approved.
+
+Build desktop with scripts/build-desktop.mjs, outputapps/mobile/dist. Build Android
+only in verified physical C:/Otherme-build. Sync only androidInputs from the frozen
+manifest. Preserve .npmrc, caches and the existing path/codegen adjustments. Inspect
+known prior build metadata/patches before dependency/prebuild refresh; reapply only
+existing approved fixes if generation replaces them. No prepare-copy or new path.
+Use frozen pins/lock and existing toolchain. Normal Contacts/Video native dependency
+refresh is approved, no ad hoc upgrades or SDK/license/toolchain downloads.
+
+Private signing env/key and credential-byte scan are tool-only exceptions to the
+normal no-private-runtime rule. Use canonical .env by path through build/verifier,
+never read/print values or copy into build inputs. Its token path may be scanned
+privately for leaked bytes by the verifier. No live account data or other runtime
+inspection. Desktop build must also pass a blind private-file/credential-byte scan.
+Keep credentials out of Expo, installers and source copies. Same signer only.
+
+Invoke node C:/Otherme-build/scripts/build-android.mjs --signing-env-file <canonical>/.env.
+Verifier now requires actual READ_CONTACTS/no WRITE_CONTACTS, both explicit PiPfalse
+activities, no ExpoVideoPlaybackService/foreground-service permission, correct
+version, signer, resize, embedded bundle and private data. Verify the real signed
+APK and exact canonical copy, not source config alone. Do not weaken verifier or
+change canonical source if the native build fails; return exact redacted blocker.
+
+Final targets are canonical .runtime/releases/Otherme-0.1.3.apk and apps/mobile/dist;
+report/logs .runtime/releases/build-0.1.3/. Refuse an existing unknown0.1.3 artifact,
+never overwrite older releases. Check all public/Android source and old APK hashes
+before and after. Return APK SHA256/size, signer/version/package, bundle bytes,
+actual policy checks, production desktop hashes/scan, commands, dependency refresh,
+source copy proof and honest limits. Never start live services/D/QR, scan/pair,
+install/clear/uninstall on phone, send, run models, mutate real config or old data.
 Owner explicitly approved expo-video57.0.5 and its normal native module dependency
 refresh in existing C:/Otherme-build after source freeze.43 must first implement/
 verify the exact canonical package/lock/disabled-background/PiP plugin changes;

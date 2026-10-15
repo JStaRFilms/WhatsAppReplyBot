@@ -88,7 +88,17 @@ Running Takomi Sol High as sole source writer. Parent reproduced both P2 finding
 before dispatch. T3 task ID is
 `node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-confirmed-review38-fixes-20261015-r1`.
 Client request ID is `otherme-confirmed-review38-fixes-20261015-r1`.
-Review38 is blocked on these responses;33/version/verifier freeze remains held.
+Completed and parent accepted sourcef32808bac1ebab692e4f5736bef967acf04e9d25.
+Parent inspected viewer, canonical and necessary one-line core name-refresh guard.
+Both unchanged red reproductions now pass. Full94 core/113 backend/224 mobile pass;
+final33 packaging tests and workspace types pass,464 total. No source correction
+was needed after return. The one-line core guard was necessary for an observed
+conversation_not_found on metadata-only mapping, not a schema or scope redesign.
+
+Parent finalized0.1.3/code4 and verifier in645f569, exported a fresh preview and
+independently passed full91+17 browser assertions with16 exact viewed sets, zero
+errors/unexpected/device calls and zero ordinary anchor deltas. Both38 P2 responses
+are resolved. No second generic review. Task33 is authorized on the frozen inputs.
 
 ## Safety
 

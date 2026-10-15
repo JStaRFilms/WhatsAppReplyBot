@@ -255,6 +255,23 @@ use a new task with this brief, findings, responses and actual unresolved object
 The completed44 evidence remains attributed to2453912; affected new-source checks
 must be added after50 rather than silently relabeling those old outputs.
 
+## Parent resolution and source acceptance
+
+Both confirmed P2 blockers are resolved in f32808b after parent independent red/green
+reproductions and source inspection. The core name-refresh existence guard is the
+minimal necessary companion to contact-only canonical observation, with no schema
+or store change. Retained existing LID history/policy/unknown and viewer committed
+cleanup tests pass. Parent94 core/113 backend/224 mobile and33 final packaging pass,
+464 total, all types. No unresolved objection remains from this combined review.
+
+Final source/version/verifier freeze is645f5699477328a0abe5520f6f8a428d4c9b68b5,
+0.1.3/code4. Fresh parent full91+17 browser checks on this candidate pass with16
+exact viewed sets, zero errors/unexpected/device calls and all ordinary anchors0px.
+See Release_0.1.3_Freeze.md and the two focused response records. Source is accepted
+by parent verification of the review's scoped recommendations, not a new broad
+reviewer's pass. Actual merged/signed artifact and hardware proof are still pending.
+Task33 may now build only the confirmed frozen inputs in the approved physical copy.
+
 ## Limits
 
 No source/docs/status/board/master-plan writes, package/version/lock changes, installs, actual DB/migration/.env/auth/token/signing/runtime/book reads, model/image quota, live backend/WhatsApp/profile/API actions, services/viewers/phone input or final web/APK build. Only documented synthetic `.runtime/ui-task31` and `.runtime/ui-task37` artifacts,

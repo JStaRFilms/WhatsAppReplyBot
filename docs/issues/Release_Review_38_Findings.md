@@ -49,6 +49,28 @@ requires a canonical conversation when an original alias conversation exists, so
 handle that legitimate historical case rather than simply deleting a necessary
 materialization everywhere. No new schema, cleanup of existing data or guessed map.
 
+## Verified responses and closure
+
+Both confirmed blockers are resolved in f32808bac1ebab692e4f5736bef967acf04e9d25.
+Parent inspected the minimal source changes and independently reran the unchanged
+red reproductions. Viewer now releases once and the contact-only path keeps zero
+conversations while remembering the mapping. The necessary core name-refresh
+existence check prevents conversation_not_found before a first real message.
+No schema/store or unrelated feature change was needed.
+
+Tests cover returned-before-commit close, late close/scope cleanup and repeated
+real shared photo/video slot accounting. Fake contact events cover paired upsert,
+update, history and mapping, names off/on, later genuine message creation, existing
+LID history and preserved manual/unknown/never-reply holds. Parent full94 core,
+113 backend,224 mobile and33 final packaging tests pass,464 total; all types pass.
+
+Final metadata645f569 sets0.1.3/code4 and actual artifact policy checks. A fresh
+preview and parent full91+17 browser replay on this frozen candidate pass, with all
+16 viewed sets exact, zero unexpected/errors/device calls and zero ordinary anchor
+deltas. See Release_0.1.3_Freeze.md. Parent resolves source acceptance on this
+focused response verification without another generic audit. Actual signed/native
+artifact and owner hardware acceptance remain separate tasks. Build33 may proceed.
+
 ## Verification and next step
 
 Reviewer independently passed73 focused core/backend tests,145 focused mobile tests,

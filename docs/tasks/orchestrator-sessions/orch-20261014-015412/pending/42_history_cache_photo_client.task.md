@@ -2,7 +2,7 @@
 
 ## Agent setup and status
 
-Persona coder, Takomi Sol High, Build. requiredCapabilities=[write-code]. Pending authored packet, no launch or execution ID assigned. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every shell command explicitly cd there or use absolute project paths. Use unslop and the existing charcoal/blue/light UI. No visual exploration, agent launches or new dependencies. Parent owns status, board/master plan, docs, commits and release decisions.
+Persona coder, Takomi Sol High, Build. requiredCapabilities=[write-code]. Running after accepted41/46, sole mobile writer. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every shell command explicitly cd there or use absolute project paths. Use unslop and the existing charcoal/blue/light UI. No visual exploration, agent launches or new dependencies. Parent owns status, board/master plan, docs, commits and release decisions.
 
 Read scoped instructions, docs/Coding_Guidelines.md, Project_Requirements, History_and_Media_Reliability_Scope, History_and_Media_Implementation_Plan, Account_Profile_API, Owner_Control_and_Local_Drafts, completed35/36,37/38 and41's actual finalized source/types/tests/handoff. Preserve the full future context/style handoffs and37's pending intent/receipt/name/prompt/draft feedback behavior.
 
@@ -107,6 +107,15 @@ Cache tests must prove leave/reopen/foreground uses one binary download with met
 Viewer tests cover tap/close/back/Escape/zoom/reset, safe areas, recording/preparation/picker races, source invalidation/background/profile/route, no auto keyboard popup and no hidden recording or model/upload calls. Existing pending-intent/read-feedback/receipt/name/instructions tests remain passing. No video dependency imported here; handed-off cache API must support43's source-validated local file/blob handle without premature playback.
 
 Run narrow mobile tests, then `pnpm --filter @replybot/mobile test` and `pnpm --filter @replybot/mobile typecheck` from canonical root. No final export/build here. Parent later runs full workspace/packaging/types;44 owns isolated preview evidence and38 combined source review. Done means required42 behavior and owned checks pass, changed paths stay scoped and43 can consume the stable cache/viewer API. Return exact contracts/paths/checks, remaining conditional video work and honest native/browser limitations.33 remains held.
+
+## Execution
+
+Backend41 source32fe269 and46 source402e804 accepted. Parent363 tests/all types
+passed; no backend writer active. T3 task ID:
+node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-cached-history-photo-client-20261015-r1.
+Client request ID otherme-cached-history-photo-client-20261015-r1.
+No video module install/import here; already-approved43 follows the stable cache/
+viewer handoff. Parent continues44/38/33 without routine approval stops.
 
 ## Safety limits
 

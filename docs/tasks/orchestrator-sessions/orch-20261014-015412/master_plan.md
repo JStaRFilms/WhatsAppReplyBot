@@ -87,7 +87,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 30 | Foreground sync and profile/service UX | coder | vibe-build | approved contract, optional29 fields | Source handoff accepted; parent87 mobile/60 core tests/types pass; capability opt-in integrated |
 | 31 | Approved native/browser visual integration | coder | vibe-build | 28/30 functional handoff | Source accepted; parent250 workspace tests/types and132 synthetic browser checks pass |
 | 32 | Focused integrated safety and regression review | reviewer | vibe-build | 28–31 | Review returned P2 Assistant read feedback; parent reproduced/fixed,93 mobile tests/types pass; extension review still required |
-| 33 | Build desktop assets and signed Android update | worker | vibe-build |38/50 resolved,645f569 frozen | Running Luna High,0.1.3/code4;184 source/84 Android inputs, approved existing C:/Otherme-build only |
+| 33 | Build desktop assets and signed Android update | worker | vibe-build |38/50 resolved,645f569 app/2c8d658 verifier | Complete0.1.3/code4, signed APK and production desktop verified; old artifacts preserved, hardware/live rollout owner-owned |
 | 34 | Plan added send/receipt/contact/prompt gate | architect | vibe-build | owner choices recorded | Accepted docs; single atomic name import and approved build target clarified |
 | 35 | Diagnose missing incoming messages | architect | read-only research | synthetic/source evidence | Investigation complete; owner approved all three history fixes, now scoped by40 |
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |

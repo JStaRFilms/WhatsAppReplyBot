@@ -2,8 +2,9 @@
 
 ## Status
 
-Source and validation are accepted. Artifact build33 is the next step; no update
-has been released or installed. Final frozen product is
+Source, validation and actual artifacts are accepted. The local signed APK and
+production browser assets are ready. No live deployment or phone installation was
+performed. See Release_0.1.3_Handoff.md for rollout and owner hardware checks. Final frozen product is
 `645f5699477328a0abe5520f6f8a428d4c9b68b5`. Later documentation-only HEAD changes
 are allowed. No further product or dependency changes during the artifact build.
 
@@ -76,6 +77,23 @@ through the approved build/verifier scripts. The actual credential-byte scan may
 privately read that env and owner-token file without exposing values. Never read
 or print them in chat/tool output or copy them into the build copy. No new key.
 Build subprocesses and desktop assets must remain isolated from these credentials.
+
+## Completed artifact verification
+
+Android and production desktop artifacts are verified. APK SHA256 is
+41d8ab4b746e181dc378c6b3e5f1c487776c153aa236429da780c88b74645e9b,
+76,080,237 bytes, same certificate/package, version0.1.3/code4. Actual Contacts,
+PiP/service, resize, embedded bundle and private-file/credential checks passed.
+Desktop28 files/5,226,702 bytes passed the blind scan. All previous APK hashes match.
+
+Initial verification stopped because aapt2 emitted full namespace attributes and
+CRLF. The parent independently reproduced the parser failure and fixed only the
+verifier/test in2c8d658. No policy was removed or relaxed and no binary changed.
+The original645f569 application freeze and manifest remain preserved. The final
+artifact report records exactly those two source hash changes and the one updated
+build-copy verifier. Five manifest tests and34 packaging tests now pass; total465.
+The unchanged cached APK and its exclusive release copies passed complete verification.
+This is not a silent re-freeze or claim that the old verifier passed.
 
 ## Owner handoff after artifacts
 

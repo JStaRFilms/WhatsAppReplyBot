@@ -63,6 +63,25 @@ the verified credential-free allowlist; do not run prepare-copy into it again.
 Worker does not commit/push or alter scopes. Parent independently verifies final
 artifacts, commits exact owned changes and guides owner install/service update.
 
+## Parent final artifact acceptance
+
+Completed. Worker compiled Android and production desktop, preserving inputs and
+old APKs, but correctly stopped at a verifier parsing failure. Parent reproduced
+full-namespace/CRLF aapt2 failure, corrected only verifier/test2c8d658 with red-green
+coverage and retained all policy checks. Actual unchanged cached APK and exclusive
+canonical copy now pass full signer/package/version/manifest/private-data verification.
+No rebuild, key change or phone installation. Initial worker blocked handoff stays.
+
+Application built645f569, verifier2c8d658, version0.1.3/code4. APK76080237 bytes,
+SHA25641d8ab4b746e181dc378c6b3e5f1c487776c153aa236429da780c88b74645e9b,
+embedded4650112 bytes/1586 entries. Actual READ_CONTACTS/no WRITE_CONTACTS, no
+foreground permissions/video service and both PiPfalse flags pass. Desktop28 files/
+5226702 bytes scan passed. Parent184 public inputs with exact2verifier/test overlay,
+84 copy inputs with explicit1verifier update and old3APK hashes verified. Original
+freeze manifest preserved. Detailed final-artifact-report.json and final-verification.log
+are in .runtime/releases/build-0.1.3/. Tests total465, types and108 browser checks pass.
+See Release_0.1.3_Handoff.md. No live backend update or native hardware proof claimed.
+
 ## Execution
 
 Running Takomi Luna High artifact-only after accepted source review and parent freeze.

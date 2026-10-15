@@ -10,7 +10,10 @@ Read scoped instructions, docs/Coding_Guidelines.md, Project_Requirements, Histo
 
 Make older already-stored messages reachable without losing viewport/typing or acknowledging unseen newest content. Reuse Otherme's authenticated image bytes across navigation/restart and add a safe source-anchored full-screen photo viewer. Use41's contracts; no core/backend writes or second client policy. Ordinary video backend/cache variants may be consumed later by43 but no player/module is installed here.
 
-Parent accepts40,39 finishes its frozen export, then41's contracts/tests must be integrated and accepted before this writer starts. Sole mobile writer.43 follows this task serially after a separate dependency decision.41/42 can complete without Video consent; the entire requested combined release cannot be accepted without43.
+Parent accepted40 and39 is complete.41's contracts/tests and subsequent46's
+owner-approved Whisper STT/cost-protection backend change must be integrated and
+accepted before this writer starts. Use their exact final source, not the old audio
+constructor/schema. Only update existing visible ASR copy if needed, no new cost UI. Sole mobile writer.43 follows this task serially after a separate dependency decision.41/42 can complete without Video consent; the entire requested combined release cannot be accepted without43.
 
 ## Exclusive file ownership
 

@@ -53,6 +53,10 @@ work from40/41+ and updated integrated browser evidence must also be accepted by
 39's69f01fd baseline alone cannot authorize this build. If Video is included, verify
 actual foreground-only/native permission/plugin configuration and explicit module
 approval. No source changes or new dependency choices in this artifact task.
+Owner's later46 Whisper STT and durable source-linked reuse/paid-attempt protection
+must also be integrated/reviewed before freeze. Backend switch is not an APK model
+client/key change; desktop/service rollout instructions must explicitly cover it.
+No actual runtime config or live paid ASR test belongs in this artifact task.
 Preserve existing C:/Otherme-build caches/path fixes and refresh only
 the verified credential-free allowlist; do not run prepare-copy into it again.
 Worker does not commit/push or alter scopes. Parent independently verifies final

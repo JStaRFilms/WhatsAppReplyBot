@@ -87,6 +87,25 @@ Additional history/media boundaries from the owner's later approval:
   Exact native dependency, file limits and actual artifact permissions must be
   approved/verified, not assumed. No hidden microphone or spontaneous focus resume.
 
+## Later economical ASR requirement
+
+Read ASR_Cost_Review.md, completed45 and accepted46 handoff. Owner selected exact
+openai/whisper-large-v3-turbo through OpenRouter /audio/transcriptions with existing
+key, JSON MP3/verbose_json and no forced language/chat prompt/schema parser. Verify
+both legacy defaults/settings no longer route to Gemini, unsupported overrides fail
+before export, no expensive fallback or paid automatic retry. Missing confidence
+is uncertain, no fabricated speech/identity/quality claim.
+
+Completed eligible text must reuse across byte TTL/eviction/restart/default-model
+change, before downloading/paying. Physical actor/source/content and current noAI/
+profile/expiry/delete/view-once guards remain. Stable content fingerprint protects
+byte reuse too. Durable attempt reservation/CAS/unknown recovery must prevent
+implicit paid resubmission after crash/timeout/malformed response/new context.
+Retention/capacity/cleared text cannot evict suppression and silently pay again.
+No source/hash becomes authorization, no raw private logs or full Batch2/cost UI.
+Review fake HTTP/reopen/source-revocation tests. No tests prove actual note count,
+prior duplicate bills, future exact broker costs or accent/silence quality.
+
 ## Definition of done
 
 Return evidence-backed confirmed blockers with path/line/scenario/severity and a focused reproduction or reasoning trace, or accept source with explicit hardware limits. Review findings are recommendations; parent decides fixes. Do not expand into abstractions, cleanup, speculative edge cases, new UI or unrelated ingestion.

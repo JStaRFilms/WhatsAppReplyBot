@@ -64,6 +64,13 @@ command counts and remaining limitations. Parent reruns/commits then44 r2 export
 new candidate and finishes required browser checks. No extra generic review or
 agent launches. Native/hardware proof remains owner-owned. Do not stage/commit/push.
 
+## Execution
+
+Running Takomi Sol High, sole source writer, after terminal partial44 r1.
+T3 task ID node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-history-geometry-fix-20261015-r1.
+Client request ID otherme-history-geometry-fix-20261015-r1. No browser worker active,
+no final review/build launched. Parent docs only while this correction runs.
+
 ## Safety
 
 No actual runtime/.env/DB/auth/token/key/contact/message/media/log/billing reads,

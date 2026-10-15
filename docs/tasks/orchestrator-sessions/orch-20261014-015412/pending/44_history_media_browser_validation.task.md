@@ -45,14 +45,23 @@ Parent supplies this report plus41..43 tests/contracts,39 baseline evidence and 
 
 ## Execution
 
-Running Takomi Luna High, preview-only, frozen product
+Round1 returned PARTIAL/BLOCKED, not accepted. It ran Takomi Luna High preview-only
+on product
 4f2b42880ad5a62f93846f956e85266e22cd10f8. Parent435 serialized-suite/packaging tests
 and all workspace types pass, no active product writer. Doc-only HEAD changes are
 not source drift. Read Foreground_Video_Handoff.md and current41/42/46 handoffs.
 T3 task ID node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-integrated-history-media-browser-20261015-r1.
 Client request ID otherme-integrated-history-media-browser-20261015-r1.
 Only ignored ui-task44 writes, fresh invented API/session/media, no paid/live/phone
-or source change. Parent holds38/33 pending this result and its validation.
+or source change. R1 covered18 named partial checks/92 mocked APIs/zero unexpected
+calls/page/console errors,59 focused source tests, but failed photo opening and
+left several required cases untested. No full44 acceptance count.
+Parent independent diagnostic confirmed source layout maps2087 versus actual4496
+content position for the visible photo.47 now fixes the bounded shared geometry;
+R1 freeze ends only for that confirmed correction. See Photo_Visibility_After_
+History_Reflow.md.38/33 stay held. After47 acceptance, delegate a fresh44 r2 with
+original brief, R1 findings, actual47 response and all remaining coverage; new
+clientRequestId/taskId, never send to old childThread. No r2 launched yet.
 
 ## Safety limits
 

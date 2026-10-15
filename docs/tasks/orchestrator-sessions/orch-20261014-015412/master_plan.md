@@ -94,7 +94,11 @@ account access, provider requests, real sends and deployment remain gated.
 | 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Implementation returned; parent320 tests/types pass; browser39 validation pending |
 | 38 | Review combined extended release | reviewer | vibe-build | 36/37,39 and parent validation | Pending, no concurrent source writers |
 | 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Complete; parent36 checks/18 screenshots pass after fixture wait correction;69f01fd baseline only |
-| 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Running Sol High docs-only;39 complete; fold cached-first chat/draft addendum into42 before code |
+| 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Complete; parent accepted with cached-first/policy/manual-work/JPEG corrections in30f4f15 |
+| 41 | Implement verified history repair and media contracts | coder | vibe-build |40 accepted,39 complete | Running Sol High, sole core/backend writer |
+| 42 | Paged/cache-first chats, private media reuse and photo viewer | coder | vibe-build |41 accepted contracts | Pending; includes later cached-first existing draft requirement |
+| 43 | Foreground video player and disabled-background/PiP config | coder | vibe-build |42 accepted, exact module approval | Pending; no Expo Video install yet |
+| 44 | Validate integrated history/cache/media browser | worker | vibe-build |41–43 frozen source | Pending, new isolated ui-task44 artifacts, not39 baseline |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

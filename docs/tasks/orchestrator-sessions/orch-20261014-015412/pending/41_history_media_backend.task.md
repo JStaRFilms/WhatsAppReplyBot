@@ -4,7 +4,7 @@
 
 Persona coder, Takomi Sol High, Build. requiredCapabilities=[write-code]. Pending authored packet, no launch or execution ID assigned. Canonical root is `C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`. Every shell command explicitly cd there or use absolute project paths. Use unslop and scoped instructions. Parent owns task records/status, board/master plan, commits and release decisions. Do not launch agents.
 
-Read `docs/Coding_Guidelines.md`, Project_Requirements, History_and_Media_Reliability_Scope, History_and_Media_Implementation_Plan, Incoming_Message_Gaps_Investigation, Account_Profile_API, Daily_Use_Batch_1_Contract, completed35/36 and pending37..39. Read actual owned source/types/tests and preserve earlier context/style prompt handoffs. The accepted implementation plan is the contract; bring significant deviations to parent before changing it.
+Read `docs/Coding_Guidelines.md`, Project_Requirements, History_and_Media_Reliability_Scope, History_and_Media_Implementation_Plan, Incoming_Message_Gaps_Investigation, Account_Profile_API, Daily_Use_Batch_1_Contract, completed35/36/39 and current37/38. Read actual owned source/types/tests and preserve earlier context/style prompt handoffs. The accepted implementation plan is the contract; bring significant deviations to parent before changing it.
 
 ## Objective
 
@@ -72,6 +72,14 @@ Use in-memory/reopened disposable SQLite and fake verified sockets/models/downlo
 Run narrow tests, full owned core/backend suites and typechecks with existing scripts. Suggested root commands `pnpm --filter @replybot/core test`, `pnpm --filter @replybot/backend test`, `pnpm --filter @replybot/core typecheck`, `pnpm --filter @replybot/backend typecheck`. No install, live model/download or final export. Report actual commands/counts only.
 
 Done means all required contracts/source guards work, focused tests and owned suites/types pass, old DTOs reopen, and the final diff is scoped. Return exact changed paths, finalized schema/DTO/route/error/cursor/fingerprint policy and any significant deviation to parent before42. Parent38 reviews once after42/43/44, with33 still held. Tests cannot establish actual WhatsApp incident cause or native playback success.
+
+## Execution
+
+Running Takomi Sol High, sole core/backend writer. Parent accepted40 in30f4f15;
+39 finished and parent rerun passed. Source baseline69f01fd, newer commits docs-only.
+T3 task ID: node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-history-media-backend-20261015-r1.
+Client request ID: otherme-history-media-backend-20261015-r1. No42/43 writer active.
+No real data operation, native dependency install or build is authorized here.
 
 ## Safety limits
 

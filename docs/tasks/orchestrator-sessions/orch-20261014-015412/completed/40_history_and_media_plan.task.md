@@ -71,7 +71,7 @@ handoffs and current pending-send/draft/receipt/name/prompt constraints.
 Owner explicitly approved fixing the identified issues in full and requested
 cached/tappable picture/video viewing. Current browser39 validates unchanged69f01fd
 in parallel; its source/preview must not be altered. This task is docs-only. Exact
-delegation is now running docs-only on Takomi Sol High.
+delegation completed docs-only on Takomi Sol High.
 T3 task ID: node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-history-media-plan-20261015-r1.
 Client request ID: otherme-history-media-plan-20261015-r1.
 No implementation, installation or live action has begun.
@@ -82,5 +82,10 @@ Read docs/features/Cached_Chat_and_Draft_Opening.md before final acceptance and
 implementation42. Owner requires cached-first opening of known chats and existing
 draft bodies with background refresh, preserved edits and multi-client revision
 safety. Parent recorded this while40 was running; its initial prompt did not carry
-this later request. Parent must fold the addendum into the returned plan/42 before
-launching code, not assume the original40 result already covered it.
+this later request. Parent folded it into the accepted plan and42/44 in30f4f15 before launching41.
+Parent also corrected permanent derived-unknown LID veto, preserved manual work
+on old-mapping read upgrade and chose bounded JPEG85 full photos.39 independently
+passed36 checks/18 screenshots after a harness-only race correction.40's original
+checks were26 local links/eight-file packet whitespace/git diff check, not new
+implementation tests.41 launched after all planning and39 export gates completed.
+43 still requires exact Video approval;38/33 remain held on new source.

@@ -93,6 +93,15 @@ A source-only green result is not browser acceptance. Return any genuine blocker
 with a reproduction, not a speculative cleanup or routine permission question.
 Parent independently checks, commits and owns fresh44 r3 plus combined38 and33.
 
+## Execution
+
+Running Takomi Sol High, sole source writer, after terminal partial 44 r2.
+T3 task ID is
+`node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-reopen-geometry-and-foreground-fix-20261015-r1`.
+Client request ID is `otherme-reopen-geometry-and-foreground-fix-20261015-r1`.
+The MCP instance prefix changed; use this exact returned ID, not the older 1c6 prefix.
+No validation worker, review 38 or artifact build 33 is active.
+
 ## Preview and safety
 
 Use installed Node, pnpm, Playwright1.64 and Edge only. Export from apps/mobile with

@@ -105,6 +105,30 @@ All networks stay intercepted and outside origins blocked. Close owned browser
 and ephemeral server in finally. No background watchers, paid/live calls, final
 build or source changes. 38 and 33 remain held until parent acceptance.
 
+## Round 2 outcome and correction hold
+
+Round 2 is terminal partial and not accepted. Its original handoff and evidence
+summary report 69 primary passing checks, seven supplemental checks and five
+blocked scenarios on eb8a242. There were no unexpected network or browser errors.
+Four normal-use failures require correction: warm reopening used off-screen viewed
+IDs and hid the photo; source arrival moved the cached editor out of view; clean
+responsive resize lost the source offset; foreground photo recovery needed Retry.
+The separate forced CSS-height stress is diagnostic, not itself a release blocker.
+
+The parent independently reproduced all four. See
+`docs/issues/History_and_Foreground_Reopen_Blockers.md` and packet 48. Correction 48
+is now the sole source writer, so the r2 freeze no longer applies to current work.
+After parent source acceptance, fresh r3 must rerun affected and unfinished cases,
+including the photo plus pending-send/newer-text/quote combination. No r3 is launched.
+38 and 33 remain held. Do not confuse source-only 440 tests with browser acceptance.
+
+Evidence integrity note: the parent's first two reproductions accidentally replaced
+r2/results.json and same-named case screenshots. The original full raw bytes are
+lost. Original handoff, browser.log, evidence-summary.json, supplements and old hash
+manifest remain. Current results.json is not the original 69-check result and does
+not match its old hash. Further reproductions have separate output paths. New
+acceptance requires a fresh complete result and hashes, not a relabeled old file.
+
 ## Safety limits
 
 No real DB/auth/.env/token/key/book/message/log/media/runtime reads, live API/model/WhatsApp/profile/download/history actions, original gallery/private-phone storage, paid/image quota, device/service/OS viewer control, production3210/8081/8083, installation/SDK/toolchain work, outside-project writes, final desktop/APK build or stage/commit/push. Only the explicitly documented synthetic directories and normal synthetic test temp data are permitted. No source fixes or other agent launches.

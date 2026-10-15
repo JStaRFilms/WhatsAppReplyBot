@@ -45,6 +45,11 @@ jobs. Deletion, view-once and expiry invalidate access and cached content.
 
 ## Transcription
 
+The owner requested [durable source-linked transcripts and an ASR comparison](Conversation_Context_and_Writing_Profile.md#durable-audio-transcripts)
+as follow-up work. Current transcripts remain temporary as described here.
+Gemini's working integration is not evidence it is cheaper or faster than
+Whisper; no replacement or paid benchmark is authorized by that documentation.
+
 Gemini 3.8 Flash transcribes through the backend-only OpenRouter key. Set
 `OPENROUTER_AUDIO_MODEL` to override the default `google/gemini-3.8-flash`.
 Otherme attribution remains. GPT-6 Luna still drafts text and reactions.

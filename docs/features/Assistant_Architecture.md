@@ -228,6 +228,13 @@ or changing permissions requires another confirmed action.
 
 ## Context, memory and media limits
 
+The owner-requested [context and writing-profile follow-up](Conversation_Context_and_Writing_Profile.md)
+records the proposed replacement for the fixed 20-message/three-example limits:
+growing idle-bounded sessions, compaction, approved writing profiles and durable
+audio transcripts. It separates requested direction from unverified defaults and
+deferred contact memories. These changes are documented, not implemented. The
+limits below describe the earlier design, not the new implementation target.
+
 Stored history is not prompt history. Initial configurable limits are 8,000
 input tokens total and 1,000 output tokens. Include at most 20 recent turns,
 one summary of at most 800 tokens, eight relevant facts/commitments totaling

@@ -53,6 +53,18 @@ paired-session recovery and unknown outcomes without blind resend. Native WhatsA
 typing detection and complete historical sync are not promised. Historical voice
 rows already marked unsupported are not currently rewritten.
 
+## Proposed conversation continuity follow-up
+
+The owner requested an [architecture handoff](features/Conversation_Context_and_Writing_Profile.md)
+for durable audio transcripts, an approved global writing profile, ten authentic
+writing examples, growing conversation sessions and token-budgeted compaction.
+It includes implementation order, acceptance checks, a deferred contact-memory
+task and an evidence-based transcription-provider comparison. The companion
+[extraction prompt](features/Writing_Style_Extraction_Prompt.md) preserves the
+owner's supplied template in full. This is planning, not implemented behavior
+or authorization for paid/private-data tests. Coordinate with account-switching
+and UI work rather than overwriting it.
+
 ## Later, not daily-use blockers
 
 Longer-term contact facts/style memory beyond recent transcript examples,

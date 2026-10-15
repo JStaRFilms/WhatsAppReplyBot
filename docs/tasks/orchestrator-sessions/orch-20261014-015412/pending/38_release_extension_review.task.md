@@ -59,6 +59,13 @@ Check these boundaries:
 - Actual constructed provider text/roles/schema/owner/name fields are budgeted, not merely the old context JSON. Mandatory overflow rejects before fake fetch; output cap and image uncertainty remain explicit. No extra model call, tokenizer dependency or Batch2 context expansion.
 - Additive settings/tables reopen safely with defaults, API headers/auth/no-store/origin/static checks apply, protocol2 plain discovery stays compatible and missing capabilities disable new controls honestly. Pinned Expo Contacts and target authorization were verified before any install, with no other dependency/toolchain drift.
 
+Read docs/features/Cached_Chat_and_Draft_Opening.md as a later explicit requirement.
+Known chat/draft bodies paint before delayed history; refresh/source arrival cannot
+blank them, duplicate/unmount an active editor or overwrite local work. Cached data
+cannot bypass server revision/source/scope gates or trigger generation/replay. Test
+out-of-order reads and multi-client conflicts, with genuine visible paint rather
+than an opacity-zero DOM node. Missing context must not hide an already-known draft.
+
 Additional history/media boundaries from the owner's later approval:
 
 - Verified same-account alias reads join existing history/raw/quotes/context without

@@ -71,8 +71,15 @@ final desktop/APK export, manipulate services/viewers/devices or fix unrelated35
 
 ## Execution
 
-Running with provider takomi, openai-codex/gpt-6-luna, thinking high.
+Completed with provider takomi, openai-codex/gpt-6-luna, thinking high.
 Frozen source69f01fd9975566fec8c87eb69c990425f84578db; parent320 tests/types pass.
 T3 task ID: `node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-extension-browser-validation-20261015-r1`.
 Client request ID: otherme-extension-browser-validation-20261015-r1.
-Only ignored synthetic preview artifacts may be written; no product writer active.
+Worker passed36 checks/18 screenshots/90 synthetic API calls, zero unexpected
+calls/page/unplanned console errors. Parent inspected harness/representative images;
+its first rerun found a fixture request-event/route-registration race, corrected
+only the ignored harness wait. Next parent run passed36 checks/18 screenshots/86
+synthetic calls with the same clean error assertions. Handoff records the resolved
+fixture race and limitations. No product source changed. This completes39's frozen
+baseline validation, not acceptance of later40/41+ history/media/read-cache scope.
+Updated integrated browser checks and38/33 gates remain held on that new source.

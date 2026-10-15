@@ -93,8 +93,8 @@ account access, provider requests, real sends and deployment remain gated.
 | 36 | Implement extension backend/core | coder | vibe-build | 34 accepted | Source accepted, parent282 tests/types pass; non-direct name regression fixed |
 | 37 | Implement pending send UX and controls | coder | vibe-build | 36 handoff, native API/target verification | Implementation returned; parent320 tests/types pass; browser39 validation pending |
 | 38 | Review combined extended release | reviewer | vibe-build | 36/37,39 and parent validation | Pending, no concurrent source writers |
-| 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Running Luna High, preview-only against69f01fd; baseline evidence for new scope |
-| 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Running Sol High docs-only; no code until39 export finishes |
+| 39 | Validate extended browser UI | worker | vibe-build | Frozen37 source | Complete; parent36 checks/18 screenshots pass after fixture wait correction;69f01fd baseline only |
+| 40 | Plan history repair and cached media/viewers | architect | vibe-build | owner approved history/media scope | Running Sol High docs-only;39 complete; fold cached-first chat/draft addendum into42 before code |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

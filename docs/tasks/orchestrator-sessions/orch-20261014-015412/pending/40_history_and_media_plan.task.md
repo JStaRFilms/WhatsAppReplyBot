@@ -75,3 +75,12 @@ delegation is now running docs-only on Takomi Sol High.
 T3 task ID: node:delegated-task:command%3Amcp%3A71dc7a79-64d2-42f5-bb9c-4026e6ac54e9%3Adelegate-task%3Aotherme-history-media-plan-20261015-r1.
 Client request ID: otherme-history-media-plan-20261015-r1.
 No implementation, installation or live action has begun.
+
+## Later owner addendum, recorded after launch
+
+Read docs/features/Cached_Chat_and_Draft_Opening.md before final acceptance and
+implementation42. Owner requires cached-first opening of known chats and existing
+draft bodies with background refresh, preserved edits and multi-client revision
+safety. Parent recorded this while40 was running; its initial prompt did not carry
+this later request. Parent must fold the addendum into the returned plan/42 before
+launching code, not assume the original40 result already covered it.

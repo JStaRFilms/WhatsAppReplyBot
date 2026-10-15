@@ -1,81 +1,104 @@
-# Task47: Refresh real row geometry after history reflow
+# Task 47: Refresh real row geometry after history reflow
 
-## Setup and authority
+## Agent setup
 
-Takomi coder, Sol High, Build, requiredCapabilities=[write-code]. Canonical root
-C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot.
-All commands explicitly cd there, use unslop and scoped engineering rules. Read
-Photo_Visibility_After_History_Reflow.md, Cached_History_and_Photo_Handoff.md,
-Foreground_Video_Handoff.md, completed42/43,44 r1 synthetic handoff and actual
-conversation-scroll/conversation code/tests. Parent owns tracking/docs/commits.
+Takomi Coder, Sol High, Build. Required capability is `write-code`.
+Canonical root is
+`C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot`.
+Every command must explicitly use that root. Read its coding guidelines and use
+unslop. The parent owns documentation, tracking, commits and release metadata.
 
-44 r1 is terminal partial/blocked, no other source writer. Product baseline4f2b428
-had435 serialized-suite/packaging tests/all types passing, but browser revealed
-this concrete integration defect. Owner explicitly directs full-round completion
-and confirmed scoped fixes, no routine approval question.
+Read these before implementation:
+- `docs/issues/Photo_Visibility_After_History_Reflow.md`
+- `docs/features/Cached_History_and_Photo_Handoff.md`
+- `docs/features/Foreground_Video_Handoff.md`
+- Completed packets 42 and 43, and the partial synthetic 44 handoff.
+- The actual scroll hook, conversation screen, relevant tests and installed RN types.
 
-## Objective and source scope
+The owner directs completion of the whole approved round and scoped corrections.
+No routine approval question is needed. Round 1 of 44 is terminal and partial.
+There is no competing source writer. Product baseline `4f2b428` passed 435 serialized
+source and packaging tests and all types, but those checks missed this UI defect.
 
-Fix stale keyed-row visibility coordinates after paging/prepend/tail replacement/
-layout changes. Native/web must use coherent actual measurements, not rely only
-on unchanged-size rows firing onLayout again. Keep actual visible unread/media,
-source anchors, stable editor/input identity, viewport and privacy boundaries.
+## Objective
 
-Exclusive ownership: apps/mobile/lib/conversation-scroll.ts,
-app/conversation/[id].tsx, focused test/keyboard-scroll.test.cjs,
-history-paging.test.cjs and/or one focused visibility regression test. A minimal
-fixture adjustment for those tests is allowed. No backend/cache/viewer/API/config/
-package/lock/native/version/docs/status/board/master writes or other refactoring.
-Do not bypass visibility flags in MediaAttachment or download all mounted media.
+Fix stale keyed-row coordinates after history prepend, page replacement and layout
+changes. Keep actual visible media and unread detection, source anchors, stable
+editor identity and privacy rules. This must work through native and web APIs.
+
+## Source scope
+
+Exclusive ownership is limited to:
+- `apps/mobile/lib/conversation-scroll.ts`
+- `apps/mobile/app/conversation/[id].tsx`
+- Focused files under `apps/mobile/test/`, including a new regression if useful.
+
+A minimal test fixture adjustment is allowed. Do not change the backend, cache,
+viewer, API, configuration, dependencies, lockfile, native settings or version.
+Do not write docs, board state or Git metadata. No stage, commit, push or agents.
+Do not bypass `MediaAttachment` visibility or download all mounted media.
 
 ## Evidence and implementation constraints
 
-Parent diagnostic on synthetic m156: viewport photo y134/height245, scrollviewport
-y134, scrollTop4496, yet turns/sourceMaps y2087 and hook position offset4496.
-Open image count0 even2seconds later. It previously requested valid preview bytes.
-ReactNativeWeb resize-driven row events miss position-only movement on a prepend/
-replacement. See ignored parent-photo-diagnostic.cjs, no private runtime reads.
+Parent's independent synthetic repro measured photo m156 at viewport y 134 with
+height 245. The viewport also began at 134, with scrollTop 4496. The app's turn and
+source maps still recorded y 2087. Open image count stayed zero after two seconds.
+Valid preview bytes had been requested. RN web can miss position-only movement
+when keyed rows keep the same dimensions. Confirm the mechanism in current code.
 
-Use bounded supported RN refs/measurement relative to current viewport/content
-position, e.g. measureInWindow child minus scrollviewport plus captured offset
-with race guards, if actual installed types support it. Choose minimal correct
-approach, not a forced wrapper/style redesign or approximate total-height shift.
-Rows are bounded300/window. Coalesce after-layout work. Mark measurement pending,
-clear/suspend stale visible IDs and cancel acknowledgment until a coherent current
-batch completes. No old offset/page/client callback may publish. Layout races,
-scroll while measuring, missing ref/unmount and source/page epoch changes must
-fail safe/retry a bounded current read, not permanent invisibility or busy loops.
-Keep source/draft layout anchors and explicit Latest, composer focus/manual keyboard
-intent, photo/video/recording guards and current cache leases/caps unchanged.
+Use supported refs and bounded actual measurements. For example, child and scroll
+viewport `measureInWindow` coordinates plus a captured current offset may avoid a
+new wrapper, if the installed types support it. Choose the smallest correct
+approach. Do not force that API if its real contract differs. No guessed height
+shift, DOM-only framework, controller remount or unlimited history scan.
 
-## Completion criteria and tests
+Coalesce after-layout reads. Mark geometry pending, suspend stale visible IDs and
+cancel acknowledgment until a coherent current batch completes. Guard page,
+client, route, profile and scroll changes. Missing refs or old callbacks must not
+publish wrong coordinates or leave a permanent invisible state. No busy loops.
 
-Add regression that fails before fix: keyed row source y2087 moves to actual4496
-without height/onLayout change. Actual viewport at4496 must make that row visible
-and unrelated old-coordinate rows invisible. Before consistent measurement, no
-viewed acknowledgment. Cover old callback after page/scroll/profile change, page
-prepend/tail replacement/resize and preserved anchor/editor. Reuse render/lifecycle
-fixtures rather than introduce a framework. Existing mobile paging/media/viewer/
-video/pending/keyboard tests remain. Run focused first, all mobile tests/types.
-Do not edit valid tests to excuse a regression or increase production deadlines.
+Rows are bounded by the existing 300-message window. Preserve source and draft
+anchors, explicit Latest, accepted-send jump, composer and draft editor identity,
+focus and manual keyboard intent. Keep current media leases, caps, privacy,
+recording and playback ownership unchanged. This shared calculation controls both
+media acquisition and the delayed inbound viewed-ID request.
 
-Return exact implementation/changed paths, failing-before and passing-after checks,
-command counts and remaining limitations. Parent reruns/commits then44 r2 exports
-new candidate and finishes required browser checks. No extra generic review or
-agent launches. Native/hardware proof remains owner-owned. Do not stage/commit/push.
+## Definition of done and verification
+
+Add a regression that fails before the fix. An unchanged-size keyed row moves
+from content y 2087 to actual y 4496 without another per-row layout event. With
+viewport offset 4496, that row must be visible and old-coordinate rows must not.
+No viewed request may use an incomplete measurement batch.
+
+Cover stale callback rejection after page, scroll or scope changes. Exercise page
+prepend and replacement, resize and preserved anchor or editor behavior. Reuse the
+existing render and lifecycle fixtures. Do not add a testing framework or weaken
+valid assertions and deadlines.
+
+Run focused regressions first, then all mobile tests and typechecks. Parent handles
+browser re-export and full serialized integration. Do not overwrite 44 evidence or
+run its whole browser script. Return changed paths, exact commands and results,
+failing-before evidence and remaining limitations. Do not claim hardware proof.
 
 ## Execution
 
-Running Takomi Sol High, sole source writer, after terminal partial44 r1.
-T3 task ID node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-history-geometry-fix-20261015-r1.
-Client request ID otherme-history-geometry-fix-20261015-r1. No browser worker active,
-no final review/build launched. Parent docs only while this correction runs.
+Running Takomi Sol High as sole source writer after terminal partial 44 round 1.
+T3 task ID is
+`node:delegated-task:command%3Amcp%3A1c6c025d-2faf-4900-bd5c-76e24d154f69%3Adelegate-task%3Aotherme-history-geometry-fix-20261015-r1`.
+Client request ID is `otherme-history-geometry-fix-20261015-r1`.
+No browser worker, final review or release build is active. After parent acceptance,
+44 round 2 exports the corrected source and finishes the required browser cases.
+The existing combined review 38 and signed artifact task 33 follow.
 
 ## Safety
 
-No actual runtime/.env/DB/auth/token/key/contact/message/media/log/billing reads,
-paid/model/WA/API/media requests, real recorder/gallery/permissions/phone/service/
-viewer operations, production3210/8081/8083, installs/SDK/toolchain/weights, outside
-writes or final web/APK builds. Read only documented synthetic ui31/ui37/ui44 and
-public source, test-managed fake/temp data. Do not overwrite44 results/screenshots
-or run its entire browser harness; parent/next44 handles controlled re-export.
+No real runtime, environment, database, auth, token, signing, contact, message,
+media, log or billing reads. No paid calls, live API, model, WhatsApp or account
+operations. No real recording, gallery, permissions, phone, service or OS viewer
+operations. No production ports 3210, 8081 or 8083. No dependency, SDK, toolchain,
+license or model-weight downloads. No outside writes or final builds.
+
+Use public source and test-managed fakes or temporary files. Only documented
+synthetic ui-task31, ui-task37 and ui-task44 may be read under runtime. Do not
+change their results. Explicit Node is required for tests, since a sandbox's own
+process executable may be Bun. No backend decoder suites are needed here.

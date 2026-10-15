@@ -1,46 +1,52 @@
 # Photo visibility after history reflow
 
-## Confirmed blocker and evidence
+## Confirmed blocker
 
-44 r1 on frozen4f2b428 is partial and NOT accepted. See synthetic
-.runtime/ui-task44/handoff.md/results.json/photo-preview-blocker.png. Known draft
-paint/edit, some paging/exact-ID, video and geometry cases ran, but many required
-cases remain uncovered. No release or38 launch is authorized by that partial pass.
+Task 44 round 1 is partial and not accepted. It tested frozen source `4f2b428`.
+The synthetic evidence is in `.runtime/ui-task44/handoff.md`, `results.json` and
+`photo-preview-blocker.png`. Several required browser cases remain untested.
+Nothing in this run authorizes release or acceptance by review 38.
 
-Parent independently reran the isolated harness with a diagnostic added only to
-.runtime/ui-task44/parent-photo-diagnostic.cjs. After paging then Latest, the visible
-photo turn was at viewport y134 with height245. History viewport also began y134
-and scrollTop4496. React's actual hook maps still recorded turn/source y2087. The
-scroll state correctly had offset4496/height609. After another2seconds there were
-still zero Open image controls. This is not a missing mock, invalid PNG, permission
-or simple400ms wait issue. All data is invented and no real API/media was used.
+The parent reproduced the failure with a diagnostic added only to
+`.runtime/ui-task44/parent-photo-diagnostic.cjs`. After paging and Latest, the photo
+turn was at viewport y 134, height 245. The history viewport also began at y 134,
+with scrollTop 4496. The app still recorded the photo's content position as 2087.
+Its scroll state correctly recorded offset 4496 and viewport height 609.
 
-History derives both visible-media gating and inbound viewed IDs from stored row
-coordinates. It relies on onLayout for position updates; RN-web can move an
-unchanged-size keyed row after prepend/replacement without another per-row size
-notification. Keeping old positions causes wrong visibility. Do not fix by loading
-all media or treating all mounted rows as seen. Native behavior needs preservation,
-not an unverified claim that its layout events are identical.
+After another two seconds, there were still zero Open image controls. Preview
+metadata and valid PNG bytes had been requested. This is not a missing mock,
+invalid image, permission failure or a short test wait. All data was invented.
+The diagnostic deliberately stops after this measurement and closes its browser.
 
-## Required correction47
+## Shared cause and boundaries
 
-Refresh actual bounded current-row geometry after page content/reflow/viewport
-changes, with stable native/web refs and current source/chat/client/read-generation
-and scroll-offset guards. Prefer supported RN measurement relative to the actual
-viewport plus current content offset, not a guessed prepend-height delta. No new
-DOM-only data framework, route/controller remount or arbitrary whole-history scan.
+History uses the same row coordinates for visible media and inbound viewed IDs.
+It relies on per-row `onLayout` events. In RN web, a keyed row can move after
+prepend or replacement without another notification when its size is unchanged.
+The saved coordinates then describe the previous page layout.
 
-Mark geometry pending and cancel viewed work until a current coherent measurement
-batch is accepted. Stale callbacks cannot publish into another route/profile or
-measure a different page. Preserve ID/offset anchors, existing typed text/draft
-editor identity/focus and truthful Latest. Only actual currently visible rows can
-acquire media; only actual inbound visible rows may be acknowledged after delay.
-No relaxation of cached-file authority, expiry/delete/view-once, leases or caps.
+Do not fix this by loading all mounted media or marking all mounted messages seen.
+Native behavior also needs preservation. This browser result does not establish
+that native layout events behave identically or explain an owner's real incident.
 
-Use focused failing-before/passing-after tests with keyed rows moving without
-individual layout events, plus stale measurement/profile/scroll/page race and
-actual unread/media visibility assertions. Then existing mobile tests/types.
-No backend/cache API/schema/config/dependency/version changes, live/device actions
-or generic review.47 is a targeted implementation correction;44 r2 must re-export
-new source and complete the remaining checks, then existing38 reviews combined
-source once. No accepted browser counts may be invented from the partial run.
+## Correction 47
+
+Measure the actual bounded current rows after content or viewport reflow. Use
+supported native and web refs with current chat, client, page and scroll guards.
+Prefer measured viewport-relative coordinates plus current scroll offset over a
+guessed prepend-height delta. Avoid a DOM-only framework or controller remount.
+
+Cancel viewed work and suspend stale visibility while a measurement is pending.
+Accept only a coherent current batch. Old callbacks cannot publish into another
+route, profile, page or scroll position. Preserve source ID and offset anchors,
+existing draft editor and input identity, keyboard intent and truthful Latest.
+Keep cache authority, source expiry, deletion, view-once rules, leases and caps.
+
+A regression must fail before the correction when an unchanged-size keyed row
+moves from content y 2087 to 4496 without a new per-row layout event. It must pass
+afterward and reject stale measurements. Check media visibility and actual visible
+inbound IDs, then run the existing mobile tests and typechecks.
+
+This is a targeted correction, not another generic review. Task 44 round 2 must
+export the corrected source and finish the remaining checks. The existing combined
+review 38 and artifact task 33 stay held. Native acceptance remains separate.

@@ -58,8 +58,7 @@ calls/page/console errors,59 focused source tests, but failed photo opening and
 left several required cases untested. No full44 acceptance count.
 Parent independent diagnostic confirmed source layout maps2087 versus actual4496
 content position for the visible photo.47 now fixes the bounded shared geometry;
-R1 freeze ends only for that confirmed correction. See Photo_Visibility_After_
-History_Reflow.md.38/33 stay held. After47 acceptance, delegate a fresh44 r2 with
+R1 freeze ends only for that confirmed correction. See `docs/issues/Photo_Visibility_After_History_Reflow.md`.38/33 stay held. After47 acceptance, delegate a fresh44 r2 with
 original brief, R1 findings, actual47 response and all remaining coverage; new
 clientRequestId/taskId, never send to old childThread. No r2 launched yet.
 

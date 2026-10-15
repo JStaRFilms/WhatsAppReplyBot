@@ -62,6 +62,35 @@ After correction, the parent accepts source and freezes a new candidate. A fresh
 38 then reviews the combined source once, followed by final metadata and artifacts
 33. No release, source review acceptance or native hardware proof exists yet.
 
+## Correction 48 accepted at source
+
+The parent accepted `35cba0ce1a0ecda1af056d8f872feed87ea94f9b` after diff inspection
+and independent verification. Warm measurements now use a measured content origin,
+not a saved or requested scroll offset. Reflow retains the last coherent anchor.
+Editor focus callbacks stay stable across page changes. Measured trailing space
+allows a last-row editor to keep its viewport offset without bottom clamping.
+
+Foreground transitions retire old pending metadata and downloads. Cleanup compares
+task identity before deleting a pending entry. A canceled old denial cannot revoke
+a new current handle. The provider aborts old reads before starting media recovery.
+No dependency, backend, API, native configuration or version changed.
+
+Parent serialized tests passed 94 core, 109 backend, 217 mobile and 29 packaging,
+total 449. All workspace types and diff checks passed. The parent checked hashes
+for all eight changed source/test files and 28 exported files against the delegate's
+verification manifest, with no mismatch.
+
+The parent reran all four isolated Edge cases with separate output directories in
+`.runtime/ui-task44/fix48/parent-1792098080207-*`. All 27 checks passed, no failures,
+unexpected calls or browser errors. Warm viewed IDs exactly matched 357/358/359.
+The cached editor kept its node, focus, text and y350. All clean resize deltas were
+0px. Three foreground transitions recovered without Retry; image binary count
+stayed one with fresh metadata. Existing r2 artifacts were not overwritten again.
+
+This accepts correction 48, not full 44 or release. A fresh frozen-source round 3
+must finish integrated history, privacy, pending-photo and supplemental cases.
+Review 38 and artifacts 33 remain held. No native hardware acceptance is claimed.
+
 ## Evidence handling note
 
 The first two parent reruns accidentally used the original runner's output paths.

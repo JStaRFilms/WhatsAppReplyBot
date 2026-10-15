@@ -143,6 +143,46 @@ actual merged/signed APK proof;33 must verify. Cached/player/public codec limits
 are in Foreground_Video_Handoff.md.44 now validates this frozen integrated product
 source; no code writer during its export. Parent supplies actual44 results at launch.
 
+## Integrated geometry and foreground corrections
+
+Include accepted47 and48 in the single combined review. These are confirmed
+browser defects, not a request for another generic review loop. Parent supplies
+fresh accepted44 r3 evidence before dispatch. Product candidate is currently
+35cba0ce1a0ecda1af056d8f872feed87ea94f9b, not the earlier4f2b428 export.
+
+47 added coherent measured rows after unchanged-size keyed paging. Its first unit
+regression failed against old source. Broader44 r2 then exposed warm saved-offset
+double counting and off-screen viewed IDs, a cached editor going below the viewport,
+clean responsive anchor drift and foreground photo recovery needing Retry. Parent
+independently reproduced all four and scoped48. Review these actual boundaries:
+
+- Content-relative coordinates come from measured content and viewport, not a saved
+  or requested offset. Pending/stale/page/profile/scroll callbacks cannot publish
+  or acknowledge rows. Actual source-child intersections, not full draft wrappers
+  or mounted rows, control inbound viewed IDs. Measurement retries/cleanup stay bounded.
+- Source restoration keeps the last coherent ID/offset across ordinary reflow and
+  native scroll adjustments. Active cached editors retain their node, focus, local
+  work and viewport position after source arrival. Measured trailing room is only
+  for a focused editor and clears on exit. No hidden focus or keyboard resumption.
+- Foreground recovery cannot join old canceled metadata/download tasks. Late cleanup
+  cannot delete a newer entry, and an old denial cannot revoke a new current handle.
+  The provider cancels old reads before current media recovery. Current authority,
+  source expiry/delete/view-once, namespace/profile scope and no-auto-play remain.
+
+48 source acceptance is35cba0c. Parent independently passed94core/109backend/
+217mobile/29packaging,449 total, all types and diff checks. Parent verified eight
+changed source/test and28 export hashes against fix48 manifest, then independently
+passed27 isolated Edge checks with exact warm visible IDs, editor y350, zero clean
+resize deltas and three automatic foreground recoveries, one full-image binary.
+These are not full44 acceptance. Actual44 r3 result must be supplied at launch.
+
+Explicitly approved synthetic review inputs are ui-task44/r3 plus fix48 verification
+and parent case evidence, and the older named ui-task31/ui-task37 baseline artifacts.
+The r2 raw results were accidentally overwritten by parent reproduction. Its handoff,
+evidence-summary/browser log and supplements remain, but the current raw file does
+not contain the original69-check run or match its old manifest. Do not rely on that
+raw result/hash or silently repair it. Use fresh44 r3 for integrated acceptance.
+
 ## Dependencies and release gate
 
 36/37 and all owner-approved40/41+ history/media implementation must be integrated,

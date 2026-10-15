@@ -129,6 +129,56 @@ manifest remain. Current results.json is not the original 69-check result and do
 not match its old hash. Further reproductions have separate output paths. New
 acceptance requires a fresh complete result and hashes, not a relabeled old file.
 
+## Round 3 brief
+
+Running Takomi Sol High on new frozen product
+`35cba0ce1a0ecda1af056d8f872feed87ea94f9b`, correction 48 accepted. No source writer.
+T3 task ID is
+`node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-integrated-history-media-browser-20261015-r3`.
+Client request ID is `otherme-integrated-history-media-browser-20261015-r3`. All 449 serialized workspace and packaging tests and
+workspace types passed. Parent independently reran the four corrected browser cases,
+27 checks passed with no failures or unexpected calls/errors. Details and actual
+causes are in `docs/issues/History_and_Foreground_Reopen_Blockers.md` and completed48.
+These isolated cases do not replace this full integrated acceptance.
+
+Use Takomi Sol High and only `.runtime/ui-task44/r3/` for a fresh full preview,
+harnesses, results, screenshots and input hashes. Preserve every r1/r2/fix48 artifact.
+Export from apps/mobile using the credential-isolating wrapper to
+`../../.runtime/ui-task44/r3/web`, desktop mode and max-workers2. Do not assume the
+fix48 partial source manifest covers every full export input. Collect current public
+input and export hashes, runner and evidence hashes after the full pass. Never rerun
+into the same output directory without retaining its prior result and attribution.
+
+Carry forward this entire original required-case contract. Reuse the strong r2
+fixture and fix48 assertions, not their stale bundles. Keep actual source rectangles
+captured synchronously at fetch for every viewed POST. Do not weaken the set
+assertion, deadlines, editor3px or anchor3px checks. Verify warm reopen without
+corrective scroll and three foreground recoveries without Retry or a new image
+binary. Keep pending measurement, background and viewer cancellation covered.
+
+Complete the previously unaccepted combination of photo viewer with a pending
+immutable send, newer local text and quote, slow refresh, then close and prove node,
+text, quote and anchor survive. Retain ordinary paging/eviction/newest-injection,
+Draft/quote around-source, cache concurrency/error/CAS, retired alias no-rebind,
+persistent reuse, source/version/namespace/privacy/stale-completion and video/audio
+ownership cases. Run the all-variant source-state, visibility-cancellation and valid
+unsupported-codec supplements on this same fresh export. Do not borrow their old
+counts. Native and backend merge correctness remain separate proof.
+
+The forced CSS-height stress is a diagnostic, not normal component behavior. Keep
+it in an isolated explicitly diagnostic case, separate from accepted counts and
+normal history flow. It must not abort remaining ordinary checks or contaminate
+the following resize state. Preserve its result honestly; a failure there alone
+is not a release blocker without a normal-use reproduction. Actual preview arrival
+has a fixed box and must retain its real source offset. Clean responsive checks
+must use unmodified component styles. This does not permit relaxing actual UI bugs.
+
+Return one fresh coherent full result, all required cases mapped to assertions,
+API/bytes/metadata/actual viewed-ID counts, representative screenshots, source and
+export hashes and limitations. Report any confirmed normal-use blocker without
+product writes or another generic review. Parent accepts 44 then launches the one
+combined 38, final metadata and 33. No review or final build is launched yet.
+
 ## Safety limits
 
 No real DB/auth/.env/token/key/book/message/log/media/runtime reads, live API/model/WhatsApp/profile/download/history actions, original gallery/private-phone storage, paid/image quota, device/service/OS viewer control, production3210/8081/8083, installation/SDK/toolchain work, outside-project writes, final desktop/APK build or stage/commit/push. Only the explicitly documented synthetic directories and normal synthetic test temp data are permitted. No source fixes or other agent launches.

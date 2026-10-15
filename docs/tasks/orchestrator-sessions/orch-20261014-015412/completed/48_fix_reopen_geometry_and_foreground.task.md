@@ -100,7 +100,21 @@ T3 task ID is
 `node:delegated-task:command%3Amcp%3A73c03ce5-b336-44e9-b7ac-b1c24f448a93%3Adelegate-task%3Aotherme-reopen-geometry-and-foreground-fix-20261015-r1`.
 Client request ID is `otherme-reopen-geometry-and-foreground-fix-20261015-r1`.
 The MCP instance prefix changed; use this exact returned ID, not the older 1c6 prefix.
-No validation worker, review 38 or artifact build 33 is active.
+Completed and parent accepted as `35cba0ce1a0ecda1af056d8f872feed87ea94f9b`.
+Parent reviewed the diff and verified all eight source/test and 28 export hashes.
+Parent serialized checks passed 94 core, 109 backend, 217 mobile and 29 packaging,
+total 449, plus all types and diff checks. The four isolated browser cases passed
+27 checks in separate parent output folders with zero failures or unexpected/errors.
+
+Confirmed causes are saved-offset double counting, recapturing anchors from mixed
+old/new geometry, unstable focus callback plus insufficient last-row trailing room,
+and old canceled foreground reads coalescing with new reads. Actual content origin,
+last coherent anchors, stable focus and measured editor space fix the first three.
+Current pending-entry identity and cancellation ordering fix foreground recovery.
+No product correction was needed after parent inspection. No backend, dependency,
+version or native setting changed. No generic review or release acceptance yet.
+
+Task 44 round 3 follows on the frozen commit. Review 38 and build 33 remain held.
 
 ## Preview and safety
 

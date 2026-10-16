@@ -138,7 +138,8 @@ export default function ConversationScreen() {
   const [composerRetry,setComposerRetry]=useState(0);
   const [quote, setQuote] = useState<Message | null>(null); const [selected, setSelected] = useState<Message | null>(null);
   const selectedGesture=useRef(0);
-  const selectMessage=(message:Message)=>{selectedGesture.current++;setSelected(message);};
+  const quoteFocusRevision=useRef<number | null>(null);
+  const selectMessage=(message:Message)=>{selectedGesture.current++;changeSelected(message);};
   const composeRevision=useRef(0);
   const composeScope=useRef({id,client});
   if(composeScope.current.id!==id || composeScope.current.client!==client){composeScope.current={id,client};composeRevision.current++;}
@@ -161,9 +162,23 @@ export default function ConversationScreen() {
   const {input}=typing;
   const quoteMessage=(message:Message | null)=>{editQuote(message);typing.focus();};
   const viewedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const cancelViewed = useCallback(() => { clearTimeout(viewedTimer.current); }, []);
+  const viewedProbe = useRef<(() => void) | undefined>(undefined);
+  const cancelViewed = useCallback(() => { clearTimeout(viewedTimer.current);viewedProbe.current?.();viewedProbe.current=undefined; }, []);
   const scrolling = useConversationScroll(history, id, !!cached, cancelViewed, cached, client);
   const { scroll, position, positioned } = scrolling;
+  const dialogs=useRef({id,client,reaction:false,permissions:false,pause:false,revision:0});
+  if(dialogs.current.id!==id || dialogs.current.client!==client)dialogs.current={id,client,reaction:false,permissions:false,pause:false,revision:0};
+  const dialogScope=dialogs.current;
+  const [dialogChange,setDialogChange]=useState(0);
+  const setDialogVisible=useCallback((kind:'reaction'|'permissions'|'pause',open:boolean)=>{
+    if(dialogs.current!==dialogScope || !alive.current || dialogScope[kind]===open)return;
+    dialogScope[kind]=open;dialogScope.revision++;cancelViewed();setDialogChange(value=>value+1);
+  },[dialogScope,cancelViewed]);
+  const pauseDialogVisibility=useCallback((open:boolean)=>setDialogVisible('pause',open),[setDialogVisible]);
+  const changeSelected=(message:Message | null)=>{setDialogVisible('reaction',message!==null);setSelected(message);};
+  const changePermissions=(open:boolean)=>{setDialogVisible('permissions',open);setPermissions(open);};
+  // Closing a dialog starts a new measured, uncovered settling interval.
+  useLayoutEffect(()=>{scrolling.refreshRows?.();},[dialogScope,dialogChange]);
   const group=snapshot?.historyGroups?.find(group=>group.id===id || group.memberIds.includes(id));
   const memberIds=group?.memberIds ?? [id];
   const readOnly=!!group && group.id!==id;
@@ -173,8 +188,9 @@ export default function ConversationScreen() {
     alive.current=true;
     setPauseState('idle'); setHistoryError(null);setPaging(false);pageBusy.current=false;autoNewer.current=null;pendingLocation.current=null;pagingRead.current++;jumpRequests.current.clear();selectedNavigation.current=null;
     setViewer(null);viewerOpen.current=false;pickerBusy.current=false;mediaCache?.setViewerOpen(false);
+    quoteFocusRevision.current=null;
     setReactionPicker(false);setReactionEmoji('');
-    setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);
+    setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);setPermissions(false);
     setAttachment(null);setPicking(false);setAudioClip(null);setAudioBusy(false);
     setDraftFeedback(null);setDrafting(false);setDraftUnconfirmed(false);draftUnknownScope.current=null;draftRequest.current=null;turns.current.clear();draftOffsets.current.clear();knownMedia.current.clear();
     composerState.current=null; seenMessage.current=null;
@@ -229,17 +245,23 @@ export default function ConversationScreen() {
     const visible=new Set(scrolling.visibleIds ?? []);
     const ids=messages.filter(message=>visible.has(message.id) && message.direction==='inbound'
       && !cached?.unavailableSourceIds?.includes(message.id)).map(message=>message.id).slice(0,100);
-    const key=JSON.stringify([historyVersion,ids]);
-    if (!ids.length || !discovery?.capabilities?.historyPaging || !focused || !foreground || !positioned || !scrolling.settled || historyError || cached?.stale || paging || viewer
+    const key=JSON.stringify([historyVersion,ids]),dialogRevision=dialogScope.revision;
+    if (!ids.length || !discovery?.capabilities?.historyPaging || !focused || !foreground || !positioned || !scrolling.settled || historyError || cached?.stale || paging || viewer || dialogScope.reaction || dialogScope.permissions || dialogScope.pause
       || readyVersion !== version || status !== 'online' || seenMessage.current === key) return;
+    let active=true;
+    const current=()=>active && dialogs.current===dialogScope && dialogScope.revision===dialogRevision && !dialogScope.reaction && !dialogScope.permissions && !dialogScope.pause && !viewerOpen.current
+      && focusedRef.current && isForeground() && !position.dragging && position.target===null && scrolling.isVisibilityCurrent?.()!==false
+      && currentScreen() && history.get(id)===cached;
     viewedTimer.current = setTimeout(() => {
-      if (!focusedRef.current || !isForeground() || position.dragging || position.target!==null || scrolling.isVisibilityCurrent?.()===false
-        || !currentScreen() || history.get(id)!==cached) return;
-      seenMessage.current = key;
-      void viewedMessages(id, ids).catch(() => { if (seenMessage.current === key) seenMessage.current = null; });
+      if(!current())return;
+      viewedProbe.current=scrolling.verifyVisibility?.(()=>{
+        if(!current())return;
+        seenMessage.current = key;
+        void viewedMessages(id, ids).catch(() => { if (seenMessage.current === key) seenMessage.current = null; });
+      },current);
     }, 600);
-    return cancelViewed;
-  }, [id, cached, historyVersion, version, readyVersion, focused, foreground, positioned, scrolling.visibilityRevision, scrolling.settled, historyError, paging, viewer, status, viewedMessages, position, cancelViewed]);
+    return ()=>{active=false;cancelViewed();};
+  }, [id, cached, historyVersion, version, readyVersion, focused, foreground, positioned, scrolling.visibilityRevision, scrolling.settled, historyError, paging, viewer, dialogScope, dialogChange, status, viewedMessages, position, cancelViewed]);
   useEffect(()=>{
     if(!draftUnconfirmed || draftFeedback?.draft || !c || draftUnknownScope.current?.id!==id || draftUnknownScope.current.client!==client)return;
     const available=snapshot?.drafts.filter(draft=>draft.accountId===snapshot.accountId && draft.conversationId===id
@@ -330,7 +352,7 @@ export default function ConversationScreen() {
     const revision=selectedGesture.current;
     void intents.enqueue({conversationId:id,composerIdentity:composerIdentity+':reaction',revision,text:'',quotedMessageId:null,action:action.data},()=>{})
       .catch(error=>{if(currentScreen())reportError(error instanceof Error?error.message:'Reaction could not be saved.');});
-    setSelected(null);setReactionPicker(false);setReactionEmoji('');
+    changeSelected(null);setReactionPicker(false);setReactionEmoji('');
   };
   const busy=picking || audioBusy;
   const turnDrafts=new Map<string,Draft>();
@@ -441,14 +463,14 @@ export default function ConversationScreen() {
       <Text accessibilityRole="header" style={{ color: palette.text, fontFamily: fonts.semibold, fontSize: 18 }}>{c?.name ?? 'Conversation'}</Text>
       {c && <View style={{ alignSelf: 'flex-start' }}><ChatBadge conversation={c} pending={[...turnDrafts.values()].some(d => d.state === 'pending')}/></View>}
     </View>
-    {c && <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => setPermissions(true)}
+    {c && <Pressable accessibilityRole="button" accessibilityLabel="Contact permissions" onPress={() => changePermissions(true)}
       style={{ width: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}><SlidersHorizontal color={palette.text} size={22}/></Pressable>}
   </View>;
   if (!c) return <Page header={header} bottomInset><Text style={{ color: palette.muted, fontFamily: fonts.regular }}>Conversation unavailable. Connect to the service first.</Text></Page>;
   return <Page scroll={false} header={header} bottomInset>
     {readOnly && <View style={{padding:12,gap:8}}><Text style={{color:palette.muted}}>This is a retired identity. History and original pending work are read-only. Your local draft stays here.</Text><Button label="Open current conversation" secondary onPress={()=>router.push({pathname:'/conversation/[id]',params:{id:group.id}})}/></View>}
     {!readOnly && c.kind === 'direct' && c.mode !== 'never_reply' && !c.excluded && <View style={{ paddingHorizontal: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1, borderColor: palette.border }}>
-      <PauseControls conversation={c}/>
+      <PauseControls conversation={c} onDialogVisibilityChange={pauseDialogVisibility}/>
       {c.control !== 'manual' && <Pressable accessibilityRole="button" accessibilityState={{ busy: drafting, disabled: drafting || draftUnconfirmed || status !== 'online' }}
         disabled={drafting || draftUnconfirmed || status !== 'online'} onPress={() => { void requestDraft(); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, minHeight: 48, paddingHorizontal: 8 }}>
         {drafting && <ActivityIndicator size="small" color={palette.accent}/>}
@@ -505,7 +527,7 @@ export default function ConversationScreen() {
               {reaction.state==='failed' && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>{reaction.detail ?? 'Reaction not sent.'}</Text>}
               {reaction.state==='cancelled' && <Text style={{color:palette.muted,fontSize:12}}>Reaction not submitted.</Text>}
             </View>}
-            {draft && displayedDraftIds.has(draft.id) && <View key={'draft-'+draft.id} onLayout={event=>{if(currentScreen() && history.get(id)?.messages===cached?.messages){draftOffsets.current.set(draft.id,event.nativeEvent.layout.y);scrolling.refreshRows?.();finishLocation(source);}}} style={{paddingVertical:8}}><DraftCard draft={draft} sourceReady={!!m && !cached?.stale && !historyError && readyVersion===version && !cached?.unavailableSourceIds?.includes(source) && !readOnly && (!group || draft.conversationId===group.id)} onEditorFocus={scrolling.editorFocus} onSent={()=>{if(discovery?.capabilities?.historyPaging)void pageHistory('latest');else scrolling.latest();}}/></View>}
+            {draft && displayedDraftIds.has(draft.id) && <View key={'draft-'+draft.id} onLayout={event=>{if(currentScreen() && history.get(id)?.messages===cached?.messages){draftOffsets.current.set(draft.id,event.nativeEvent.layout.y);scrolling.refreshRows?.();finishLocation(source);}}} style={{paddingVertical:8}}><DraftCard draft={draft} sourceReady={!!m && !cached?.stale && !historyError && readyVersion===version && !cached?.unavailableSourceIds?.includes(source) && !readOnly && (!group || draft.conversationId===group.id)} onEditorFocus={scrolling.editorFocus} onEditorBlur={scrolling.editorBlur} onSent={()=>{if(discovery?.capabilities?.historyPaging)void pageHistory('latest');else scrolling.latest();}}/></View>}
           </View>;
         })}
         {paging && <ActivityIndicator accessibilityLabel="Loading messages" size="small" color={palette.muted}/>}
@@ -587,12 +609,21 @@ export default function ConversationScreen() {
           && !cached?.unavailableSourceIds?.includes(viewer.id) && (!current || !!current.media && !current.media.viewOnce && current.media.access!=='expired'
             && (current.media.expiresAt===null || current.media.expiresAt>clock.now()));
       }}/>}
-    <PermissionSheet conversation={c} visible={permissions} onClose={() => setPermissions(false)}/>
-    <Modal transparent visible={selected !== null} animationType="fade" onRequestClose={() => setSelected(null)}>
+    <PermissionSheet conversation={c} visible={permissions} onClose={() => changePermissions(false)}/>
+    {/* Web's fade keeps the focus trap alive after close. Finish its opener return before accepting new input. */}
+    <Modal transparent visible={selected !== null} animationType={process.env.EXPO_OS==='web'?'none':'fade'} onRequestClose={() => changeSelected(null)}
+      onDismiss={process.env.EXPO_OS==='web'?()=>{
+        const revision=quoteFocusRevision.current;quoteFocusRevision.current=null;
+        if(revision!==null && revision===composeRevision.current)typing.focus();
+      }:undefined}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000088' }}>
-        <Pressable style={{ flex: 1 }} onPress={() => setSelected(null)}/>
+        <Pressable style={{ flex: 1 }} onPress={() => changeSelected(null)}/>
         <View style={{ padding: 22, gap: 12, backgroundColor: palette.background, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
-          <Button label="Quote this message" onPress={() => { quoteMessage(selected); setSelected(null); }}/>
+          <Button label="Quote this message" onPress={() => {
+            if(process.env.EXPO_OS==='web'){editQuote(selected);quoteFocusRevision.current=composeRevision.current;}
+            else quoteMessage(selected);
+            changeSelected(null);
+          }}/>
           <View style={{ flexDirection: 'row', flexWrap:'wrap', gap:4 }}>{(reactionPicker ? emojis : ['👍','😂','❤️','🙏','🎉','😮','😢','🔥']).map(emoji =>
             <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={'React '+emoji} disabled={readOnly || busy || status!=='online'} onPress={()=>chooseReaction(emoji)} style={{minWidth:48,minHeight:48,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:24}}>{emoji}</Text></Pressable>)}</View>
           {!reactionPicker ? <Button label="More emoji" secondary onPress={()=>setReactionPicker(true)}/> : <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
@@ -600,7 +631,7 @@ export default function ConversationScreen() {
               style={{flex:1,color:palette.text,fontFamily:fonts.regular,fontSize:16}}/>
             <Button label="React" disabled={!reactionEmoji || busy || status!=='online'} onPress={()=>chooseReaction(reactionEmoji)}/>
           </View>}
-          <Button label="Cancel" secondary onPress={() => setSelected(null)}/>
+          <Button label="Cancel" secondary onPress={() => changeSelected(null)}/>
         </View>
       </View>
     </Modal>

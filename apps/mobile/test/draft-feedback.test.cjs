@@ -14,7 +14,7 @@ function fixture(options={}){
   const conversation={...snapshot(scope()).conversations[0],id:'chat',control:'assistant_allowed',workflowVersion:1};
   let cached=options.cold?undefined:{messages:[{id:'source',text:'Invented source',conversationId:id}]};
   const historyCalls=[],viewedIds=[],frames=[],timers=new Map();let timerSerial=0;
-  const scrolling={scroll:{current:null},position:{positioned:true,dragging:false,target:null},positioned:true,visibleIds:[],settled:true,visibilityRevision:0,locate:value=>locates.push(value),latest(){},...options.scrolling};
+  const scrolling={scroll:{current:null},position:{positioned:true,dragging:false,target:null},positioned:true,visibleIds:[],settled:true,visibilityRevision:0,verifyVisibility:(verified,current)=>{if(current())verified();return()=>{};},locate:value=>locates.push(value),latest(){},...options.scrolling};
   const read=kind=>{historyCalls.push(kind);return reads.promise.then(value=>{if(value)cached=value;return value;});};
   const app={snapshot:{...snapshot(scope()),historyVersions:{},conversations:[conversation,{...conversation,id:'other'}]},palette:{},status:'online',client:{},
     intents:{subscribe(){},get:()=>[]},history:{subscribe(){},get:()=>cached,load:()=>read('refresh'),around:(_id,source)=>read('around:'+source)},

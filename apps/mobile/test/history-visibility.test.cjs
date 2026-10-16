@@ -209,7 +209,7 @@ test('actual conversation gates photo visibility and acknowledges only the measu
   f.frame();f.fireViewed();assert.deepEqual(f.viewed,[]);
   f.complete();tree=f.render();
   assert.deepEqual(nodes(tree).filter(node=>node.type==='bubble' && node.props.visible).map(node=>node.props.message.id),['photo','outbound']);
-  f.fireViewed();assert.deepEqual(f.viewed,[['photo']]);
+  f.fireViewed();f.complete();assert.deepEqual(f.viewed,[['photo']]);
   assert.equal(label(tree,'Message').props.ref,input);assert.equal(label(tree,'Message').props.value,'Unsent composition');
   assert.equal(nodes(tree).find(node=>node.props?.testID==='turn-photo').props.ref,turnRef);
   assert.ok(nodes(tree).find(node=>node.key==='draft-draft'));

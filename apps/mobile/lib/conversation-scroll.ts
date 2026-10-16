@@ -4,9 +4,9 @@ import type { HistoryCache } from './history-cache';
 
 const savedPositions = new WeakMap<HistoryCache, Map<string, { offset: number; atBottom: boolean }>>();
 type Position = {
-  offset: number; initialOffset: number; following: boolean; atBottom: boolean;
+  offset: number; scrollOffset: number; initialOffset: number; following: boolean; atBottom: boolean;
   width: number; height: number; contentHeight: number; measured: boolean; positioned: boolean; dragging: boolean;
-  target: number | null; editor: number | null;
+  target: number | null; editor: number | null; editorFocused: boolean;
   anchor?: { id: string; offset: number };
   editorAnchor?: { target: number; offset: number; y: number; height: number };
 };
@@ -16,7 +16,9 @@ type RowNodes = {
   turn: View | null; source: View | null;
   refs: { turn: (node: View | null) => void; source: (node: View | null) => void };
 };
+type VisibilityProbe = { current: () => boolean; finish: (unchanged: boolean) => void };
 type Measurement = {
+  proof?: string; probe?: VisibilityProbe;
   pending: boolean; preserveEditor: boolean; revision: number; frame: number | null; timer: ReturnType<typeof setTimeout> | undefined;
   onMeasured?: (layouts: ReadonlyMap<string, MeasuredTurn>) => void;
 };
@@ -28,9 +30,9 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
   const content = useRef<View>(null);
   const position = useMemo<Position>(() => {
     const saved = savedPositions.get(history)?.get(id);
-    return { offset: 0, initialOffset: saved?.offset ?? 0, following: saved?.atBottom ?? true,
+    return { offset: 0, scrollOffset: 0, initialOffset: saved?.offset ?? 0, following: saved?.atBottom ?? true,
       atBottom: false, width: 0, height: 0, contentHeight: 0, measured: false, positioned: false, dragging: false,
-      target: null, editor: null };
+      target: null, editor: null, editorFocused: false };
   }, [history, id, scope]);
   const current = useRef<typeof position | null>(position); current.current = position;
   const frames = useRef<number[]>([]);
@@ -59,6 +61,7 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
   const [showLatest, setShowLatest] = useState(false);
   const cancelFrames = useCallback(() => { frames.current.forEach(cancelAnimationFrame); frames.current = []; }, []);
   const stopRead = (value:Measurement) => {
+    value.probe?.finish(false);
     if(value.frame!==null)cancelAnimationFrame(value.frame);
     if(value.timer!==undefined)clearTimeout(value.timer);value.frame=null;value.timer=undefined;
   };
@@ -81,10 +84,11 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
     if (!isCurrent() || !loaded || !position.measured || position.height <= 0 || position.dragging) return;
     if (position.editor !== null) {
       if(position.editorAnchor){restoreAnchor();return;}
+      if(!position.editorFocused)return;
       const editor = position.editor;
       cancelFrames();
       frames.current.push(requestAnimationFrame(() => {
-        if (isCurrent() && position.editor === editor)
+        if (isCurrent() && position.editor === editor && position.editorFocused)
           scroll.current?.scrollResponderScrollNativeHandleToKeyboard(editor, 16, true);
       }));
       return;
@@ -96,6 +100,7 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
     frames.current.push(requestAnimationFrame(() => {
       if (!isCurrent() || position.target === null) return;
       const target = position.target;
+      position.scrollOffset = target;
       scroll.current?.scrollTo({ y: target, animated: false });
       // A request is not proof that the newest message was actually displayed.
       if (Math.abs(position.offset - target) <= 2) {
@@ -106,7 +111,7 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
   const restoreAnchor = () => {
     if(!isCurrent() || geometryPending())return;
     const anchor=restoring.current,editor=position.editorAnchor;
-    if(position.dragging || position.editor!==null && !editor)return;
+    if(position.dragging || position.editorFocused && !editor)return;
     const row=anchor && rows.get(anchor.id);
     if(!editor && !row)return;
     const desired=editor ? editor.y-Math.max(0,Math.min(editor.offset,position.height-editor.height-16)) : row && anchor ? row.y-anchor.offset : null;
@@ -115,58 +120,72 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
     cancelFrames();
     frames.current.push(requestAnimationFrame(()=>{
       if(!isCurrent() || geometryPending() || read.revision!==revision || restoring.current!==anchor)return;
-      const target=Math.max(0,Math.min(desired,position.contentHeight-position.height));position.target=target;position.following=false;
+      const target=Math.max(0,Math.min(desired,position.contentHeight-position.height));position.target=target;position.following=false;position.scrollOffset=target;
       scroll.current?.scrollTo({y:target,animated:false});
       if(Math.abs(position.offset-target)<=2){position.target=null;position.positioned=true;restoring.current=undefined;update();}
     }));
   };
-  const measureRows = (attempt=0) => {
+  const measureRows = (attempt=0, probe?:VisibilityProbe) => {
     read.frame=requestAnimationFrame(()=>{
       read.frame=null;
-      if(!isCurrent() || !read.pending)return;
+      if(!isCurrent() || (probe ? read.probe!==probe || !probe.current() : !read.pending)){probe?.finish(false);return;}
       const revision=read.revision,offset=position.offset,height=position.height,contentHeight=position.contentHeight;
       const viewport=scroll.current?.getNativeScrollRef?.(),origin=content.current;
-      if(!viewport || !origin)return;
+      if(!viewport || !origin){probe?.finish(false);return;}
       const batch=[...permittedRows.turns].map(key=>({key,turn:nodes.get(key)?.turn,source:nodes.get(key)?.source}));
-      const valid=()=>isCurrent() && read.pending && read.revision===revision && position.offset===offset
+      const valid=()=>isCurrent() && (probe ? read.probe===probe && probe.current() : read.pending) && read.revision===revision && position.offset===offset
         && position.height===height && position.contentHeight===contentHeight && scroll.current?.getNativeScrollRef?.()===viewport && content.current===origin;
       let finished=false,retried=false;
       const retry=(discard=true)=>{
-        if(finished || !valid())return;
+        if(finished)return;
+        if(!valid()){probe?.finish(false);return;}
         if(discard)finished=true;
         if(retried)return;
         retried=true;clearTimeout(read.timer);read.timer=undefined;
         // Retry dropped native callbacks finitely, without rejecting a slow but
         // still-current batch. Ref, page, layout and scroll events restart reads.
-        if(attempt<2)measureRows(attempt+1);
+        if(attempt<2)measureRows(attempt+1,probe);
+        else probe?.finish(false);
       };
       read.timer=setTimeout(()=>retry(false),100);
       if(height<=0 || batch.some(row=>!row.turn || !row.source))return;
       const layouts=new Map<string,MeasuredTurn>();
+      const rectangles=new Map<string,number[]>();
       const measure=(node:Pick<View,'measureInWindow'>,callback:MeasureInWindowOnSuccessCallback)=>{
         try{node.measureInWindow(callback);}catch{retry();}
       };
       measure(viewport,(viewportX,viewportY,viewportWidth,viewportHeight)=>{
         if(finished || !valid())return;
         if(!Number.isFinite(viewportY) || !Number.isFinite(viewportHeight) || viewportHeight<=0 || Math.abs(viewportHeight-height)>1){retry();return;}
-        measure(origin,(_x,originY,originWidth,originHeight)=>{
+        measure(origin,(originX,originY,originWidth,originHeight)=>{
         if(finished || !valid())return;
         if(!Number.isFinite(originY) || !Number.isFinite(originHeight)){retry();return;}
-        const editorTarget=position.editor;
+        const editorTarget=position.editorFocused || position.editorAnchor ? position.editor : null;
         let editorLayout:Row | undefined;
         let remaining=batch.length*2+(editorTarget!==null?1:0);
         const complete=()=>{
           if(finished || !valid())return;
-          measure(viewport,(endX,endY,endWidth,endHeight)=>{
+          const finish=()=>measure(viewport,(endX,endY,endWidth,endHeight)=>{
             if(finished || !valid())return;
             if(endX!==viewportX || endY!==viewportY || endWidth!==viewportWidth || endHeight!==viewportHeight || batch.some(row=>nodes.get(row.key)?.turn!==row.turn || nodes.get(row.key)?.source!==row.source)){
               retry();return;
             }
-            measure(origin,(_x,endOriginY,endOriginWidth,endOriginHeight)=>{
+            measure(origin,(endOriginX,endOriginY,endOriginWidth,endOriginHeight)=>{
             if(finished || !valid())return;
-            if(endOriginY!==originY || endOriginWidth!==originWidth || endOriginHeight!==originHeight
-              || position.editor!==editorTarget){retry();return;}
+            if(endOriginX!==originX || endOriginY!==originY || endOriginWidth!==originWidth || endOriginHeight!==originHeight
+              || (position.editorFocused || position.editorAnchor ? position.editor : null)!==editorTarget){retry();return;}
             finished=true;clearTimeout(read.timer);read.timer=undefined;
+            const proof=JSON.stringify([viewportX,viewportY,viewportWidth,viewportHeight,originX,originY,originWidth,originHeight,
+              batch.map(row=>[row.key,rectangles.get(row.key+'turn'),rectangles.get(row.key+'source')])]);
+            if(probe){
+              const unchanged=read.proof===proof;
+              probe.finish(unchanged);
+              // A fresh set of IDs has not settled yet. Publish it through the
+              // ordinary measurement path and start another full viewed interval.
+              if(!unchanged && isCurrent())invalidateRows(false);
+              return;
+            }
+            read.proof=proof;
             // Content and rows share a physical origin. Saved offsets and pending
             // scroll events cannot be added to this measured coordinate system.
             position.offset=Math.max(0,viewportY-originY);
@@ -186,6 +205,19 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
             read.onMeasured?.(layouts);restoreAnchor();update();
             });
           });
+          // Row layout can change without moving the content origin. Bracket
+          // those rectangles too, before the closing viewport/content samples.
+          let remaining=batch.length*2;
+          if(!probe || !remaining){finish();return;}
+          for(const row of batch)for(const kind of ['turn','source'] as const){
+            const node=row[kind];if(!node){retry();return;}
+            measure(node,(x,y,width,height)=>{
+              if(finished || !valid())return;
+              const previous=rectangles.get(row.key+kind);
+              if(!previous || [x,y,width,height].some((value,index)=>value!==previous[index])){retry();return;}
+              if(--remaining===0)finish();
+            });
+          }
         };
         if(!remaining){complete();return;}
         if(editorTarget!==null)UIManager.measureInWindow(editorTarget,(_x,y,_width,editorHeight)=>{
@@ -195,15 +227,16 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
         });
         for(const row of batch){
           const values:{turn?:Row;source?:Row}={};
-          const received=(kind:'turn'|'source',y:number,rowHeight:number)=>{
+          const received=(kind:'turn'|'source',x:number,y:number,rowWidth:number,rowHeight:number)=>{
             if(finished || !valid())return;
-            if(!Number.isFinite(y) || !Number.isFinite(rowHeight) || rowHeight<0){retry();return;}
+            if(![x,y,rowWidth,rowHeight].every(Number.isFinite) || rowHeight<0){retry();return;}
+            rectangles.set(row.key+kind,[x,y,rowWidth,rowHeight]);
             values[kind]={y:y-originY,height:rowHeight};
             if(values.turn && values.source)layouts.set(row.key,{...values.turn,sourceY:values.source.y-values.turn.y,sourceHeight:values.source.height});
             if(--remaining===0)complete();
           };
-          if(row.turn)measure(row.turn,(_x,y,_width,rowHeight)=>received('turn',y,rowHeight));
-          if(row.source)measure(row.source,(_x,y,_width,rowHeight)=>received('source',y,rowHeight));
+          if(row.turn)measure(row.turn,(x,y,width,rowHeight)=>received('turn',x,y,width,rowHeight));
+          if(row.source)measure(row.source,(x,y,width,rowHeight)=>received('source',x,y,width,rowHeight));
         }
         });
       });
@@ -232,36 +265,52 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
   useLayoutEffect(()=>{spacing.applied=editorSpace;invalidateRows();},[position,editorSpace]);
   const latest = () => {
     if (!isCurrent()) return;
-    position.editor = null;position.editorAnchor=undefined;setEditorSpace(0);restoring.current=undefined;
+    position.editor = null;position.editorFocused=false;position.editorAnchor=undefined;setEditorSpace(0);restoring.current=undefined;
     position.dragging = false; position.following = true; setShowLatest(false); cancelViewed(); follow();
   };
-  const focusEditor = (target: number | null) => {
-    if (!isCurrent()) return;
-    const previous = position.editor; position.editor = target;
+  const focusEditor = (target: number | null, closingTarget?: number) => {
+    if (!isCurrent() || target===null && closingTarget!==undefined && position.editor!==closingTarget) return;
+    const previous = position.editor; position.editor = target;position.editorFocused=target!==null;
     if(previous!==target)position.editorAnchor=undefined;
     if(target===null)setEditorSpace(0);
     if (target !== null) {
       position.following = false; position.target = null; cancelViewed();
     } else if (previous !== null && position.target === null) {
-      position.following = position.contentHeight - position.height - position.offset <= nearBottom;
+      position.following = !history.get?.(id)?.hasNewer && position.contentHeight - position.height - position.offset <= nearBottom;
     }
     follow();invalidateRows(false);update();
   };
   const focusEditorRef=useRef(focusEditor);focusEditorRef.current=focusEditor;
-  const editorFocus=useCallback((target:number | null)=>{if(current.current===position)focusEditorRef.current(target);},[position]);
+  const editorFocus=useCallback((target:number | null, closingTarget?:number)=>{if(current.current===position)focusEditorRef.current(target,closingTarget);},[position]);
+  const editorBlur=useCallback((target:number)=>{
+    if(current.current!==position || position.editor!==target)return;
+    // Blur is not the end of editing. Keep the measured room through the
+    // completed Save/Dismiss gesture, without revealing or refocusing input.
+    position.editorFocused=false;cancelFrames();
+  },[position,cancelFrames]);
   const beginDrag = () => {if(!isCurrent())return;cancelFrames();restoring.current=undefined;position.editorAnchor=undefined;read.preserveEditor=false;position.target = null; position.dragging = true; position.following = false; cancelViewed(); update(); };
   const endDrag = () => {
     if(!isCurrent())return;
     position.dragging = false;
-    position.following = position.editor === null && position.contentHeight - position.height - position.offset <= nearBottom;
+    position.following = position.editor === null && !history.get?.(id)?.hasNewer && position.contentHeight - position.height - position.offset <= nearBottom;
     update();
   };
   const visibilityRead=read.revision,visibilityOffset=position.offset;
-  return { scroll, content, editorSpace, position, positioned, atBottom, showLatest, latest, editorFocus,
+  return { scroll, content, editorSpace, position, positioned, atBottom, showLatest, latest, editorFocus, editorBlur,
     visibleIds:geometryPending()?[]:visibleIds, visibilityRevision,
     refreshRows:invalidateRows,
     hasCurrentGeometry:()=>isCurrent() && !geometryPending(),
     isVisibilityCurrent:()=>isCurrent() && scroll.current!==null && read.revision===visibilityRead && position.offset===visibilityOffset && !geometryPending() && position.positioned && !position.dragging && position.target===null && !restoring.current,
+    verifyVisibility:(onVerified:()=>void,current:()=>boolean)=>{
+      read.probe?.finish(false);
+      const probe:VisibilityProbe={current,finish:unchanged=>{
+        if(read.probe!==probe)return;
+        read.probe=undefined;stopRead(read);
+        if(unchanged && current())onVerified();
+      }};
+      read.probe=probe;measureRows(0,probe);
+      return()=>probe.finish(false);
+    },
     rowRefs: (key:string) => {
       const previous=nodes.get(key);if(previous)return previous.refs;
       const assign=(kind:'turn'|'source',node:View | null)=>{
@@ -290,13 +339,14 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
     settled: positioned && !geometryPending() && !position.dragging && position.target===null && !restoring.current,
     locate: (offset: number,onLocated?:()=>void) => {
       if(!isCurrent())return;
-      cancelFrames();cancelViewed();restoring.current=undefined;position.editor=null;position.editorAnchor=undefined;setEditorSpace(0);position.dragging=false;position.following=false;
+      cancelFrames();cancelViewed();restoring.current=undefined;position.editor=null;position.editorFocused=false;position.editorAnchor=undefined;setEditorSpace(0);position.dragging=false;position.following=false;
       position.target=offset;
       const revision=read.revision;
       frames.current.push(requestAnimationFrame(()=>{
         if(!isCurrent() || geometryPending() || read.revision!==revision || position.target!==offset || !position.measured || position.height<=0)return;
         const target=Math.max(0,Math.min(offset,position.contentHeight-position.height));position.target=target;
         if(!scroll.current)return;
+        position.scrollOffset=target;
         scroll.current.scrollTo({y:target,animated:false});onLocated?.();
         if(Math.abs(position.offset-target)<=2){position.target=null;position.positioned=true;update();}
       }));
@@ -312,15 +362,24 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
       if(!isCurrent())return;
       const resized = position.width !== event.layoutMeasurement.width || position.height !== event.layoutMeasurement.height || position.contentHeight !== event.contentSize.height;
       const requested = position.target !== null;
-      invalidateRows(resized || requested);
+      // Measurements can precede the native event. Compare against the last
+      // event or issued scroll, not the physically measured position.offset.
+      const moved = event.contentOffset.y !== position.scrollOffset;
+      position.scrollOffset = event.contentOffset.y;
+      if(moved && !resized && !requested){
+        cancelFrames();restoring.current=undefined;
+        if(!position.editorFocused)position.editorAnchor=undefined;
+      }
+      invalidateRows(resized || requested || !moved);
       position.offset = event.contentOffset.y;position.width=event.layoutMeasurement.width; position.height = event.layoutMeasurement.height; position.contentHeight = event.contentSize.height;
       if(position.target!==null)position.target=Math.max(0,Math.min(position.target,position.contentHeight-position.height));
       if (position.target !== null && Math.abs(position.offset - position.target) <= 2) {
         position.target = null; position.positioned = true;restoring.current=undefined;
       }
-      // Content/keyboard layout events must not erase the owner's follow intent.
-      if (position.positioned && !resized && !requested && !position.dragging && position.editor === null)
-        position.following = position.contentHeight - position.height - position.offset <= nearBottom;
+      // Layout and trailing scroll-end notifications are not renewed navigation.
+      // The bottom of an older loaded window is not the actual latest tail.
+      if (moved && position.positioned && !resized && !requested && !position.dragging && position.editor === null)
+        position.following = !history.get?.(id)?.hasNewer && position.contentHeight - position.height - position.offset <= nearBottom;
       update();
       if (resized) follow();
     },

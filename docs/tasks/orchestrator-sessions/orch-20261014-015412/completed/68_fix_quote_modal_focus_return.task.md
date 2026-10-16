@@ -1,0 +1,31 @@
+# Task68: Stop quote-dialog dismissal from undoing navigation
+
+## Agent setup
+Canonical Takomi coder, Build correction, sole product writer. Every command explicitly cd to C:/CreativeOS/01_Projects/Code/Personal_Stuff/WhatsAPP autoreply/2026-10-14_WhatsAppReplyBot. Read this packet, docs/features/Messaging_Corrections_0.1.4.md, .runtime/ui-task67/handoff.md and frozen-focus-excerpt-001.txt, the67 cases/newer/observer/runner, and current Conversation/composer-focus source. Apply unslop and unslop-gpt-ui with contextual examples.
+
+## Objective
+Correct the demonstrated message-action modal exit focus race. After Quote, a later real wheel/composer intent must not be overridden by a closing modal returning focus to an old message. Preserve keyboard accessibility when closing without a newer intent.
+
+## Proven cause
+67's final66 real-wheel trace has settled offset215, trusted wheel4774, then a focus call with no options on message002 from served bundle322:1753 via UIManager114:942. Focusin physically changes4774 to0 before the next native event, no afterGET, unchanged12000ms route deadline fails. Source65 has the same cause. The RN-web FocusTrap captures the opener and unconditionally focuses it on cleanup; ModalAnimation retains it during250ms fade exit. Neither fresh visibility nor editor restoration caused this jump. Direct-DOM controls can go green because the subsequent Edit locator click scrolls the draft back; assert navigation before that click.
+
+## Scope
+apps/mobile/app/conversation/[id].tsx and focused ui68 tests. Narrow existing fixture API adaptations are allowed only for a necessary legitimate React Native import/contract, never to weaken an assertion. No scroll-hook, composer-focus, draft-card, pause, permission/media/cache/backend/API/schema/dependency/version/lock/native/release/tracking changes without parent approval.
+Use the smallest app-owned public Modal lifecycle/configuration correction. Inspect actual installed behavior. Do not patch node_modules, monkeypatch global focus, suppress screen-reader/keyboard return, add arbitrary waits, disable newer loading, repeatedly restore focus after newer input, create a new modal framework or change every modal. Keep native behavior unless a change is necessary and justified. A browser-only exit-animation/configuration fix for this selected-message modal is a candidate, not an excuse to skip actual focus tests.
+Preserve63 Save-only completed gesture/session/dialog fences,65 actual navigation/Latest,66 physical proof and600ms settling. No UI copy redesign.
+
+## Verification
+Before/after evidence must exercise the causal modal cleanup, not just a mocked prop or unrelated green scenario. Test Quote then immediate composer focus/text and real wheel before any Edit locator can auto-scroll, one bounded after50 request, actual source continuity and retained composition/quote. Test keyboard Escape/Cancel with no newer intent: the appropriate opener can regain focus and tab navigation remains usable. Opening/covered/closing modal still fences viewed metadata. Prove no delayed focus call steals newer navigation. Native fade/configuration and hardware-back handler must be preserved where applicable; browser cannot certify physical accessibility.
+Run focused modal/63/65/66/geometry/keyboard/interaction suites, all mobile tests and mobile typecheck. Use a fresh isolated production export under .runtime/ui-task68, with exact source/export hashes.
+
+## Fixed browser matrix
+Predeclare one final matrix of at most16 fresh contexts. Include both quoted-source/newer DOM and REAL WHEEL cases, two keyboard/no-newer-intent or immediate-composer controls, the eight existing63 gesture/dialog/scope/editor controls, and four initial/post-reload thumbnail contexts, paired observed/raw. Reuse67's before-bootstrap observer and global synchronous per-fetch guard, all original request bounds,3px tolerance and12000ms deadlines. No repeat-until-green, no replacing failed evidence.
+Fix the67 runtime-only photo fixture error: reload retains conversation URL, so don't wait for the Chats-list button. Wait for the actual conversation, record and restore the original source356 physical geometry at y134/viewport134, with bootstrap observation already installed. Do not change product cache/media code. Raw controls have no media diagnostic observer. Capture original photo-readiness failure at12000ms BEFORE scroll/retry/revalidate/probe reinstall. Compare exact bytes, source version and lease, not Blob URI. Count a selector/setup failure as a failure, not a successful reload. No new contexts beyond the matrix if a mistake occurs.
+For scope/editor controls, preserve editor rectangles before focus/input, held baseline, release and source arrival plus intent/read state.67's four controls were0px; original66 lacked its baseline and remains unattributed. Do not patch an editor on that missing evidence. Thumbnail historical spinner remains unexplained unless a concrete trace attributes it. A passing current matrix alone is not a claimed historical remedy.
+
+## Definition of done
+Focused product fix and proportional tests; .runtime/ui-task68/handoff.md with exact changed behavior, before/after physical trace and focus/a11y controls, final test/export/matrix counts, source/build hashes, all failures/limits and cleanup. Explicitly distinguish current passing behavior from unresolved original editor/thumbnail history, actual ASR and physical Android limits. Parent owns acceptance, commits, NEW release freeze and APK. Never reuse rejected4a manifest or old export as current proof.
+
+## Dependencies and safety
+67 is terminal and released inspection. No other product writer. Existing installed app/service/dist/native copy remain unchanged.
+No stage/commit/push, nested agents, tracked docs/tracking edits, private DB/env/auth/media/signing, actual3210/8081/8083, provider/paid/live/send/account/device/permission/mic/gallery/contact/native/build-copy/dist/service/restart/process kill/lock operations. Synthetic routes/data and owned ephemeral servers/browsers only, closed in finally. No resets/purges, paid retry or mutation replay, source rebindings, cap/tolerance/deadline increases or new packages.

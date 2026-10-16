@@ -40,3 +40,12 @@ Each implementation slice supplies a demonstrated failure, focused regression ch
 
 ## Data flow and storage
 Use existing scoped snapshots, HistoryCache, PendingIntents, outboxes, receipt observations, media leases and source-linked ASR attempts. UI projections may be optimistic but are never backend authority. No persistent full-history mirror, new database schema, background generation or analytics scope is planned.
+
+App-view acknowledgment now checks fresh physical viewport and source geometry after the existing600ms interval. If geometry changed before the native scroll event arrived, it starts a new full interval instead of marking the old sources viewed. Unchanged verification does not republish media visibility. Page, profile, refs, dialog generations and foreground state still fence the request.
+
+The browser message-action dialog completes its focus cleanup before Quote focuses the composer once. Newer composition or scope changes cancel that request. Escape and Cancel retain opener return; native fade and hardware-back behavior remain unchanged.
+
+## Corrected candidate verification
+Parent serialized checks pass609 tests:101 core,153 backend,321 mobile and34 packaging. Workspace types and41 independent focused interaction checks pass. Task68's final16-context browser matrix passes, including real-wheel quote navigation, keyboard focus return, completed mouse Save, dialog privacy and exact-byte initial/reloaded photos with raw controls. A separate frozen-candidate browser gate and artifact verification are still required before release.
+
+Earlier failed runs remain evidence. The original editor-movement observation lacks its baseline, and the original thumbnail spinner still has no proven cause. Current controls pass without a speculative editor or cache patch. Those passes do not establish a historical remedy. Actual configured-key ASR failures and physical Android media, keyboard and recording behavior remain owner-device checks. No paid probe, service restart, native-copy update or artifact promotion has occurred in this correction round.

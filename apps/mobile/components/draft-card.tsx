@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { Draft, type Action, type Outbox } from '@replybot/core/contracts';
 import { useApp } from '../lib/app-state';
@@ -7,8 +7,8 @@ import { fonts } from '../lib/theme';
 import { Button } from './ui';
 import { OutboxStatus } from './outgoing-status';
 
-export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocus, onSent, sourceReady=true }: {
-  draft: Draft; sourceReady?:boolean; onEditorFocus?: (target: number | null) => void; onSent?: () => void;
+export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocus, onEditorBlur, onSent, sourceReady=true }: {
+  draft: Draft; sourceReady?:boolean; onEditorFocus?: (target: number | null, closingTarget?: number) => void; onEditorBlur?: (target: number) => void; onSent?: () => void;
 }) {
   const { palette, mutate, status, client } = useApp();
   const [acknowledged,setAcknowledged]=useState<{client:typeof client;id:string;revision:number;draft?:Draft | null;outbox?:Outbox | null;simulated?:boolean} | null>(null);
@@ -30,7 +30,10 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
   const pending = draft.state === 'pending' && !local?.outbox;
   const outboxTitle=local?.outbox && { accepted:'Approved', unknown:'Send unconfirmed', partial:'Send unconfirmed', failed:'Not sent', cancelled:'Cancelled', queued:'Pending', dispatching:'Pending' }[local.outbox.state];
   const title=outboxTitle || (draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : draft.state==='resolved' ? 'Resolved' : 'Dismissed');
-  useEffect(() => { if (editing) return () => onEditorFocus?.(null); }, [editing, onEditorFocus]);
+  const editorSession=useMemo<{target:number | null}>(()=>({target:null}),[editing,client,provided.id,onEditorFocus]);
+  useEffect(() => { if (editing) return () => {
+    if(editorSession.target!==null)onEditorFocus?.(null,editorSession.target);
+  }; }, [editing, editorSession, onEditorFocus]);
   const decide = async (operation: 'approve' | 'dismiss' | 'edit' | 'needs_owner') => {
     if(decisionLock.current || unconfirmed || !sourceReady)return;
     const source=scope.current;
@@ -62,7 +65,8 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
     </View>
     {editing && draft.action.kind==='text_sequence' && <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>Saving combines these messages into one text reply. Sequence quotes are removed. Keep it under 4000 characters.</Text>}
     {!local?.outbox && (editing ? <TextInput accessibilityLabel="Edit draft" autoFocus multiline maxLength={4000} value={text} onChangeText={setText}
-      onFocus={event => onEditorFocus?.(event.nativeEvent.target)} onBlur={() => onEditorFocus?.(null)}
+      onFocus={event => { editorSession.target=event.nativeEvent.target;onEditorFocus?.(editorSession.target); }}
+      onBlur={() => { if(editorSession.target!==null)onEditorBlur?.(editorSession.target); }}
       style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54, maxHeight: 180, textAlignVertical: 'top' }}/>
       : draft.action.kind==='text_sequence' ? <View accessibilityLabel="Ordered reply sequence" style={{gap:8}}>
         {draft.action.messages.map((message,index)=><View key={index} style={{padding:10,borderRadius:8,backgroundColor:palette.surface}}>

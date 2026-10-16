@@ -111,7 +111,14 @@ account access, provider requests, real sends and deployment remain gated.
 | 59 | Trace voice-note context failures and real send delays | coder | vibe-build | owner correction contract | source integrated, review60 pending |
 | 60 | Review the combined messaging correction once | reviewer | vibe-build | 56,57,58,59 | accepted source review |
 | 61 | Verify and package the corrected native and browser clients | orchestrator | vibe-build | 60 | in-progress |
-| 62 | Verify corrected browser interactions on fresh export | worker | vibe-build | 60, parent61 freeze | pending |
+| 62 | Verify corrected browser interactions on fresh export | worker | vibe-build | 60, parent61 freeze | blocked, actual Save gesture and overlay-view defects |
+| 63 | Fix draft gesture geometry and covered-source viewing | coder | vibe-build | 62 demonstrated blockers | source corrected,287mobile/8browsercases;65 follows |
+| 64 | Attribute intermittent newer-history/thumbnail failures | architect | read-only Build investigation | 62 old immutable export | investigation complete; anchor cause proven, thumbnail open |
+| 65 | Preserve old-window scroll intent across duplicate callbacks | coder | vibe-build | 63 handoff,64 attribution | follow fix verified; wider viewed-ID gate blocked |
+| 66 | Verify current physical viewport before app-view acknowledgment | coder | vibe-build | 65 actual mismatch and held-event repro | scoped fix verified, combined browser17/19 blocked |
+| 67 | Attribute remaining editor and thumbnail observations | architect | Build diagnosis | final66 export and62/64 retained failures | completed, real-wheel modal focus cause found |
+| 68 | Correct quote-dialog exit focus without losing accessibility | coder | vibe-build | 67 causal trace | completed, final browser16/16 and mobile321/types pass |
+| 69 | Verify the frozen corrected messaging candidate | reviewer | Build acceptance | new r2 freeze after68 | pending |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct

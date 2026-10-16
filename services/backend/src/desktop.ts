@@ -37,7 +37,12 @@ export function registerDesktop(app: FastifyInstance, directory: string) {
     let path: string;
     try { path = decodeURIComponent((request.raw.url ?? request.url).split('?')[0] ?? ''); }
     catch { return missing(); }
-    if (!path.startsWith('/') || /[\\%\u0000-\u001f\u007f]/.test(path) || path.split('/').some(s => s.startsWith('.'))) return missing();
+    // Expo exports dependency fonts/images into this public directory. Only its
+    // .pnpm segment is exempt from the hidden-path rule, never source bundles.
+    const exportedAsset = /^\/assets\/__node_modules\/\.pnpm\//.test(path)
+      && /\.(?:png|jpg|jpeg|webp|gif|svg|ico|ttf|otf|woff|woff2)$/.test(path);
+    if (!path.startsWith('/') || /[\\%\u0000-\u001f\u007f]/.test(path)
+      || path.split('/').some((s, i) => s.startsWith('.') && !(exportedAsset && i === 3 && s === '.pnpm'))) return missing();
     const spa = /^\/(?:index|settings|review|assistant)?\/?$/.test(path) || /^\/conversation\/[^/]+\/?$/.test(path);
     const extension = extname(path);
     const asset = path === '/favicon.ico' || /^\/(?:assets|_expo\/static)\//.test(path);

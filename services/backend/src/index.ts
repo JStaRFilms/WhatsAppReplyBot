@@ -60,7 +60,7 @@ const app = createApp({ store, token, accountId, profileScope,
     console.info('Stopping Otherme: '+phase);
     if (process.connected && process.send) process.send({ type: 'otherme-stopping', rootId, instanceId, phase }, () => {});
   },
-  allowedOrigins: lan ? addresses.map(i => 'http://'+i.address+':8081') : [],
+  allowedOrigins: lan ? addresses.flatMap(i => [3210, 8081].map(port => 'http://'+i.address+':'+port)) : [],
   ...(live ? { whatsapp: { authDir: paths.auth, requireOwnerLock: registry?.requiresOwnerLock(profileScope.profileId) ?? false } } : {}),
   ...(remote ? { remoteModel: { generate: (context,visuals) => new OpenRouterClient({
     apiKey, allowRemote: true, ownerConsent: store.modelConsent(accountId),

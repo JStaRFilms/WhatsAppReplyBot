@@ -6,7 +6,7 @@ import { aiAccess, inPermittedHours } from './policy.ts';
 import { buildContext } from './context.ts';
 import { partialMessage, automaticTrigger } from './history.ts';
 import { held, OWNER_COOLDOWN, pauseState } from './pause.ts';
-import { SqliteStore } from './store.ts';
+import { SqliteStore, type HistoryRead } from './store.ts';
 import { OwnerInstructions, OwnerInstructionsInput, ContactNameSettings, ContactNamesInput, ContactNamesImportInput, ContactNamesImportResult } from './api.ts';
 
 export type TransportResult = { state: 'accepted'; transportId: string } | { state: 'failed' | 'unknown' };
@@ -88,10 +88,16 @@ export class Workflow {
     if (!c) throw new DomainError('conversation_not_found', 404);
     return c;
   }
-  effectiveConversation(id: string): Conversation {
-    const group = this.store.historyGroup(this.accountId,id);
-    const c = this.conversation(group.id);
-    const members = group.memberIds.map(member => this.conversation(member));
+  effectiveConversation(id: string, read?: HistoryRead): Conversation {
+    const group = this.store.historyGroup(this.accountId,id,read);
+    const conversation = (member:string) => {
+      if (!read) return this.conversation(member);
+      const c = read.conversations.get(member);
+      if (!c) throw new DomainError('conversation_not_found',404);
+      return c;
+    };
+    const c = conversation(group.id);
+    const members = group.memberIds.map(conversation);
     const mode = members.some(m => m.mode === 'never_reply') ? 'never_reply'
       : members.some(m => m.mode === 'draft_only') ? 'draft_only' : c.mode;
     const blocked = members.some(m => m.control === 'manual' || held(pauseState(m),this.clock()));
@@ -100,9 +106,14 @@ export class Workflow {
       // An invalid hours rule denies through the existing shared hours evaluator.
       hours:members.every(m => inPermittedHours(m,this.clock())) ? c.hours : {timezone:'invalid',start:0,end:0}};
   }
-  effectiveConversations(): Conversation[] {
-    return this.store.conversations(this.accountId).filter(c => this.store.historyGroup(this.accountId,c.id).id === c.id)
-      .map(c => {const effective=this.effectiveConversation(c.id);return this.groupUnknown(c.id) ? {...effective,control:'manual' as const} : effective;});
+  effectiveConversations(read = this.store.historyRead(this.accountId), outboxes = this.store.outboxes(this.accountId)): Conversation[] {
+    const unknown = new Set(outboxes.filter(o=>o.components.some(p=>p.state==='unknown' || p.state==='dispatching')).map(o=>o.conversationId));
+    return [...read.conversations.values()].filter(c => this.store.historyGroup(this.accountId,c.id,read).id === c.id)
+      .map(c => {
+        const effective = this.effectiveConversation(c.id,read);
+        return this.store.historyGroup(this.accountId,c.id,read).memberIds.some(id=>unknown.has(id))
+          ? {...effective,control:'manual' as const} : effective;
+      });
   }
   assertFreshAction(id: string): void {
     if (this.store.historyGroup(this.accountId,id).id !== id) throw new DomainError('retired_alias_read_only');
@@ -247,7 +258,8 @@ export class Workflow {
     return this.request(requestId, { operation: 'model-consent', consent }, z.object({ consent: z.boolean() }), () => {
       if (this.store.modelConsent(this.accountId) === consent) return { consent };
       this.store.saveModelConsent(this.accountId, consent);
-      for (const c of this.store.conversations(this.accountId)) this.invalidate(c, true);
+      // Account-wide invalidation already visits every physical alias.
+      for (const c of this.store.conversations(this.accountId)) this.invalidatePhysical(c, true);
       return { consent };
     });
   }
@@ -259,7 +271,7 @@ export class Workflow {
       if (current.text === body.text) return current;
       const next = {text:body.text,revision:current.revision+1};
       this.store.saveOwnerInstructions(this.accountId,next);
-      for (const c of this.store.conversations(this.accountId)) this.invalidate(c,false,true);
+      for (const c of this.store.conversations(this.accountId)) this.invalidatePhysical(c,false,true);
       return next;
     });
   }

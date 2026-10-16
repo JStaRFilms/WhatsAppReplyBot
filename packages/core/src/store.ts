@@ -13,6 +13,19 @@ const AsrRow = z.object({attemptId:z.string(),state:z.enum(['reserved','complete
 type Table = 'conversations' | 'messages' | 'drafts' | 'delegations' | 'outbox' | 'owner_actions';
 type RecordData = Conversation | Message | Draft | Grant | Outbox | Proposal;
 
+// A synchronous read's inputs and derived groups. Discard before any write or await.
+export interface HistoryRead {
+  accountId: string;
+  conversations: Map<string, Conversation>;
+  aliases: Map<string, string>;
+  aliasesByCanonical: Map<string, string[]>;
+  states: Map<string, {revision:number;sourceEpoch:number}>;
+  versions: Map<string, number>;
+  populated: Set<string>;
+  groups: Map<string, HistoryGroup>;
+  latest: Map<string, Message | undefined>;
+}
+
 export class SqliteStore {
   private readonly db: DatabaseSync;
   constructor(path = ':memory:') {
@@ -30,6 +43,7 @@ export class SqliteStore {
       CREATE TABLE IF NOT EXISTS conversation_views (account_id TEXT NOT NULL,conversation_id TEXT NOT NULL,last_rowid INTEGER NOT NULL,PRIMARY KEY(account_id,conversation_id));
       CREATE TABLE IF NOT EXISTS composer_holds (account_id TEXT NOT NULL,conversation_id TEXT NOT NULL,client_id TEXT NOT NULL,has_text INTEGER NOT NULL CHECK(has_text IN (0,1)),PRIMARY KEY(account_id,conversation_id,client_id));
       CREATE TABLE IF NOT EXISTS wa_aliases (account_id TEXT NOT NULL, alias TEXT NOT NULL, canonical TEXT NOT NULL, PRIMARY KEY(account_id,alias));
+      CREATE INDEX IF NOT EXISTS wa_aliases_canonical ON wa_aliases(account_id,canonical,alias);
       CREATE TABLE IF NOT EXISTS wa_messages (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, transport_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(account_id,conversation_id,transport_id));
       CREATE TABLE IF NOT EXISTS image_uploads (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
@@ -184,25 +198,60 @@ export class SqliteStore {
     this.db.prepare('INSERT INTO account_settings(account_id,media_cache_id) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET media_cache_id=COALESCE(media_cache_id,excluded.media_cache_id)').run(accountId,randomUUID());
     return z.object({id:z.string()}).parse(this.db.prepare('SELECT media_cache_id AS id FROM account_settings WHERE account_id=?').get(accountId)).id;
   }
-  historyGroup(accountId: string, conversationId: string): HistoryGroup {
-    const mapped = this.waCanonical(accountId,conversationId);
+  historyRead(accountId: string, conversations = this.conversations(accountId)): HistoryRead {
+    const aliases = new Map<string,string>(), aliasesByCanonical = new Map<string,string[]>();
+    for (const row of this.db.prepare('SELECT alias,canonical FROM wa_aliases WHERE account_id=? ORDER BY alias').all(accountId)) {
+      const {alias,canonical} = z.object({alias:z.string(),canonical:z.string()}).parse(row);
+      aliases.set(alias,canonical);
+      const members = aliasesByCanonical.get(canonical) ?? [];
+      members.push(alias); aliasesByCanonical.set(canonical,members);
+    }
+    const states = new Map<string,{revision:number;sourceEpoch:number}>();
+    for (const row of this.db.prepare('SELECT conversation_id AS id,revision,source_epoch AS sourceEpoch FROM history_group_state WHERE account_id=?').all(accountId)) {
+      const {id,...state} = z.object({id:z.string(),revision:z.number(),sourceEpoch:z.number()}).parse(row);
+      states.set(id,state);
+    }
+    const versions = new Map<string,number>();
+    for (const row of this.db.prepare('SELECT conversation_id AS id,revision FROM history_versions WHERE account_id=?').all(accountId)) {
+      const {id,revision} = z.object({id:z.string(),revision:z.number()}).parse(row); versions.set(id,revision);
+    }
+    const populated = new Set(this.db.prepare('SELECT DISTINCT conversation_id AS id FROM messages WHERE account_id=?').all(accountId)
+      .map(row => z.object({id:z.string()}).parse(row).id));
+    return {accountId,conversations:new Map(conversations.map(c=>[c.id,c])),aliases,aliasesByCanonical,states,versions,populated,groups:new Map(),latest:new Map()};
+  }
+  historyGroup(accountId: string, conversationId: string, read?: HistoryRead): HistoryGroup {
+    if (read && read.accountId !== accountId) throw new DomainError('record_scope_conflict',403);
+    const saved = read?.groups.get(conversationId);
+    if (saved) return saved;
+    const canonicalFor = (id:string) => read ? read.aliases.get(id) ?? id : this.waCanonical(accountId,id);
+    const conversation = (id:string) => read ? read.conversations.get(id) : this.conversation(accountId,id);
+    const mapped = canonicalFor(conversationId);
     const canonical = (mapped === conversationId || /^\d+@lid$/.test(conversationId))
-      && /^\d+@s\.whatsapp\.net$/.test(mapped) && this.waCanonical(accountId,mapped) === mapped
-      && this.conversation(accountId,mapped)?.kind === 'direct' ? mapped : conversationId;
-    const aliases = /^\d+@s\.whatsapp\.net$/.test(canonical) && this.waCanonical(accountId,canonical) === canonical
-      && this.conversation(accountId,canonical)?.kind === 'direct'
-      ? this.db.prepare('SELECT alias FROM wa_aliases WHERE account_id=? AND canonical=? ORDER BY alias').all(accountId,canonical)
-        .map(row => z.object({alias:z.string()}).parse(row).alias).filter(id => /^\d+@lid$/.test(id) && !!this.conversation(accountId,id)) : [];
+      && /^\d+@s\.whatsapp\.net$/.test(mapped) && canonicalFor(mapped) === mapped
+      && conversation(mapped)?.kind === 'direct' ? mapped : conversationId;
+    const existing = read?.groups.get(canonical);
+    if (existing) { read?.groups.set(conversationId,existing); return existing; }
+    const aliases = /^\d+@s\.whatsapp\.net$/.test(canonical) && canonicalFor(canonical) === canonical
+      && conversation(canonical)?.kind === 'direct'
+      ? (read ? read.aliasesByCanonical.get(canonical) ?? []
+        : this.db.prepare('SELECT alias FROM wa_aliases WHERE account_id=? AND canonical=? ORDER BY alias').all(accountId,canonical)
+          .map(row => z.object({alias:z.string()}).parse(row).alias)).filter(id => /^\d+@lid$/.test(id) && !!conversation(id)) : [];
     const memberIds = [...new Set([canonical,...aliases])].sort();
-    const state = this.db.prepare('SELECT revision,source_epoch AS sourceEpoch FROM history_group_state WHERE account_id=? AND conversation_id=?').get(accountId,canonical);
+    const state = read ? read.states.get(canonical)
+      : this.db.prepare('SELECT revision,source_epoch AS sourceEpoch FROM history_group_state WHERE account_id=? AND conversation_id=?').get(accountId,canonical);
     const versions = state ? z.object({revision:z.number(),sourceEpoch:z.number()}).parse(state)
-      : {revision:z.object({revision:z.number()}).parse(this.db.prepare('SELECT COALESCE(MAX(revision),0) AS revision FROM history_versions WHERE account_id=? AND conversation_id IN (SELECT value FROM json_each(?))').get(accountId,JSON.stringify(memberIds))).revision,sourceEpoch:0};
-    const last = this.historyRows(accountId,memberIds,Number.MAX_SAFE_INTEGER,1)[0];
+      : {revision:read ? Math.max(0,...memberIds.map(id=>read.versions.get(id) ?? 0))
+        : z.object({revision:z.number()}).parse(this.db.prepare('SELECT COALESCE(MAX(revision),0) AS revision FROM history_versions WHERE account_id=? AND conversation_id IN (SELECT value FROM json_each(?))').get(accountId,JSON.stringify(memberIds))).revision,sourceEpoch:0};
+    const last = !read || memberIds.some(id=>read.populated.has(id)) ? this.historyRows(accountId,memberIds,Number.MAX_SAFE_INTEGER,1)[0] : undefined;
     const aiBlocked = mapped !== conversationId && canonical === conversationId || memberIds.some(id => {
-      const c = this.conversation(accountId,id);
+      const c = conversation(id);
       return !c || c.excluded || c.mode === 'never_reply' || c.kind !== 'direct' && !(c.kind === 'unknown' && /^\d+@lid$/.test(id) && canonical !== id);
     });
-    return {id:canonical,memberIds,...versions,lastMessageId:last?.id ?? null,aiBlocked};
+    const group = {id:canonical,memberIds,...versions,lastMessageId:last?.id ?? null,aiBlocked};
+    read?.groups.set(conversationId,group);
+    read?.groups.set(canonical,group);
+    read?.latest.set(canonical,last);
+    return group;
   }
   bumpHistory(accountId: string, conversationId: string, source: boolean, revision = 0, epoch = 0): void {
     const group = this.historyGroup(accountId,conversationId);
@@ -232,22 +281,22 @@ export class SqliteStore {
       ORDER BY json_extract(result.payload,'$.occurredAt') ${order},result.id ${order} LIMIT ?`)
       .all(members,accountId,fence,members,...params,limit,limit).map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload))));
   }
-  eventMessages(accountId: string, conversationId: string, transportId: string): Message[] {
-    const group = this.historyGroup(accountId,conversationId);
+  eventMessages(accountId: string, conversationId: string, transportId: string, read?: HistoryRead): Message[] {
+    const group = this.historyGroup(accountId,conversationId,read);
     return this.db.prepare(`SELECT payload FROM messages WHERE account_id=? AND conversation_id IN (SELECT value FROM json_each(?))
       AND json_extract(payload,'$.transportId')=? ORDER BY rowid`).all(accountId,JSON.stringify(group.memberIds),transportId)
       .map(row => this.projectMessage(Message.parse(JSON.parse(Payload.parse(row).payload))));
   }
-  historySource(accountId: string, conversationId: string, messageId: string, now = Date.now()): HistorySource | undefined {
-    const group = this.historyGroup(accountId,conversationId);
+  historySource(accountId: string, conversationId: string, messageId: string, now = Date.now(), read?: HistoryRead): HistorySource | undefined {
+    const group = this.historyGroup(accountId,conversationId,read);
     let original = this.message(accountId,messageId);
     if (!original) {
       const reference = /^wa:([^:]+):(.+)$/.exec(messageId);
       if (!reference || !group.memberIds.includes(reference[1] ?? '')) return undefined;
-      original = this.eventMessages(accountId,conversationId,reference[2] ?? '')[0];
+      original = this.eventMessages(accountId,conversationId,reference[2] ?? '',read)[0];
     }
     if (!original || !group.memberIds.includes(original.conversationId)) return undefined;
-    const candidates = this.eventMessages(accountId,conversationId,original.transportId);
+    const candidates = this.eventMessages(accountId,conversationId,original.transportId,read);
     const first = candidates[0];
     if (!first) return undefined;
     const evidence = candidates.map(m => this.rawEvidence(this.waMessage(accountId,m.conversationId,m.transportId)));
@@ -285,11 +334,11 @@ export class SqliteStore {
     return {message,accountId,conversationId:first.conversationId,messageId:first.id,transportId:first.transportId,
       candidateIds:candidates.map(m => m.id),state,expiresAt};
   }
-  private historyMessage(accountId: string, conversationId: string, message: Message, now: number): Message {
-    const source = this.historySource(accountId,conversationId,message.id,now);
+  private historyMessage(accountId: string, conversationId: string, message: Message, now: number, read?: HistoryRead): Message {
+    const source = this.historySource(accountId,conversationId,message.id,now,read);
     const projected = source?.message ?? message;
     if (!projected.quotedMessageId) return projected;
-    const quote = this.historySource(accountId,conversationId,projected.quotedMessageId,now);
+    const quote = this.historySource(accountId,conversationId,projected.quotedMessageId,now,read);
     return {...projected,quotedMessageId:quote?.state === 'available' ? quote.messageId : projected.quotedMessageId};
   }
   historyPage(accountId: string, conversationId: string,
@@ -449,7 +498,7 @@ export class SqliteStore {
       AND (json_extract(o.payload,'$.state') IN ('queued','dispatching','unknown','partial')
         OR json_extract(p.value,'$.state') IN ('queued','dispatching','unknown')))` ).run(accountId,before);
   }
-  unreadCounts(accountId:string): Record<string,number> {
+  unreadCounts(accountId:string, read?: HistoryRead): Record<string,number> {
     const rows=this.db.prepare(`SELECT m.conversation_id,COUNT(*) AS count FROM messages m LEFT JOIN conversation_views v
       ON v.account_id=m.account_id AND v.conversation_id=m.conversation_id WHERE m.account_id=? AND m.rowid>COALESCE(v.last_rowid,0)
       AND json_extract(m.payload,'$.direction')='inbound' AND json_extract(m.payload,'$.source')='live'
@@ -460,7 +509,7 @@ export class SqliteStore {
     const counts: Record<string,number> = {};
     for (const row of rows) {
       const r = z.object({conversation_id:z.string(),count:z.number()}).parse(row);
-      const id = this.historyGroup(accountId,r.conversation_id).id;
+      const id = this.historyGroup(accountId,r.conversation_id,read).id;
       counts[id] = (counts[id] ?? 0)+r.count;
     }
     // Correct only multi-copy events; the ordinary count is an indexed SQL aggregate.
@@ -486,8 +535,8 @@ export class SqliteStore {
     }
     return Object.fromEntries(Object.entries(counts).filter(([,count]) => count > 0));
   }
-  historyVersions(accountId:string): Record<string,number> {
-    return Object.fromEntries(this.conversations(accountId).map(c=>[c.id,this.historyGroup(accountId,c.id).revision]));
+  historyVersions(accountId:string, read?: HistoryRead): Record<string,number> {
+    return Object.fromEntries([...(read?.conversations.values() ?? this.conversations(accountId))].map(c=>[c.id,this.historyGroup(accountId,c.id,read).revision]));
   }
   historyWatermark(accountId:string,conversationId:string,messageIds:string[]): number {
     const row=this.db.prepare('SELECT COALESCE(MAX(rowid),0) AS position FROM messages WHERE account_id=? AND conversation_id=? AND id IN (SELECT value FROM json_each(?))').get(accountId,conversationId,JSON.stringify(messageIds));
@@ -735,7 +784,12 @@ export class SqliteStore {
   recentMessages(accountId: string, conversationId: string, limit = 100, now = Date.now()): Message[] {
     return this.historyPage(accountId,conversationId,{limit},now).messages;
   }
-  lastMessages(accountId: string, now = Date.now()): Message[] {
+  lastMessages(accountId: string, now = Date.now(), read?: HistoryRead): Message[] {
+    if (read) return [...read.conversations.values()].flatMap(c => {
+      const group = this.historyGroup(accountId,c.id,read);
+      const last = read.latest.get(group.id);
+      return group.id === c.id && last ? [this.historyMessage(accountId,c.id,last,now,read)] : [];
+    });
     return this.conversations(accountId).filter(c => this.historyGroup(accountId,c.id).id === c.id)
       .flatMap(c => this.historyPage(accountId,c.id,{limit:1},now).messages);
   }

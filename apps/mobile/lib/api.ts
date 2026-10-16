@@ -31,7 +31,7 @@ const labels: Record<string, string> = {
   image_upload_busy:'Another image is processing. Try again shortly.',
   model_request_failed: 'The model request failed. No draft was approved or sent.',
   invalid_model_response: 'The model returned an invalid action. Nothing was sent.',
-  local_browser_provision_only: 'Enter the service token from your computer to connect this phone.',
+  local_browser_provision_only: 'Enter the service token from your computer to connect this device.',
   client_upgrade_required: 'Update Otherme and the Windows service, then reconnect. Profile protocol 2 is required.',
   profile_scope_changed: 'The active account changed. Review it before continuing.',
   profile_transition_in_progress: 'An account change is still in progress. No action was retried.',
@@ -226,10 +226,27 @@ export class ApiClient {
     return {mime:parsed.mime,bytes:new Uint8Array(parsed.bytes.buffer,parsed.bytes.byteOffset,parsed.bytes.byteLength)};
   }
   static async provision(baseUrl: string): Promise<string> {
-    const response = await fetch(baseUrl.replace(/\/$/,'')+'/v1/local-provision', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.EXPO_OS === 'web' ? {} : { Origin: 'http://localhost' }) }, body: JSON.stringify({ confirmLocalDemo: true }),
+    const address = new URL(baseUrl);
+    if (!['localhost', '127.0.0.1'].includes(address.hostname)) throw new ApiError('local_browser_provision_only');
+    const abort = new AbortController();
+    const failure = new Error('Could not connect to Otherme on this computer. Check that it is running, or enter its service token.');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    // Bound both headers and body, even if the transport ignores cancellation.
+    const expired = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => { abort.abort(); reject(failure); }, 10000);
     });
-    if (!response.ok) throw new Error('Local connection failed. Start pnpm backend on this computer, or enter its service token.');
-    return z.object({ token: z.string().min(16), demo: z.boolean() }).parse(await response.json()).token;
+    try {
+      const response = await Promise.race([fetch(baseUrl.replace(/\/$/,'')+'/v1/local-provision', {
+        method: 'POST', signal: abort.signal,
+        headers: { 'Content-Type': 'application/json', ...(process.env.EXPO_OS === 'web' ? {} : { Origin: 'http://localhost' }) }, body: JSON.stringify({ confirmLocalDemo: true }),
+      }), expired]);
+      if (response.status === 403) throw new ApiError('local_browser_provision_only');
+      if (!response.ok) throw failure;
+      const body: unknown = await Promise.race([response.json(), expired]);
+      return z.object({ token: z.string().min(16), demo: z.boolean() }).parse(body).token;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw failure;
+    } finally { if (timeout !== undefined) clearTimeout(timeout); }
   }
 }

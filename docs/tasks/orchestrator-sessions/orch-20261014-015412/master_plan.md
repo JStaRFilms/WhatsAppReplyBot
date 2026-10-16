@@ -193,3 +193,62 @@ The owner expressly directs no more routine approval prompts during testing.
 Proceed with necessary narrow diagnosis and compatible fixes, preserve secret
 redaction and target/unknown-outcome safety, and avoid unrelated destructive,
 paid, real-send or account-relink operations.
+
+The owner reports continued failure after52. Task53 is now source-complete, scoped by
+`completed/53_fix_sparse_profile_refresh.task.md`. The current listener started
+after52's commit, so do not assume the owner omitted restart. Actual read-only
+aggregate shape is3437 conversations/3115 aliases but only1657 messages across345
+chats, maximum275 per chat, with no duplicate transport IDs. The previous dense
+100-chat fixture missed this case. Correct the sparse-profile snapshot path with
+invented fixtures before claiming the live problem solved. Do not delete old
+contact-only rows or hide legitimate state as a performance workaround.
+
+Task54 runs independently on index.ts, desktop.ts and mobile/api.ts plus focused
+tests. Its completed source packet is `completed/54_correct_browser_connection_and_assets.task.md`.
+It corrects misleading pnpm setup guidance, exact configured LAN-browser Origin
+support and the already-confirmed public export font-route defect. It preserves
+loopback-only token provisioning and every private-path/auth guard. It must not
+edit53's core/workflow/server files, build artifacts or imply that switching IPs
+fixes the current freeze. Parent integrates both before validating updated web
+assets and any actual rollout. Task54 source has returned and passed parent focused
+review plus independent original13/14 failures and corrected14/14 passes. Actual
+built Inter assets now load through its corrected fake backend route. Combined
+verification and a refreshed web bundle remain pending53. No live/native fix or
+rollout is claimed from this partial browser result.
+
+Task53 returned a reproduced125-second sparse snapshot reduced to645ms with
+byte-identical output and no persistent cache/schema change. Parent independently
+verified original3/3 failing tests and corrected4/4 passes, then replayed only the
+selected real profile in a disposable offline backup opened from a read-only
+source. It returned200 in2422ms and retained3437 conversations,166 drafts and135
+outboxes; no listener/provider/socket was started and the temporary copy was
+removed. This is not actual-client acceptance.
+
+Task55 began parent integration under its authored packet and is now operationally blocked as recorded below. It owns full
+combined checks, isolated new web export, private-byte scan, actual fake browser
+loopback/LAN coverage and preservation/promotion of desktop assets. Keep current
+service rollout and phone acceptance distinct, and do not declare the live
+problem resolved from those tests alone.
+
+Final parent integration passes101 core/141 backend/230 mobile/34 packaging,
+506 total, plus workspace types. Ordinary settings testing additionally required
+a derived account/canonical/alias index and removal of redundant alias rewalks
+from the two already-account-wide invalidation loops. Four new regressions fail
+before and pass after, with unknown/manual work preserved. No stale read-local
+cache is carried across mutation writes.
+
+The new28-file/5227143-byte desktop export passed credential-byte/private-path
+scans and13 actual Edge/browser fixture checks covering3437 conversations,
+loopback/LAN login, explicit Continue, settings toggles, reload/foreground and
+fonts, with no provider/device/external/page/asset errors. It is promoted to
+apps/mobile/dist; prior28-file/5226702-byte assets are preserved at
+.runtime/pc-task55/previous-desktop-1792124977744. APK/build-copy unchanged.
+
+53 and54 are source/artifact accepted.55 is BLOCKED under its blocked/ packet on
+an operator-controlled normal backend stop/relaunch. Actual token/root/protocol
+checks pass, but HEAD snapshot still times out and the new DB index is absent.
+The parent cannot safely write Q to the already-running owning console and will
+not open a debugger, force-kill, remove locks or launch a competing service.
+Close clients, let old work drain, use Q, then canonical Otherme.cmd only after
+verified stop. Current live/phone resolution is not claimed. No agents or
+watchers remain active.

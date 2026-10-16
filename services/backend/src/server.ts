@@ -162,12 +162,17 @@ export function createApp(options: { store: SqliteStore; token: string; accountI
   if (options.desktopDir) registerDesktop(app, options.desktopDir);
   registerImageUploads(app,flow);
   registerAudioUploads(app,flow);
-  const snapshot = () => ClientSnapshot.parse({ ...flow.snapshot(), profileScope:scope, serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
-    modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId),historyVersions:options.store.historyVersions(accountId),
-    conversations:options.store.conversations(accountId).map(c=>options.store.historyGroup(accountId,c.id).id===c.id ? flow.effectiveConversation(c.id):c),
-    historyGroups:flow.effectiveConversations().map(c=>({...options.store.historyGroup(accountId,c.id),aiBlocked:!aiAccess(c,accountId) || c.control==='manual' || !inPermittedHours(c,now())})),
-    lastMessages: options.store.lastMessages(accountId,now()),
-    latestTenIds: latestTen(flow.effectiveConversations(), accountId, now()) });
+  const snapshot = () => {
+    const base = flow.snapshot();
+    const read = options.store.historyRead(accountId,base.conversations);
+    const effective = flow.effectiveConversations(read,base.outbox);
+    return ClientSnapshot.parse({ ...base, profileScope:scope, serverTime:now(), demo: !whatsapp, connection: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo',
+      modelConsent: options.store.modelConsent(accountId), unreadCounts:options.store.unreadCounts(accountId,read),historyVersions:options.store.historyVersions(accountId,read),
+      conversations:base.conversations.map(c=>options.store.historyGroup(accountId,c.id,read).id===c.id ? flow.effectiveConversation(c.id,read):c),
+      historyGroups:effective.map(c=>({...options.store.historyGroup(accountId,c.id,read),aiBlocked:!aiAccess(c,accountId) || c.control==='manual' || !inPermittedHours(c,now())})),
+      lastMessages: options.store.lastMessages(accountId,now(),read),
+      latestTenIds: latestTen(effective, accountId, now()) });
+  };
   const dispatch = (id: string) => whatsapp ? whatsapp.dispatch(id) : flow.dispatch(id, async () => ({ state: 'accepted', transportId: 'demo-'+randomUUID() }));
   const ready = () => whatsapp?.requireReady();
   app.get('/v1/health', async () => ({ demo: !whatsapp, service: 'ready', whatsapp: whatsapp?.snapshot().state ?? 'disconnected', model: options.remoteModel ? 'openai/gpt-6-luna' : 'local-demo' }));

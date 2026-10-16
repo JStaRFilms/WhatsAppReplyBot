@@ -31,7 +31,6 @@ export default function Settings() {
   const section = { gap: 12, paddingBottom: 20, borderBottomWidth: 1, borderColor: palette.border };
   return <Page title="Settings">
     <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>PC service</Text>
-    <Text style={{fontFamily:fonts.regular,fontSize:13,lineHeight:20,color:palette.muted}}>Windows keeps working while this app is closed. Returning refreshes its current status.</Text>
     <TextInput accessibilityLabel="Service address" autoCapitalize="none" autoCorrect={false} value={url} onChangeText={setUrl} style={input}/>
     <TextInput accessibilityLabel="Service token" autoCapitalize="none" autoCorrect={false} secureTextEntry value={token} onChangeText={setToken}
       placeholder={hasSavedCredential && sameAddress?'Saved service token, leave blank to reuse':'Service token'} placeholderTextColor={palette.muted} style={input}/>
@@ -43,13 +42,12 @@ export default function Settings() {
     <View style={section}><WhatsAppConnection/></View>
     <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Assistant and data</Text>
     <Text style={{ fontFamily: fonts.regular, fontSize: 14, lineHeight: 22, color: palette.muted }}>
-      {snapshot?.model === 'openai/gpt-6-luna' ? 'GPT-6 Luna' : 'Local preview'}
+      {snapshot?.model === 'openai/gpt-6-luna' ? 'GPT-6 Luna' : snapshot?.model === 'local-demo' ? 'Local preview' : 'Assistant status unavailable'}
     </Text>
     {snapshot?.model === 'openai/gpt-6-luna' && <>
-      <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13, lineHeight: 20 }}>Selected chat text, supported images and eligible incoming voice notes go to OpenRouter. Whisper Large V3 Turbo transcribes eligible voice notes; GPT-6 Luna drafts text. GIFs use sampled frames. API charges apply.</Text>
+      <Text style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13, lineHeight: 20 }}>OpenRouter receives selected chat text, supported images and GIF frames, eligible incoming voice notes, your saved reply instructions and the eligible contact’s name. API charges apply.</Text>
       <Button label={modelBusy ? 'Applying…' : modelConsent ? 'Pause AI' : 'Enable AI'} secondary={modelConsent} disabled={modelBusy || status !== 'online'} onPress={() => { void changeModelConsent(); }}/>
     </>}
-    <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: palette.muted }}>Images, stickers, GIFs and voice notes are supported. View-once, deleted and expired media stay private.</Text>
     </View>
     <ReleaseSettings key={sessionKey}/>
     <View style={section}><Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: palette.text }}>Appearance</Text>

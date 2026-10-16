@@ -275,14 +275,17 @@ test('two active ASR jobs are the limit and shared callers retain their own perm
   }finally{audio.close();f.store.close();}
 });
 
-test('UI draft and assistant generation use one ASR job; unknown text stays honestly unavailable on a new draft',async()=>{
+test('UI draft and assistant share one ASR job; unknown audio hands over without a reply or paid replay',async()=>{
   const f=fixture(),audio=f.service();let asr=0,replies=0;
-  const generate=draftGenerator(f.flow,{transcribe:async()=>{asr++;throw new DomainError('transcription_unknown',502);},generate:async context=>{
-    replies++;assert.ok(context.limitations.includes('audio_transcript_unavailable'));
-    assert.ok(context.messages.every(m=>m.audioTranscript===undefined));return {kind:'silence',reason:'Synthetic unavailable audio'};
+  const generate=draftGenerator(f.flow,{transcribe:async()=>{asr++;throw new DomainError('transcription_unknown',502);},generate:async()=>{
+    replies++;assert.fail('Missing required audio must not reach the reply model');
   }},undefined,audio,()=>f.state.now);
   try {
-    const [first,shared]=await Promise.all([generate(phone,'ui'),generate(phone,'assistant')]);assert.equal(first.id,shared.id);assert.equal(asr,1);
-    f.flow.dismissDraft(first.id,'dismiss');await generate(phone,'new-draft');assert.equal(asr,1);assert.equal(replies,2);
+    const [first,shared]=await Promise.all([generate(phone,'ui'),generate(phone,'assistant')]);
+    assert.equal(first.id,shared.id);assert.equal(first.action.kind,'handover');assert.equal(first.state,'needs_owner');assert.equal(asr,1);assert.equal(replies,0);
+    assert.equal(f.store.asrAttempt(f.identity(),f.state.now)?.state,'unknown');
+    f.flow.dismissDraft(first.id,'dismiss');f.flow.quickControl(phone,'resume','explicit-owner-resume');
+    const next=await generate(phone,'new-draft');assert.equal(next.action.kind,'handover');assert.equal(next.state,'needs_owner');
+    assert.equal(asr,1);assert.equal(replies,0);assert.equal(f.store.asrAttempt(f.identity(),f.state.now)?.state,'unknown');
   }finally{audio.close();f.store.close();}
 });

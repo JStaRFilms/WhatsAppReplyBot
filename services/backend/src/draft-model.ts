@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Draft, DomainError, aiAccess, type AudioTranscript, type Action, type ModelContext, type Workflow } from '@replybot/core';
+import { Draft, DomainError, aiAccess, requiredContextMessageIds, type AudioTranscript, type Action, type ModelContext, type Workflow } from '@replybot/core';
 import { demoReply } from './demo-model.ts';
 import type { VisualFrame } from './media.ts';
 import { readableAudio, type AudioService, type Transcriber } from './audio.ts';
@@ -39,16 +39,31 @@ export function draftGenerator(flow:Workflow,remote?:RemoteModel,media?:{visuals
           };
           guard();
           const transcripts=new Map<string,AudioTranscript>();
+          const audioFailures=new Map<string,string>();
           if(remote?.transcribe && audio)for(const message of context.messages.filter(m=>m.direction==='inbound' && readableAudio(m,now())).slice(-2)) {
             guard();
             try{transcripts.set(message.id,await audio.transcript(message,{transcribe:remote.transcribe,...(remote.asrProvenance ? {asrProvenance:remote.asrProvenance} : {})},guard));}
-            catch{guard();}
+            catch(error){guard();audioFailures.set(message.id,error instanceof DomainError ? error.code : 'transcription_unknown');}
           }
           guard();
           for(const message of context.messages)if(transcripts.has(message.id)){
             try{audio?.check(message);}catch{transcripts.delete(message.id);}
           }
           const prepared=flow.context(conversationId,transcripts);
+          const required=requiredContextMessageIds(prepared.messages);
+          const missingAudio=prepared.messages.find(m=>required.has(m.id) && m.direction==='inbound' && m.media?.kind==='audio' && !m.audioTranscript);
+          if(remote && missingAudio){
+            const failure=audioFailures.get(missingAudio.id);
+            const reason=failure==='transcription_unknown'
+              ? 'The voice note transcription is unconfirmed. It will not be requested again automatically. Review the note before replying.'
+              : failure==='invalid_transcript_response'
+              ? 'The transcription service returned an unreadable result. It will not be requested again automatically. Review the voice note before replying.'
+              : failure==='model_request_failed' || failure==='audio_attempt_unavailable'
+              ? 'The voice note transcript is unavailable. The previous transcription attempt will not be repeated automatically. Review the note before replying.'
+              : 'The voice note transcript is unavailable. Review the note before replying.';
+            guard();
+            return flow.createDraft(conversationId,{kind:'handover',reason},c.workflowVersion,requestId+'-result');
+          }
           const visuals=remote && media ? await media.visuals(prepared) : [];
           guard();
           for(const message of prepared.messages)if(message.audioTranscript)audio?.check(message);

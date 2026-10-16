@@ -55,7 +55,7 @@ function NativePlayback({message,canPlay,module}:VideoPlaybackProps & {module:Vi
         if(!valid || !current()){fail('Video source is unavailable. Retry to revalidate.');return;}
         if(player.currentTime>=player.duration)player.currentTime=0;
         authorized=true;player.play();
-      }catch {if(live && turn===ticket)fail('Video could not play. This device may not support its MP4 codec.');}
+      }catch {if(live && turn===ticket)fail('Video could not play. Its format may be unsupported.');}
       finally {if(live && turn===ticket){working=false;setBusy(false);}}
     };
     const commands={toggle,seek:(offset:number)=>{
@@ -72,7 +72,7 @@ function NativePlayback({message,canPlay,module}:VideoPlaybackProps & {module:Vi
     subscriptions.push(player.addListener('statusChange',event=>{
       if(!live || !handle)return;
       if(!current()){fail('Video source is unavailable. Retry to revalidate.');return;}
-      if(event.status==='error')fail('Video could not load. This device may not support its MP4 codec.');
+      if(event.status==='error')fail('Video could not load. Its format may be unsupported.');
       else if(event.status==='readyToPlay'){decoded=true;markReady();}
     }));
     subscriptions.push(player.addListener('playingChange',event=>{
@@ -114,7 +114,6 @@ function NativePlayback({message,canPlay,module}:VideoPlaybackProps & {module:Vi
         {control('Seek back 10 seconds',()=>session.current?.seek(-10),!ready || busy)}
         {control('Seek forward 10 seconds',()=>session.current?.seek(10),!ready || busy)}
         <Text style={{color:palette.muted}}>{time(elapsed)} / {time(duration)}</Text>
-      </View>{(!ready || busy) && <ActivityIndicator color={palette.accent}/>}</>}
-    <Text style={{color:palette.muted,padding:12,fontSize:11}}>Foreground playback only. H.264/AAC MP4 is the target; some MP4 codecs are unsupported.</Text>
+      </View>{(!ready || busy) && <ActivityIndicator accessibilityLabel={ready?'Preparing video':'Loading video'} color={palette.accent}/>}</>}
   </View>;
 }

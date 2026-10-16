@@ -156,13 +156,27 @@ export class WhatsAppAdapter {
         for (const event of reactions) this.receiveReaction(event.key,event.reaction,'unknown');
       });
     });
+    // Known outgoing IDs are already durable before sendMessage. Observe their evidence
+    // during history yields, without waiting for the bulk event lane. Unresolved aliases
+    // and store errors still get the original ordered processing below.
+    const receiptCurrent=()=>!this.stopped && !this.sealed && generation===this.generation && this.socket===socket && this.verifiedSocket===socket;
+    const receiptNow=(key:WAMessage['key'],receipt:OutgoingReceipt):boolean=>{
+      if(!receiptCurrent())return false;
+      try{return this.receipt(key,receipt);}catch{return false;}
+    };
     socket.ev.on('messages.update', updates => {
+      const observed=updates.map(({key,update})=>{
+        const level=update.status===proto.WebMessageInfo.Status.SERVER_ACK ? 'sent'
+          : update.status===proto.WebMessageInfo.Status.DELIVERY_ACK ? 'delivered'
+          : update.status===proto.WebMessageInfo.Status.READ ? 'read' : undefined;
+        return level ? receiptNow(key,{level,source:'wa_status',observedAt:this.clock()}) : false;
+      });
       this.enqueueData(socket, async () => {
-        for (const { key, update } of updates) {
+        for (const [index,{ key, update }] of updates.entries()) {
           const level = update.status === proto.WebMessageInfo.Status.SERVER_ACK ? 'sent'
             : update.status === proto.WebMessageInfo.Status.DELIVERY_ACK ? 'delivered'
             : update.status === proto.WebMessageInfo.Status.READ ? 'read' : undefined;
-          if (level) this.receipt(key,{level,source:'wa_status',observedAt:this.clock()});
+          if (level && !observed[index]) this.receipt(key,{level,source:'wa_status',observedAt:this.clock()});
           const revoked = update.message?.protocolMessage?.key;
           if (revoked?.remoteJid && revoked.id) this.erase(this.canonical(revoked.remoteJid),revoked.id);
           else if (update.messageStubType === proto.WebMessageInfo.StubType.REVOKE && key.remoteJid && key.id) this.erase(this.canonical(key.remoteJid,key.remoteJidAlt),key.id);
@@ -170,14 +184,17 @@ export class WhatsAppAdapter {
       });
     });
     socket.ev.on('message-receipt.update', updates => {
-      this.enqueueData(socket, async () => { for (const {key,receipt} of updates) {
-        const chat = this.receiptChat(key);
-        if (!chat || !receipt.userJid || this.receiptIdentity(receipt.userJid) !== chat) continue;
-        const read = Number(receipt.readTimestamp ?? 0);
-        const delivered = Number(receipt.receiptTimestamp ?? 0);
-        if (Number.isFinite(read) && read > 0) this.receipt(key,{level:'read',source:'wa_recipient',observedAt:this.clock()});
-        else if (Number.isFinite(delivered) && delivered > 0) this.receipt(key,{level:'delivered',source:'wa_recipient',observedAt:this.clock()});
-      } });
+      if(!receiptCurrent())return;
+      const observe=({key,receipt}:(typeof updates)[number],immediate:boolean):boolean=>{
+        const chat=this.receiptChat(key);
+        if(!chat || !receipt.userJid || this.receiptIdentity(receipt.userJid)!==chat)return false;
+        const read=Number(receipt.readTimestamp ?? 0),delivered=Number(receipt.receiptTimestamp ?? 0);
+        const level=Number.isFinite(read) && read>0 ? 'read' : Number.isFinite(delivered) && delivered>0 ? 'delivered' : undefined;
+        const evidence:OutgoingReceipt|undefined=level ? {level,source:'wa_recipient',observedAt:this.clock()} : undefined;
+        return evidence ? immediate ? receiptNow(key,evidence) : this.receipt(key,evidence) : false;
+      };
+      const observed=updates.map(update=>observe(update,true));
+      this.enqueueData(socket, async () => { for(const [index,update] of updates.entries())if(!observed[index])observe(update,false); });
     });
     socket.ev.on('messages.delete', event => {
       this.enqueueData(socket, async () => {
@@ -225,9 +242,9 @@ export class WhatsAppAdapter {
       || key.participant && this.receiptIdentity(key.participant) !== chat) return undefined;
     return chat;
   }
-  private receipt(key: WAMessage['key'], receipt: OutgoingReceipt): void {
+  private receipt(key: WAMessage['key'], receipt: OutgoingReceipt): boolean {
     const chat = this.receiptChat(key);
-    if (chat && key.id) this.flow.store.observeOutgoingReceipt(this.flow.accountId,chat,key.id,receipt);
+    return !!(chat && key.id && this.flow.store.observeOutgoingReceipt(this.flow.accountId,chat,key.id,receipt));
   }
   private contactNames(jid: string, contact: Partial<Contact>): void {
     if (!/^\d+@s\.whatsapp\.net$/.test(jid) || !this.flow.store.conversation(this.flow.accountId,jid)) return;

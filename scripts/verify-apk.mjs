@@ -11,7 +11,7 @@ function check(condition, message) { if (!condition) throw new Error(message); }
 export function assertReleaseManifest(badging, manifest) {
   check(/package: name='com\.jstarstudios\.otherme'/.test(badging), 'Wrong application ID.');
   check(/application-label:'Otherme'/.test(badging), 'Wrong public name.');
-  check(/versionCode='4'/.test(badging) && /versionName='0\.1\.3'/.test(badging), 'Wrong release version; update must be 0.1.3/code4.');
+  check(/versionCode='5'/.test(badging) && /versionName='0\.1\.4'/.test(badging), 'Wrong release version; update must be 0.1.4/code5.');
   const permissions = new Set([...badging.matchAll(/^uses-permission(?:-sdk-\d+)?: name='([^']+)'/gm)].map(match => match[1]));
   for (const permission of ['INTERNET', 'RECORD_AUDIO', 'CAMERA', 'READ_CONTACTS'])
     check(permissions.has('android.permission.'+permission), 'Missing '+permission+' permission.');
@@ -48,7 +48,7 @@ export function assertReleaseManifest(badging, manifest) {
 function verifyApk() {
   const { values, positionals } = parseArgs({ options: { 'signing-env-file': { type: 'string' } }, allowPositionals: true });
   const signingEnvFile = resolve(values['signing-env-file'] || join(root, '.env'));
-  const apk = resolve(positionals[0] || join(root, '.runtime/releases/Otherme-0.1.3.apk'));
+  const apk = resolve(positionals[0] || join(root, '.runtime/releases/Otherme-0.1.4.apk'));
   const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
   const tools = join(sdk, 'build-tools/36.0.0');
   const signature = execFileSync(join(process.env.JAVA_HOME, 'bin/java.exe'), ['-jar', join(tools, 'lib/apksigner.jar'), 'verify', '--verbose', '--print-certs', apk], { encoding: 'utf8' });

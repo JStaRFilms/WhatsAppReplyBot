@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
-import { ChevronDown, ChevronLeft, SlidersHorizontal, Smile, X } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, Image as ImageIcon, Mic, SlidersHorizontal, Smile, X } from 'lucide-react-native';
 import { randomUUID } from '../../lib/uuid';
-import { Draft, type Message, OwnerAction } from '@replybot/core/contracts';
+import { Draft, type Message, type Outbox, type OutgoingReceipt, OwnerAction } from '@replybot/core/contracts';
 import { Image } from 'expo-image';
 import { VoiceComposer, type VoiceComposerHandle } from '../../components/voice-composer';
 import type { AudioClip } from '../../lib/audio-clip';
@@ -20,7 +20,7 @@ import { useApp } from '../../lib/app-state';
 import { ApiError } from '../../lib/api';
 import { intentVisible, type PendingIntent } from '../../lib/pending-intents';
 import { releaseMedia, releaseImage } from '../../lib/media-lease';
-import { OutboxStatus } from '../../components/outgoing-status';
+import { OutgoingStatus } from '../../components/outgoing-status';
 import { useLocalDraft, useLocalDraftIds } from '../../lib/local-drafts';
 import { fonts } from '../../lib/theme';
 import { HistoryCache } from '../../lib/history-cache';
@@ -29,6 +29,66 @@ import { useComposerFocus } from '../../lib/composer-focus';
 import { isForeground, useForeground } from '../../lib/foreground';
 
 const emojis = ['😀','😂','😊','😍','🥰','😎','🤔','😮','😢','😭','👍','👎','❤️','🙏','🎉','🔥','✅','👋'];
+
+type DeliveryState = 'pending' | 'failed' | 'unknown' | 'cancelled';
+type ReactionFeedback = {
+  id: string; accountId: string; conversationId: string; targetId: string; emoji: string;
+  actor: 'owner' | 'assistant'; createdAt: number; order: number; transportId?: string | null;
+  state: DeliveryState | 'accepted'; simulated?: boolean; detail?: string;
+};
+type PendingPart = { id: string; kind: 'text' | 'image' | 'audio'; text: string | null; createdAt?: number; receipt?: OutgoingReceipt; state: DeliveryState; simulated?: boolean };
+const messageTime = new Intl.DateTimeFormat(undefined, {hour:'2-digit',minute:'2-digit'});
+const deliveryState = (state: string): DeliveryState => state === 'unknown' || state === 'partial' || state === 'uncertain' ? 'unknown'
+  : state === 'failed' ? 'failed' : state === 'cancelled' || state === 'stopped' ? 'cancelled' : 'pending';
+const echoed = (box: Outbox, transportId: string | null, messages: readonly Message[]) => !!transportId && messages.some(message =>
+  message.accountId === box.accountId && message.conversationId === box.conversationId && message.direction === 'outbound' && message.transportId === transportId);
+
+// Only immutable outbox component identity identifies a reaction event row.
+// A normal emoji text, or Message.reaction (target badge metadata), is not one.
+function reactionEvent(message: Message, outboxes: readonly Outbox[]): boolean {
+  return message.direction === 'outbound' && outboxes.some(box => box.accountId === message.accountId && box.conversationId === message.conversationId
+    && box.components.some(component => component.kind === 'reaction' && component.transportId === message.transportId));
+}
+function reactionFeedback(pending: readonly PendingIntent[], outboxes: readonly Outbox[]): ReactionFeedback[] {
+  const feedback: ReactionFeedback[] = [];
+  for (const box of outboxes) {
+    const local = pending.find(row => row.scope.accountId === box.accountId && row.conversationId === box.conversationId && row.requestId === box.requestId
+      && (!row.outbox || row.outbox.id === box.id));
+    for (const component of box.components) if (component.kind === 'reaction' && component.reaction) feedback.push({
+      id: component.id, accountId: box.accountId, conversationId: box.conversationId, targetId: component.reaction.targetMessageId, emoji: component.reaction.emoji,
+      actor: box.origin === 'owner_manual' ? 'owner' : 'assistant', createdAt: box.createdAt, order: local?.order ?? 0, transportId: component.transportId,
+      state: component.state === 'accepted' ? 'accepted' : deliveryState(local && ['queued','dispatching'].includes(component.state) ? local.phase : component.state), simulated: local?.simulated, detail: local?.detail,
+    });
+  }
+  for (const row of pending) if (row.action && 'reaction' in row.action && !outboxes.some(box => box.accountId === row.scope.accountId
+    && box.conversationId === row.conversationId && box.requestId === row.requestId && (!row.outbox || box.id === row.outbox.id))) feedback.push({
+      id: row.requestId, accountId: row.scope.accountId, conversationId: row.conversationId, targetId: row.action.reaction.targetMessageId, emoji: row.action.reaction.emoji,
+      actor: 'owner', createdAt: row.createdAt ?? 0, order: row.order, state: deliveryState(row.phase), simulated: row.simulated, detail: row.detail,
+    });
+  return feedback.sort((a,b) => a.createdAt-b.createdAt || a.order-b.order);
+}
+function projectReaction(message: Message, feedback: ReactionFeedback | undefined): Message {
+  if (!feedback || feedback.accountId!==message.accountId || feedback.conversationId!==message.conversationId || feedback.targetId!==message.id
+    || ['failed','cancelled'].includes(feedback.state)) return message;
+  const observations = message.observedReactions ?? [];
+  if (observations.some(observation => observation.transportId === feedback.transportId
+    || feedback.state === 'accepted' && (observation.actor === 'owner' || observation.actor === 'assistant') && observation.occurredAt >= feedback.createdAt)) return message;
+  return { ...message, observedReactions: [...observations.filter(observation => observation.actor !== 'owner' && observation.actor !== 'assistant'), {
+    actor: feedback.actor, actorId: message.accountId, transportId: 'local-reaction:'+feedback.id, emoji: feedback.emoji,
+    occurredAt: feedback.createdAt, source: 'unknown',
+  }] };
+}
+function pendingParts(row: PendingIntent, messages: readonly Message[]): PendingPart[] {
+  if (row.outbox) return outboxParts(row.outbox, messages, row.simulated, row.phase);
+  if (row.action?.kind === 'reaction') return [];
+  return [{ id: row.requestId, kind: row.mediaKind ?? 'text', text: row.text, createdAt: row.createdAt, state: deliveryState(row.phase), simulated: row.simulated }];
+}
+function outboxParts(box: Outbox, messages: readonly Message[], simulated?: boolean, phase?: PendingIntent['phase']): PendingPart[] {
+  return box.components.flatMap(component => component.kind === 'reaction' || component.state === 'accepted' && echoed(box, component.transportId, messages) ? [] : [{
+    id: component.id, kind: component.kind, text: component.text, createdAt: box.createdAt, receipt: component.outgoingReceipt,
+    state: deliveryState(phase && ['queued','dispatching'].includes(component.state) ? phase : component.state), simulated,
+  }]);
+}
 
 export default function ConversationScreen() {
   const { id, draftId } = useLocalSearchParams<{ id: string; draftId?: string }>();
@@ -42,11 +102,19 @@ export default function ConversationScreen() {
   const draftOffsets = useRef(new Map<string, number>());
   const knownMedia=useRef(new Map<string,Message>());
   const cached = useSyncExternalStore(history.subscribe,() => history.get(id),() => undefined);
-  const messages = cached?.messages ?? [];
+  const scopedOutboxes = [...(snapshot?.outbox ?? [])];
+  for (const row of pending) if (row.outbox) {
+    const index=scopedOutboxes.findIndex(box => box.accountId === row.scope.accountId && box.conversationId === row.conversationId && box.requestId === row.requestId);
+    if(index<0)scopedOutboxes.push(row.outbox);else if(scopedOutboxes[index]?.id===row.outbox.id)scopedOutboxes[index]=row.outbox;
+  }
+  const messages = (cached?.messages ?? []).filter(message => !reactionEvent(message, scopedOutboxes));
+  const reactions = reactionFeedback(pending, scopedOutboxes);
+  const matchesTarget = (value: ReactionFeedback, message: Message) => value.accountId === message.accountId && value.conversationId === message.conversationId && value.targetId === message.id;
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [paging,setPaging] = useState(false);
   const pendingLocation=useRef<{source:string;draftId?:string;bodyLocated?:boolean;contextArrived?:boolean} | null>(null);
   const pagingRead=useRef(0),jumpRequests=useRef(new Set<string>()),selectedNavigation=useRef<string | null>(null);
+  const autoNewer=useRef<string | null>(null),pageBusy=useRef(false);
   const {text,setText,ready:draftReady}=useLocalDraft(id);
   const [attachment,setAttachment]=useState<PickedImage | null>(null);
   const [audioClip,setAudioClip]=useState<AudioClip | null>(null);
@@ -103,7 +171,7 @@ export default function ConversationScreen() {
   const selectedDraft=snapshot?.drafts.find(draft=>draft.id===draftId && memberIds.includes(draft.conversationId));
   useLayoutEffect(() => {
     alive.current=true;
-    setPauseState('idle'); setHistoryError(null);setPaging(false);pendingLocation.current=null;pagingRead.current++;jumpRequests.current.clear();selectedNavigation.current=null;
+    setPauseState('idle'); setHistoryError(null);setPaging(false);pageBusy.current=false;autoNewer.current=null;pendingLocation.current=null;pagingRead.current++;jumpRequests.current.clear();selectedNavigation.current=null;
     setViewer(null);viewerOpen.current=false;pickerBusy.current=false;mediaCache?.setViewerOpen(false);
     setReactionPicker(false);setReactionEmoji('');
     setEmojiOpen(false); setSelection(undefined); setQuote(null); setSelected(null);
@@ -139,7 +207,7 @@ export default function ConversationScreen() {
       pendingHistory.current = { history, version, request };
       await request;
       if (active) { loadedVersion.current = version; setReadyVersion(version); setHistoryError(null); }
-    })().catch(e => { if (active) { setHistoryError(e instanceof Error ? e.message : 'Could not load messages. Cached text is stale.'); } });
+    })().catch(e => { if (active) { setHistoryError(e instanceof Error ? e.message : 'Could not load messages.'); } });
     return () => { active = false; };
   }, [id, history, version, status, paging]);
   useEffect(()=>{
@@ -186,7 +254,7 @@ export default function ConversationScreen() {
   const openViewer=(message:Message)=>{
     if(!currentScreen() || !discovery?.capabilities?.privateMediaCache || viewerOpen.current)return;
     if(pickerBusy.current || voice.current?.isBusy() || voice.current?.setViewerBlocked(true)===false){setHistoryError('Close the picker or finish microphone preparation, recording or audio stop before opening media.');return;}
-    viewerOpen.current=true;cancelViewed();scrolling.preserve?.();pendingLocation.current=null;pagingRead.current++;history.cancelPageReads?.(id);setPaging(false);mediaCache.setViewerOpen(true);setViewer(message);
+    viewerOpen.current=true;cancelViewed();scrolling.preserve?.();pendingLocation.current=null;pagingRead.current++;history.cancelPageReads?.(id);pageBusy.current=false;setPaging(false);mediaCache.setViewerOpen(true);setViewer(message);
   };
   useLayoutEffect(()=>{if(viewer && (!focused || !foreground))closeViewer();},[viewer,focused,foreground]);
   useEffect(()=>{if(viewer){const current=messages.find(message=>message.id===viewer.id);
@@ -256,7 +324,7 @@ export default function ConversationScreen() {
     composerState.current={id,hasText:true};setPauseState('acknowledged');
   };
   const chooseReaction=(emoji:string)=>{
-    if(!selected || readOnly)return;
+    if(!selected || readOnly || status!=='online' || busy || !currentScreen())return;
     const action=OwnerAction.safeParse({kind:'reaction',reaction:{targetMessageId:selected.id,emoji},reason:'Owner manual reaction.'});
     if(!action.success){reportError('Choose one emoji for a reaction.');return;}
     const revision=selectedGesture.current;
@@ -281,15 +349,26 @@ export default function ConversationScreen() {
     : feedbackDraft.action.kind==='handover' || feedbackDraft.state==='needs_owner' ? 'Needs your input. '+feedbackDraft.action.reason
     : feedbackDraft.state==='pending' ? 'Draft ready' : 'Draft '+feedbackDraft.state : draftFeedback?.text;
   const pageHistory=async(direction:'older'|'newer'|'latest'|'refresh')=>{
-    if(paging && direction!=='latest')return;const request=++pagingRead.current;
-    if(direction==='latest')pendingLocation.current=null;
-    cancelViewed();scrolling.preserve?.();setPaging(true);
+    if(pageBusy.current && direction!=='latest')return;const request=++pagingRead.current;
+    cancelViewed();
+    if(direction==='latest'){
+      pendingLocation.current=null;history.cancelPageReads?.(id);scrolling.latest();
+    }else scrolling.preserve?.();
+    if(direction==='latest' || direction==='refresh')autoNewer.current=null;
+    pageBusy.current=true;setPaging(true);
     try {await (direction==='refresh' || !discovery?.capabilities?.historyPaging ? history.load(id,true):history[direction](id));
       if(!currentScreen() || request!==pagingRead.current)return;
-      loadedVersion.current=version;setHistoryError(null);setReadyVersion(version);if(direction==='latest')scrolling.latest();else scrolling.restore?.();
-    }catch(error){if(currentScreen() && request===pagingRead.current)setHistoryError(error instanceof Error?error.message:'Could not load this page. Cached text is stale.');}
-    finally {if(currentScreen() && request===pagingRead.current)setPaging(false);}
+      loadedVersion.current=version;setHistoryError(null);setReadyVersion(version);if(direction!=='latest')scrolling.restore?.();
+    }catch(error){if(currentScreen() && request===pagingRead.current)setHistoryError(error instanceof Error?error.message:'Could not load this page.');}
+    finally {if(currentScreen() && request===pagingRead.current){pageBusy.current=false;setPaging(false);}}
   };
+  useEffect(()=>{
+    if(!focused || !foreground || viewer || status!=='online' || historyError || paging || pageBusy.current || !cached?.hasNewer
+      || !scrolling.settled || !scrolling.atBottom || pendingLocation.current || position.editor!==null)return;
+    const edge=JSON.stringify([id,cached.sourceEpoch,cached.afterCursor]);
+    if(!cached.afterCursor || autoNewer.current===edge)return;
+    autoNewer.current=edge;void pageHistory('newer');
+  },[id,cached,focused,foreground,viewer,status,historyError,paging,scrolling.settled,scrolling.atBottom]);
   useEffect(()=>{for(const row of pending)if(jumpRequests.current.has(row.requestId) && row.phase==='accepted'){
     jumpRequests.current.delete(row.requestId);
     if(focused && foreground && position.following && discovery?.capabilities?.historyPaging)void pageHistory('latest');
@@ -297,16 +376,16 @@ export default function ConversationScreen() {
   const locateSource=async(source:string,selectedId?:string)=>{
     cancelViewed();
     if(cached?.unavailableSourceIds?.includes(source)){setHistoryError('The original source has conflicting copies and is unavailable.');return;}
-    const request=++pagingRead.current;scrolling.preserve?.();pendingLocation.current={source,draftId:selectedId};
+    const request=++pagingRead.current;pageBusy.current=false;scrolling.preserve?.();pendingLocation.current={source,draftId:selectedId};
     if(messages.some(message=>message.id===source)){history.cancelPageReads?.(id);history.pin?.(id,{id:source,offset:0});setPaging(false);finishLocation(source);return;}
     if(!discovery?.capabilities?.historyPaging){setHistoryError('This service only provides the latest message window. The original source is not loaded.');return;}
-    setPaging(true);
+    pageBusy.current=true;setPaging(true);
     try {const page=await history.around(id,source);if(!currentScreen() || request!==pagingRead.current)return;
       if(!page.messages.some(message=>message.id===source) || page.unavailableSourceIds?.includes(source)){
         pendingLocation.current=null;setHistoryError('The original source is missing, conflicting or expired.');
       }else {loadedVersion.current=version;setHistoryError(null);setReadyVersion(version);}
     }catch(error){if(currentScreen() && request===pagingRead.current)setHistoryError(error instanceof Error?error.message:'The original source could not be loaded.');}
-    finally {if(currentScreen() && request===pagingRead.current)setPaging(false);}
+    finally {if(currentScreen() && request===pagingRead.current){pageBusy.current=false;setPaging(false);}}
   };
   const viewDraft=async()=>{if(feedbackDraft)await locateSource(feedbackDraft.triggerMessageId,feedbackDraft.id);};
   const displayedDraftIds=new Set([...turnDrafts.values()].filter(draft=>['pending','needs_owner','stale'].includes(draft.state) || draft.id===draftId || draft.id===localDraft?.id).map(draft=>draft.id));
@@ -341,6 +420,17 @@ export default function ConversationScreen() {
       const target=pendingLocation.current;if(target)finishLocation(target.source);
     });
   },[cached,turnIds.join('\n'),[...displayedDraftIds].join('\n')]);
+  const renderPart=(part:PendingPart)=><View key={part.id} style={{gap:5}}>
+    {part.kind!=='text' && <View accessibilityLabel={part.kind==='audio'?'Voice message':'Photo'} style={{flexDirection:'row',alignItems:'center',gap:10,minHeight:64}}>
+      {part.kind==='audio'?<Mic size={26} color={palette.muted}/>:<ImageIcon size={32} color={palette.muted}/>}
+      <Text style={{color:palette.text,fontFamily:fonts.regular,fontSize:15}}>{part.kind==='audio'?'Voice message':'Photo'}</Text>
+    </View>}
+    {!!part.text && <Text selectable style={{color:palette.text,fontFamily:fonts.regular,fontSize:15}}>{part.text}</Text>}
+    <View style={{alignSelf:'flex-end',flexDirection:'row',alignItems:'center',gap:6,minHeight:18}}>
+      {part.createdAt!==undefined && <Text style={{color:palette.muted,fontSize:11}}>{messageTime.format(part.createdAt)}</Text>}
+      <OutgoingStatus receipt={part.receipt} deliveryState={part.state} simulated={part.simulated ?? snapshot?.demo}/>
+    </View>
+  </View>;
   const header = <View style={{ minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingRight: 4, gap: 8 }}>
     <Pressable accessibilityRole="button" accessibilityLabel="Back to Chats" onPress={() => router.dismissTo('/(tabs)')}
       style={{ width: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
@@ -374,7 +464,12 @@ export default function ConversationScreen() {
       {draftUnconfirmed && <Button label="Refresh draft status" secondary disabled={status!=='online'} onPress={()=>{void refresh();}}/>}
     </View>}
     <View style={{ flex: 1, minHeight: 0 }}>
-      {(historyError || cached?.stale || cached?.notice) && <View style={{padding:10,gap:6}}><Text accessibilityRole="alert" style={{color:palette.muted}}>{historyError ?? cached?.notice ?? 'Showing stale cached text. Visibility is not acknowledged.'}</Text><Button label="Refresh history" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('refresh');}}/></View>}
+      {(historyError || cached?.stale || cached?.notice) && <View style={{padding:10,gap:6}}><Text accessibilityRole="alert" style={{color:palette.muted}}>{historyError ?? cached?.notice ?? 'Could not refresh messages.'}</Text><Button label="Refresh history" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('refresh');}}/></View>}
+      {reactions.filter(value=>memberIds.includes(value.conversationId) && value.accountId===snapshot?.accountId && value.state==='unknown'
+        && !messages.some(message=>matchesTarget(value,message) && !cached?.unavailableSourceIds?.includes(message.id))).map(value=><View key={'unlocated-'+value.id} style={{padding:10,gap:4}}>
+        <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>Reaction outcome unconfirmed. Do not resend.</Text>
+        <Button label="View original source" secondary disabled={paging || status!=='online'} onPress={()=>{void locateSource(value.targetId);}}/>
+      </View>)}
       {!discovery?.capabilities?.historyPaging && <Text style={{color:palette.muted,paddingHorizontal:12,fontSize:12}}>Latest message window only. Update the Windows service for older history.</Text>}
       <View style={{ flex: 1, minHeight: 0 }}>
       <ScrollView key={'history:'+id} ref={scroll} contentInsetAdjustmentBehavior="never" keyboardDismissMode="none" keyboardShouldPersistTaps="always"
@@ -388,6 +483,9 @@ export default function ConversationScreen() {
         {cached?.hasOlder && <Button label="Load older" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('older');}}/>}
         {turnIds.map(source=>{
           const m=messages.find(message=>message.id===source),draft=turnDrafts.get(source);
+          const targetReactions=m?reactions.filter(value=>matchesTarget(value,m)):[],reaction=targetReactions.at(-1);
+          const reactionUnknown=targetReactions.some(value=>value.state==='unknown');
+          const projected=targetReactions.filter(value=>value.state!=='failed' && value.state!=='cancelled').at(-1);
           const refs=scrolling.rowRefs?.(source);
           return <View key={source} ref={refs?.turn} collapsable={false} testID={'turn-'+source} onLayout={event=>{
             if(!currentScreen() || history.get(id)?.messages!==cached?.messages)return;
@@ -399,24 +497,36 @@ export default function ConversationScreen() {
               const {y,height}=event.nativeEvent.layout;scrolling.refreshRows?.();
               // The card follows this measured sibling with no intervening margin. Keep its editor mounted when the source first arrives.
               if(draft)draftOffsets.current.set(draft.id,y+height);finishLocation(source);
-            }}>{m ? cached?.unavailableSourceIds?.includes(source) ? <Text style={{color:palette.muted,padding:8}}>Original source unavailable. Its verified copies conflict.</Text> : <MessageBubble message={m} active={focused && foreground && !viewer} visible={scrolling.visibleIds?.includes(m.id) ?? false} onOpenMedia={openViewer} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={selectMessage} onQuote={quoteMessage} onQuoteSource={source=>{void locateSource(source);}}/>
-              : <View style={{padding:8,gap:4}}><Text style={{color:palette.muted,fontSize:12}}>{historyError ? 'Original source unavailable. The known draft is kept below.' : 'Original source is not loaded. The known draft is kept below.'}</Text><Button label="View original source" secondary disabled={paging || status!=='online'} onPress={()=>{void locateSource(source,draft?.id);}}/></View>}</View>
+            }}>{m ? cached?.unavailableSourceIds?.includes(source) ? <Text style={{color:palette.muted,padding:8}}>Original source unavailable. Its verified copies conflict.</Text> : <MessageBubble message={projectReaction(m,projected)} active={focused && foreground && !viewer} visible={scrolling.visibleIds?.includes(m.id) ?? false} onOpenMedia={openViewer} quoted={messages.find(q=>q.id===m.quotedMessageId)} onSelect={selectMessage} onQuote={quoteMessage} onQuoteSource={source=>{void locateSource(source);}}/>
+              : <View style={{padding:8,gap:4}}><Text style={{color:palette.muted,fontSize:12}}>Original message not loaded.</Text><Button label="View original source" secondary disabled={paging || status!=='online'} onPress={()=>{void locateSource(source,draft?.id);}}/></View>}</View>
+            {m && reaction && (reaction.state!=='accepted' || reactionUnknown) && !cached?.unavailableSourceIds?.includes(source) && <View accessibilityLabel="Reaction status" style={{alignSelf:'flex-end',paddingHorizontal:8,gap:4}}>
+              <OutgoingStatus deliveryState={reactionUnknown?'unknown':reaction.state==='accepted'?undefined:reaction.state} simulated={reaction.simulated ?? snapshot?.demo}/>
+              {reactionUnknown && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>Reaction outcome unconfirmed. Do not resend.</Text>}
+              {reaction.state==='failed' && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>{reaction.detail ?? 'Reaction not sent.'}</Text>}
+              {reaction.state==='cancelled' && <Text style={{color:palette.muted,fontSize:12}}>Reaction not submitted.</Text>}
+            </View>}
             {draft && displayedDraftIds.has(draft.id) && <View key={'draft-'+draft.id} onLayout={event=>{if(currentScreen() && history.get(id)?.messages===cached?.messages){draftOffsets.current.set(draft.id,event.nativeEvent.layout.y);scrolling.refreshRows?.();finishLocation(source);}}} style={{paddingVertical:8}}><DraftCard draft={draft} sourceReady={!!m && !cached?.stale && !historyError && readyVersion===version && !cached?.unavailableSourceIds?.includes(source) && !readOnly && (!group || draft.conversationId===group.id)} onEditorFocus={scrolling.editorFocus} onSent={()=>{if(discovery?.capabilities?.historyPaging)void pageHistory('latest');else scrolling.latest();}}/></View>}
           </View>;
         })}
-        {cached?.hasNewer && <Button label="Load newer" secondary disabled={paging || status!=='online'} onPress={()=>{void pageHistory('newer');}}/>}
-        {pending.filter(row=>memberIds.includes(row.conversationId) && intentVisible(row,messages)).map(row=><View key={row.requestId} accessibilityLabel="Pending outgoing message" accessibilityLiveRegion="polite"
-          style={{alignSelf:'flex-end',maxWidth:'86%',padding:12,gap:5,borderRadius:12,backgroundColor:palette.outgoing}}>
-          <Text selectable style={{color:palette.text,fontFamily:fonts.regular,fontSize:15}}>{row.text || row.action && 'reaction' in row.action && row.action.reaction.emoji || row.mediaKind || 'Message'}</Text>
-          {row.quotedMessageId && <Text style={{color:palette.muted,fontSize:12}}>Quoted reply</Text>}
-          <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>{({preparing:'Preparing',waiting:'Waiting behind earlier message',uploading:'Uploading',sending:'Sending',pending:'Pending',accepted:'Accepted by transport',uncertain:'Outcome uncertain. Do not resend.',failed:'Not sent',stopped:'Not submitted'})[row.phase]}</Text>
-          {row.outbox && <OutboxStatus outbox={row.outbox} simulated={row.simulated ?? snapshot?.demo}/>}
-          {row.detail && <Text style={{color:palette.muted,fontSize:12}}>{row.detail}</Text>}
-          {['failed','stopped','waiting'].includes(row.phase) && (row.conversationId===id && !readOnly ? <Button label="Restore to composer" secondary onPress={()=>restoreIntent(row)}/>
-            : <Button label="View original pending identity" secondary onPress={()=>router.push({pathname:'/conversation/[id]',params:{id:row.conversationId}})}/>)}
-        </View>)}
-        {(snapshot?.outbox ?? []).filter(box=>memberIds.includes(box.conversationId) && ['unknown','partial','queued','dispatching'].includes(box.state)
-          && !pending.some(row=>row.outbox?.id===box.id && intentVisible(row,messages))).map(box=><View key={box.id} style={{padding:10,gap:4}}><OutboxStatus outbox={box} simulated={snapshot?.demo}/></View>)}
+        {paging && <ActivityIndicator accessibilityLabel="Loading messages" size="small" color={palette.muted}/>}
+        {pending.filter(row=>memberIds.includes(row.conversationId) && intentVisible(row,messages)).map(row=>{
+          const parts=pendingParts(row,messages);if(!parts.length)return null;
+          return <View key={row.requestId} accessibilityLabel="Pending outgoing message" accessibilityLiveRegion="polite"
+            style={{alignSelf:'flex-end',maxWidth:'86%',padding:12,gap:5,borderRadius:12,backgroundColor:palette.outgoing}}>
+            {parts.map(renderPart)}
+            {row.quotedMessageId && <Text style={{color:palette.muted,fontSize:12}}>Quoted reply</Text>}
+            {['uncertain','failed','stopped'].includes(row.phase) && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>{row.detail ?? (row.phase==='uncertain'?'Send outcome unconfirmed. Do not resend.':'Message not sent.')}</Text>}
+            {['failed','stopped','waiting'].includes(row.phase) && (row.conversationId===id && !readOnly ? <Button label="Restore to composer" secondary onPress={()=>restoreIntent(row)}/>
+              : <Button label="View original pending identity" secondary onPress={()=>router.push({pathname:'/conversation/[id]',params:{id:row.conversationId}})}/>)}
+          </View>;
+        })}
+        {scopedOutboxes.filter(box=>memberIds.includes(box.conversationId) && !pending.some(row=>row.scope.accountId===box.accountId && row.conversationId===box.conversationId && row.requestId===box.requestId)).map(box=>{
+          const parts=outboxParts(box,messages,snapshot?.demo);if(!parts.length)return null;
+          return <View key={box.id} accessibilityLabel="Pending outgoing message" style={{alignSelf:'flex-end',maxWidth:'86%',padding:12,gap:5,borderRadius:12,backgroundColor:palette.outgoing}}>
+            {parts.map(renderPart)}
+            {['unknown','partial'].includes(box.state) && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>Send outcome unconfirmed. Do not resend. Later messages are waiting.</Text>}
+          </View>;
+        })}
         </View>
       </ScrollView>
       {(scrolling.showLatest || cached?.hasNewer) && <Pressable accessibilityRole="button" accessibilityLabel="Jump to latest message" onPress={()=>{void pageHistory('latest');}}
@@ -446,7 +556,7 @@ export default function ConversationScreen() {
         <Text numberOfLines={2} style={{ flex: 1, fontFamily: fonts.regular, color: palette.muted, fontSize: 13 }}>{quote.text || quote.media?.kind}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Remove quote" style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }} onPress={() => editQuote(null)}><X size={18} color={palette.muted}/></Pressable>
       </View>}
-      <VoiceComposer key={'voice:'+id} ref={voice} clip={audioClip} active={focused && foreground && !viewer} scope={client} inactiveReason={!foreground ? 'background' : 'chat'}
+      <VoiceComposer key={'voice:'+id} ref={voice} clip={audioClip} active={focused && foreground && !viewer} scope={client} inactiveReason={!focused ? 'chat' : 'background'}
         disabled={!!viewer || readOnly || busy || !draftReady || status!=='online'} canSend={!!text.trim() || !!attachment || !!audioClip} sending={false}
         onSend={()=>{void sendComposed();}} onClip={clip=>{
           if(!alive.current || activeId.current!==id || activeClient.current!==client){clip?.release();return;}
@@ -463,8 +573,11 @@ export default function ConversationScreen() {
             }} onBusyChange={value=>{pickerBusy.current=value;setPicking(value);}} beforePick={holdComposer}/>
         </View>
       </VoiceComposer>
-      {pauseState !== 'idle' && <Text style={{ color: pauseState === 'failed' ? palette.danger : palette.muted, fontFamily: fonts.regular, fontSize: 11, textAlign: 'center', paddingBottom: 7 }}>
-        {pauseState === 'pending' ? 'Pause requested…' : pauseState === 'failed' ? 'Pause was not acknowledged' : 'Pause acknowledged'}
+      {!readOnly && (!draftReady || status!=='online') && <Text accessibilityRole="alert" style={{color:palette.muted,fontSize:12,paddingHorizontal:16,paddingBottom:7}}>
+        {!draftReady?'Loading your saved draft…':status==='connecting'?'Waiting for the active account to be confirmed.':'Connect to the service to send.'}
+      </Text>}
+      {pauseState === 'failed' && <Text style={{ color: palette.danger, fontFamily: fonts.regular, fontSize: 11, textAlign: 'center', paddingBottom: 7 }}>
+        AI pause was not acknowledged.
       </Text>}
     </View>
     {viewer && focused && foreground && <MediaViewer key={viewer.id} message={viewer} onClose={closeViewer}

@@ -15,7 +15,7 @@ test('only optional receipt evidence draws one neutral, two neutral or two blue 
   }
   for(const simulated of [false,true]){
     const tree=component.OutgoingStatus({simulated});assert.equal(nodes(tree).filter(node=>/tick/.test(node.type)).length,0);
-    assert.match(tree.props.accessibilityLabel,/Awaiting WhatsApp acknowledgment/);if(simulated)assert.match(tree.props.accessibilityLabel,/Simulated/);
+    assert.match(tree.props.accessibilityLabel,/Pending/);if(simulated)assert.match(tree.props.accessibilityLabel,/Simulated/);
   }
 });
 test('mixed components retain their own receipts while unknown/partial action warnings remain visible',()=>{

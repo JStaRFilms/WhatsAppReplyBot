@@ -31,4 +31,8 @@ Normal sparse-profile settings testing found names enablement still exceeded11se
 Narrow accepted source/test/docs commit; `.runtime/pc-task55/` verification/build/browser reports; preserved previous desktop bytes; updated issue/session records; concise owner handoff with no more setup guessing. No icon, analytics, fullBatch2, new dependencies, ports, automatic mutation replay, credentials reset or account-data cleanup.
 
 ## Dependencies
-53 and54 source handoffs received. Parent53 read-only actual-profile shadow has already returned200 in2422ms, with all3437 conversations,166 drafts and135 outboxes retained, and345 physical populated histories represented by344 logical latest messages/3435 logical groups. Backup was removed; actual source DB was not written. Parent still owes combined verification, new desktop assets and actual-service reconciliation.
+53 and54 source handoffs received. Parent53 read-only actual-profile shadow has already returned200 in2422ms, with all3437 conversations,166 drafts and135 outboxes retained, and345 physical populated histories represented by344 logical latest messages/3435 logical groups. Backup was removed; actual source DB was not written. At packet creation, parent still owed combined verification, new desktop assets and actual-service reconciliation.
+
+## Current owner restart verification
+
+Owner reports a normal stop/restart. Parent read-only verification now confirms the new canonical index, canonical root/protocol and accepted token. Health/launcher/session return200 in62/6/11ms; the scoped snapshot HEAD returns200 in6995ms with2130501bytes and no chat body returned. WhatsApp remains disconnected. Source/full506 checks and desktop promotion are complete. The restart blocker is resolved. Keep this task in progress for actual phone and simultaneous-client checks; one7-second service response is not proof of stable native performance.

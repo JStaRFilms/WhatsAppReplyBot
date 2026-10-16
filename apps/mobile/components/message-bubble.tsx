@@ -12,6 +12,7 @@ const time = new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'}
 export const MessageBubble = memo(function MessageBubble({ message, quoted, onSelect, onQuote, onQuoteSource, onOpenMedia, visible=false, active=true }: { message: Message; active?:boolean; visible?:boolean; onOpenMedia?:(message:Message)=>void; onQuoteSource?:(id:string)=>void; quoted?: Message; onSelect: (message: Message) => void; onQuote: (message: Message) => void }) {
   const { palette, snapshot } = useApp(); const owner = message.direction === 'outbound';
   const media = message.media;
+  const text = media?.kind === 'video' && message.text === '[Unsupported attachment]' ? '' : message.text;
   const reactions=groupMessageReactions(message);
   const translation = useRef(new Animated.Value(0)).current;
   const swipe = useMemo(() => {
@@ -31,10 +32,11 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
   }, [message, onQuote, translation]);
   return <View style={{ alignItems: owner ? 'flex-end' : 'flex-start', paddingBottom: 6 }}>
     <Animated.View {...swipe.panHandlers} style={{ ...webSwipeStyle, maxWidth: '86%', transform: [{ translateX: translation }] }}>
-    <Pressable accessibilityRole="button" accessibilityLabel={'Message: '+(message.text || media?.kind || 'attachment')} accessibilityHint="Swipe right to quote. Hold to quote or react."
-      onLongPress={() => onSelect(message)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
+    <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
         borderTopRightRadius: owner ? 4 : 16, borderTopLeftRadius: owner ? 16 : 4,
         backgroundColor: owner ? palette.outgoing : palette.surface }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={'Message: '+(text || media?.kind || 'attachment')} accessibilityHint="Swipe right to quote. Hold to quote or react."
+      onLongPress={() => onSelect(message)}>
       {message.quotedMessageId && <Pressable accessibilityRole="button" accessibilityLabel="View original quoted message" onPress={()=>{if(message.quotedMessageId)onQuoteSource?.(message.quotedMessageId);}} style={{ padding: 9, borderLeftWidth: 3, borderColor: palette.accent, backgroundColor: palette.background, borderRadius: 8, marginBottom: 8 }}>
         <Text style={{ fontFamily: fonts.semibold, color: palette.accent, fontSize: 12 }}>{quoted?.direction === 'outbound' ? 'You' : 'Quoted message'}</Text>
         <Text numberOfLines={2} style={{ fontFamily: fonts.regular, color: palette.muted, fontSize: 13 }}>{quoted?.text || quoted?.media?.kind || 'Original source not loaded. Tap to locate it.'}</Text>
@@ -43,13 +45,16 @@ export const MessageBubble = memo(function MessageBubble({ message, quoted, onSe
         {message.statusContext ? 'Reply to your status: '+message.statusContext : 'Reply to your status · original unavailable'}
       </Text>}
       {media?.kind==='audio' ? <AudioPlayback message={message} active={active}/> : media && <MediaAttachment message={message} visible={active && visible} onOpen={onOpenMedia}/>}
-      {!!message.text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 16, lineHeight: 24 }}>{message.text}</Text>}
-      <Text style={{ fontFamily: fonts.regular, fontSize: 12, textAlign: 'right', color: owner ? palette.outgoingMuted : palette.muted, marginTop: 4 }}>
-        {owner ? message.authorship === 'assistant_written' ? snapshot?.demo ? 'AI · simulated ' : 'AI · ' : message.authorship === 'owner_edited_assistant' ? snapshot?.demo ? 'Edited by you · simulated ' : 'Edited by you · ' : 'You · ' : ''}
+      {!!text && <Text selectable style={{ fontFamily: fonts.regular, color: palette.text, fontSize: 16, lineHeight: 24 }}>{text}</Text>}
+    </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
+      <Text style={{ fontFamily: fonts.regular, fontSize: 12, textAlign: 'right', flexShrink: 1, color: owner ? palette.outgoingMuted : palette.muted }}>
+        {owner ? message.authorship === 'assistant_written' ? 'AI · ' : message.authorship === 'owner_edited_assistant' ? 'Edited by you · ' : 'You · ' : ''}
         {time.format(message.occurredAt)}
       </Text>
       {owner && <OutgoingStatus receipt={message.outgoingReceipt} simulated={snapshot?.demo}/>}
-    </Pressable>
+      </View>
+    </View>
     </Animated.View>
     {reactions.length>0 && <View style={{flexDirection:'row',flexWrap:'wrap',gap:4}}>
       {reactions.map(({emoji,actors})=><View key={emoji} accessibilityLabel={emoji+' · '+actors.join(', ')} style={{borderRadius:16,backgroundColor:palette.surface,borderWidth:1,borderColor:palette.border,paddingHorizontal:8,paddingVertical:3}}>

@@ -90,7 +90,7 @@ test('source denial removes decoded image before release and close; late route/p
   const late=fixture();late.render();late.h.unmount();assert.equal(late.requests[0][3].aborted,true);late.response.resolve(late.handle);await settle();assert.equal(late.events.filter(event=>event.kind==='release').length,1);
 });
 test('sticker/animation viewing requests its bounded preview, never full image or any model/upload operation',async()=>{
-  const f=fixture();f.props.message={...photo,media:{...photo.media,kind:'gif'}};f.render();assert.equal(f.requests[0][1],'preview');assert.match(nodes(f.render()).find(node=>node.props?.accessibilityRole==='header').props.children,/Bounded/);f.h.unmount();f.response.resolve(f.handle);await settle();
+  const f=fixture();f.props.message={...photo,media:{...photo.media,kind:'gif'}};f.render();assert.equal(f.requests[0][1],'preview');assert.match(nodes(f.render()).find(node=>node.props?.accessibilityRole==='header').props.children,/Animation/);f.h.unmount();f.response.resolve(f.handle);await settle();
 });
 test('only measured visible thumbnails acquire handles; offscreen, covered and new-scope renders remove decoded pixels before release',async()=>{
   const f=fixture('thumbnail');f.render();assert.equal(f.requests.length,0);f.props.visible=true;f.render();assert.equal(f.requests.length,1);assert.equal(f.requests[0][1],'preview');

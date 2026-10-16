@@ -49,7 +49,13 @@ export function AttachmentPicker({disabled,onPick,onBusyChange,beforePick,onPick
       }
       if (result.canceled) return;
       const asset = result.assets[0];
+      if (asset && (asset.type && asset.type!=='image' || asset.mimeType && !asset.mimeType.startsWith('image/'))) {
+        if (process.env.EXPO_OS==='web' && asset.uri.startsWith('blob:')) URL.revokeObjectURL(asset.uri);
+        Alert.alert('Choose an image','Video and other files cannot be attached here.');
+        return;
+      }
       if (!asset?.base64) {
+        if (process.env.EXPO_OS==='web' && asset?.uri.startsWith('blob:')) URL.revokeObjectURL(asset.uri);
         Alert.alert('Image unavailable','This image could not be read. Choose another image.');
         return;
       }

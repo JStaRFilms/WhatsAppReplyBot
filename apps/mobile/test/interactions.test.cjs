@@ -64,8 +64,8 @@ test('inactive composer invalidates pending microphone and audio picker holds ev
     const f=voiceFixture();const tree=f.render();f.h.flush();
     if(file)f.props.ref.current.pickAudio();else label(tree,'Record voice note').props.onPress();
     f.props.active=false;f.render();f.h.flush();f.props.active=true;f.render();f.h.flush();
-    f.acknowledgment.resolve();await settle();assert.equal(f.counts().starts,0);assert.equal(f.counts().picks,0);
-    assert.ok(nodes(f.render()).some(n=>typeof n.props?.children==='string' && n.props.children.includes('setup was cancelled')));
+    f.acknowledgment.resolve();await settle();assert.equal(f.counts().starts,0);assert.equal(f.counts().picks,0);assert.equal(f.counts().sends,0);
+    assert.equal(nodes(f.render()).some(n=>typeof n.props?.children==='string' && n.props.children.includes('setup was cancelled')),!file);
   }
 });
 test('inactive composer releases a late audio picker result instead of accepting the clip',async()=>{

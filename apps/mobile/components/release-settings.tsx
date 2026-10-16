@@ -39,8 +39,8 @@ export function ReleaseSettings() {
       const data=await client.request('/v1/owner-instructions',OwnerInstructions);
       if(!current() || request!==instructionRead.current)return;
       setInstructions(data);
-      if(editor.current===captured){setText(data.text);editor.current=data.text;setInstructionsFeedback('Loaded saved instructions.');}
-      else setInstructionsFeedback('Loaded the saved revision. Your newer edits are kept.');
+      if(editor.current===captured){setText(data.text);editor.current=data.text;setInstructionsFeedback('');}
+      else setInstructionsFeedback('Your newer edits are kept.');
     } catch(error){if(current() && request===instructionRead.current)setInstructionsFeedback(error instanceof Error?error.message:'Could not load instructions.');}
   };
   const loadNames = async () => {
@@ -52,7 +52,7 @@ export function ReleaseSettings() {
       if(unknownImport.current) {
         if(data.lastPhoneImportRequestId===unknownImport.current) {
           unknownImport.current=null;setImportUnconfirmed(false);setNamesFeedback('Matched names synchronized.');
-        } else setNamesFeedback('That import is still unconfirmed. No action was retried. A missing request ID is not proof of failure.');
+        } else setNamesFeedback('That import is still unconfirmed. No action was retried.');
       } else setNamesFeedback('');
     } catch(error){if(current() && request===namesRead.current)setNamesFeedback(error instanceof Error?error.message:'Could not load name settings.');}
   };
@@ -95,7 +95,7 @@ export function ReleaseSettings() {
     const accountId=acceptedScope.accountId, revision=names.revision, conversations=snapshot.conversations;
     const scopeValid=()=>current() && operation===namesOperation.current;
     const valid=()=>scopeValid() && foregroundEpoch.current===foreground && isForeground();
-    nameLock.current='sync';setNamesBusy('sync');setNamesFeedback('Reading matched names in the foreground. Nothing has been synchronized yet.');
+    nameLock.current='sync';setNamesBusy('sync');setNamesFeedback('Reading matched names. Nothing synchronized yet.');
     let submitted=false;
     try {
       const entries=await readMatchedNames(conversations,accountId,valid);
@@ -111,7 +111,7 @@ export function ReleaseSettings() {
       if(!scopeValid())return;
       if(submitted && (!(error instanceof ApiError) || error.code==='service_error')) {
         unknownImport.current=requestId;setImportUnconfirmed(true);
-        setNamesFeedback('Import unconfirmed. Check sync status to compare its exact request ID. No action was retried.');
+        setNamesFeedback('Import unconfirmed. Check sync status before syncing again. No action was retried.');
       } else setNamesFeedback(error instanceof ApiError && error.code==='contact_names_changed' ? 'Name settings changed. Reload and choose Sync matched names again explicitly.'
         : error instanceof Error ? error.message : 'Names were not synchronized.');
     } finally {
@@ -124,34 +124,34 @@ export function ReleaseSettings() {
   return <>
     <View style={section}>
       <Text style={heading}>About me and reply instructions</Text>
-      <Text style={copy}>Saved for this WhatsApp profile on your PC. These instructions and the eligible recipient's resolved name accompany model requests to OpenRouter under existing consent and contact rules. Do not paste secrets. This does not enable AI or grant permissions.</Text>
+      <Text style={copy}>Saved on your PC for this profile. Used for AI replies when enabled. Do not paste secrets.</Text>
       {instructionsAvailable ? <>
         <TextInput accessibilityLabel="About me and reply instructions" multiline value={text} onChangeText={value=>{editor.current=value;setText(value);}} editable={!!instructions}
           style={{color:palette.text,fontFamily:fonts.regular,fontSize:15,minHeight:120,textAlignVertical:'top',padding:14,borderWidth:1,borderColor:palette.border,borderRadius:12,backgroundColor:palette.surface}}/>
-        <Text style={copy}>{[...text].length}/2,000 characters · {new TextEncoder().encode(text).length}/4,000 UTF-8 bytes. Saving empty text clears it.</Text>
+        <Text style={copy}>{[...text].length}/2,000 characters · 4,000-byte limit. Saving empty text clears it.</Text>
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
           <Button label={saving?'Saving instructions…':'Save instructions'} disabled={saving || !instructions || status!=='online'} onPress={()=>{void saveInstructions();}}/>
           <Button label="Reload saved instructions" secondary disabled={saving || status!=='online'} onPress={()=>{void loadInstructions();}}/>
         </View>
         {!!instructionsFeedback && <Text accessibilityLiveRegion="polite" style={copy}>{instructionsFeedback}</Text>}
-      </> : <Text style={copy}>Instructions are unavailable until the PC supports this control and a profile is accepted.</Text>}
-      <Text style={copy}>Changes make old pending drafts outdated and cancel unsent AI work. Already handed-off messages cannot be recalled. Owner text and approved replies are not rewritten.</Text>
+      </> : <Text style={copy}>Instructions unavailable. Continue with a supported PC profile to edit them.</Text>}
+      <Text style={copy}>Changes make pending AI drafts outdated and cancel unsent AI replies. Messages already sending cannot be recalled.</Text>
     </View>
     <View style={section}>
       <Text style={heading}>Saved contact names</Text>
-      <Text style={copy}>Prefer WhatsApp saved names, then explicitly matched phone names. Sync creates no chats and grants no AI access. Off deletes saved-book and phone aliases on the PC, but does not revoke Android permission.</Text>
+      <Text style={copy}>Use saved WhatsApp names, then matched phone names. Turning off deletes these saved names from the PC; Android permission stays unchanged.</Text>
       {namesAvailable ? <>
         <Text style={copy}>{names ? names.enabled?'Saved names on':'Saved names off':'Name settings not loaded'}</Text>
         <Button label={namesBusy==='toggle'?'Applying name setting…':names?.enabled?'Turn saved names off':'Enable saved names'} secondary
           disabled={!names || namesBusy==='toggle' || status!=='online'} onPress={()=>{void toggleNames();}}/>
         {canReadPhoneContacts ? <>
-          <Text style={copy}>Android grants book-wide read access. Only names and phone numbers are checked in bounded foreground pages. Only matched existing chats and names go to this PC. Unmatched contacts and raw numbers are not uploaded or saved.</Text>
+          <Text style={copy}>Android allows access to all contacts. Names and phone numbers are read while this app is in the foreground. Only matched chat IDs and names go to this PC. Unmatched contacts and raw numbers are not uploaded or saved.</Text>
           <Button label={namesBusy==='sync'?'Syncing matched names…':'Sync matched names'} disabled={!names?.enabled || !!namesBusy || importUnconfirmed || status!=='online'} onPress={()=>{void syncNames();}}/>
-        </> : <Text style={copy}>Browser uses names synchronized to the PC. It cannot read phone contacts. Choose Sync matched names in the Android app.</Text>}
+        </> : <Text style={copy}>Browser uses names synchronized to the PC. To sync phone names, use the Android app.</Text>}
         <Button label={importUnconfirmed?'Check sync status':'Reload name settings'} secondary disabled={!!namesBusy || status!=='online'} onPress={()=>{void loadNames();}}/>
         {names?.lastPhoneSyncAt !== null && names?.lastPhoneSyncAt !== undefined && <Text style={copy}>Last committed phone sync: {new Date(names.lastPhoneSyncAt).toLocaleString()}</Text>}
         {!!namesFeedback && <Text accessibilityLiveRegion="polite" style={copy}>{namesFeedback}</Text>}
-      </> : <Text style={copy}>Saved-name controls are unavailable until the PC supports them and a profile is accepted.</Text>}
+      </> : <Text style={copy}>Saved-name controls are unavailable. Continue with a supported PC profile.</Text>}
     </View>
   </>;
 }

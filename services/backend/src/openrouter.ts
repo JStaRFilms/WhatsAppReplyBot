@@ -53,12 +53,12 @@ export class OpenRouterClient {
         method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{Authorization:'Bearer '+this.options.apiKey,'Content-Type':'application/json',
           'HTTP-Referer':this.options.appUrl || 'http://localhost:8081','X-OpenRouter-Title':this.options.appName || 'Otherme','X-OpenRouter-App-Visibility':'hidden'},body,
       });
-    }catch{throw new DomainError('transcription_unknown',502);}
+    }catch{console.warn('Voice transcription failed.',{stage:'network'});throw new DomainError('transcription_unknown',502);}
     try {
       guard();
-      if(!response.ok)throw new DomainError('model_request_failed',502);
+      if(!response.ok){console.warn('Voice transcription failed.',{stage:'request',httpStatus:response.status});throw new DomainError('model_request_failed',502);}
       const transcript=await readTranscript(response);guard();return transcript;
-    }catch(error){if(error instanceof DomainError)throw error;throw new DomainError('invalid_transcript_response',502);}
+    }catch(error){if(error instanceof DomainError)throw error;console.warn('Voice transcription failed.',{stage:'response',httpStatus:response.status});throw new DomainError('invalid_transcript_response',502);}
     finally{await response.body?.cancel().catch(()=>{});}
   }
   async generate(context: ModelContext, visuals:VisualFrame[] = []): Promise<Action> {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertReleaseManifest } from '../verify-apk.mjs';
 
-const badging = `package: name='com.jstarstudios.otherme' versionCode='4' versionName='0.1.3'
+const badging = `package: name='com.jstarstudios.otherme' versionCode='5' versionName='0.1.4'
 application-label:'Otherme'
 uses-permission: name='android.permission.INTERNET'
 uses-permission: name='android.permission.RECORD_AUDIO'
@@ -28,7 +28,7 @@ const manifest = `E: manifest (line=2)
 test('release policy accepts the actual aapt element form and rejects the previous version or wrong keyboard mode', () => {
   assert.doesNotThrow(() => assertReleaseManifest(badging, manifest));
   assert.doesNotThrow(() => assertReleaseManifest(badging, manifest.replace('com.jstarstudios.otherme.MainActivity', '.MainActivity')));
-  assert.throws(() => assertReleaseManifest(badging.replace("versionCode='4'", "versionCode='3'"), manifest), /release version/);
+  assert.throws(() => assertReleaseManifest(badging.replace("versionCode='5'", "versionCode='4'"), manifest), /release version/);
   assert.throws(() => assertReleaseManifest(badging, manifest.replace('(type 0x11)0x10', '(type 0x11)0x20')), /adjustResize/);
   assert.throws(() => assertReleaseManifest(badging+'application-debuggable\n', manifest), /debuggable/);
 });

@@ -28,7 +28,8 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
   const [unconfirmed,setUnconfirmed]=useState(false);
   const blocked=busy || unconfirmed;
   const pending = draft.state === 'pending' && !local?.outbox;
-  const title=local?.outbox ? local.outbox.state==='accepted'?'Approved':'Send outcome '+local.outbox.state : draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : draft.state==='resolved' ? 'Resolved' : 'Dismissed';
+  const outboxTitle=local?.outbox && { accepted:'Approved', unknown:'Send unconfirmed', partial:'Send unconfirmed', failed:'Not sent', cancelled:'Cancelled', queued:'Pending', dispatching:'Pending' }[local.outbox.state];
+  const title=outboxTitle || (draft.state === 'needs_owner' ? 'Needs you' : draft.state === 'stale' ? 'Outdated draft' : pending ? 'Suggested reply' : draft.state === 'approved' ? 'Approved' : draft.state==='resolved' ? 'Resolved' : 'Dismissed');
   useEffect(() => { if (editing) return () => onEditorFocus?.(null); }, [editing, onEditorFocus]);
   const decide = async (operation: 'approve' | 'dismiss' | 'edit' | 'needs_owner') => {
     if(decisionLock.current || unconfirmed || !sourceReady)return;
@@ -60,7 +61,7 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
       {pending && <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: palette.muted }}>{unconfirmed ? 'Outcome unconfirmed' : busy ? 'Decision pending' : 'Not sent'}</Text>}
     </View>
     {editing && draft.action.kind==='text_sequence' && <Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:12}}>Saving combines these messages into one text reply. Sequence quotes are removed. Keep it under 4000 characters.</Text>}
-    {editing ? <TextInput accessibilityLabel="Edit draft" autoFocus multiline maxLength={4000} value={text} onChangeText={setText}
+    {!local?.outbox && (editing ? <TextInput accessibilityLabel="Edit draft" autoFocus multiline maxLength={4000} value={text} onChangeText={setText}
       onFocus={event => onEditorFocus?.(event.nativeEvent.target)} onBlur={() => onEditorFocus?.(null)}
       style={{ color: palette.text, fontFamily: fonts.regular, fontSize: 16, minHeight: 54, maxHeight: 180, textAlignVertical: 'top' }}/>
       : draft.action.kind==='text_sequence' ? <View accessibilityLabel="Ordered reply sequence" style={{gap:8}}>
@@ -70,9 +71,9 @@ export const DraftCard = memo(function DraftCard({ draft: provided, onEditorFocu
         </View>)}
       </View> : <Text selectable style={{ fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.text }}>
         {'text' in draft.action ? draft.action.text : 'reaction' in draft.action ? 'React '+draft.action.reaction.emoji : draft.action.reason}
-      </Text>}
-    {!sourceReady && <Text style={{color:palette.muted,fontSize:12}}>Source context is loading or unavailable. This cached draft is not approval authority.</Text>}
-    {editing && editingRevision!==draft.revision && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>This draft changed on another client. Your unsaved text is kept. Saving requires the original revision and may be rejected.</Text>}
+      </Text>)}
+    {!sourceReady && <Text style={{color:palette.muted,fontSize:12}}>Can't save or send this draft right now.</Text>}
+    {editing && editingRevision!==draft.revision && <Text accessibilityRole="alert" style={{color:palette.danger,fontSize:12}}>This draft changed on another client. Your unsaved text is kept; saving may be rejected.</Text>}
     {decisionFeedback && <Text accessibilityRole="alert" style={{color:palette.danger,fontFamily:fonts.regular,fontSize:13}}>{decisionFeedback}</Text>}
     {local?.outbox && <OutboxStatus outbox={local.outbox} simulated={local.simulated}/>}
     {draft.state === 'stale' && <Button label="Dismiss" secondary disabled={blocked || !sourceReady || status!=='online'} onPress={()=>{void decide('dismiss');}}/>}

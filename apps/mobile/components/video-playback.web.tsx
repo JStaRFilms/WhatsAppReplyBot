@@ -48,7 +48,7 @@ export function VideoPlayback({message,canPlay}:VideoPlaybackProps) {
         authorized=true;await player.play();
         if(!live || turn!==ticket)return;
         if(!current())fail('Video source is unavailable. Retry to revalidate.');
-      }catch {if(live && turn===ticket)fail('Video could not play. This browser may not support its MP4 codec.');}
+      }catch {if(live && turn===ticket)fail('Video could not play. Its format may be unsupported.');}
       finally {if(live && turn===ticket){working=false;setBusy(false);}}
     };
     const commands={toggle,seek:(offset:number)=>{
@@ -66,7 +66,7 @@ export function VideoPlayback({message,canPlay}:VideoPlaybackProps) {
     player.onplaying=()=>{if(!live)return;if(!current() || !authorized){fail('Video stopped. Press Retry, then Play to start again.');return;}setPlaying(true);};
     player.onpause=player.onended=()=>{if(!live || !player.paused || working && !authorized)return;authorized=false;releasePlayback(stop);setPlaying(false);};
     player.ontimeupdate=()=>{if(!live)return;if(!current()){fail('Video source is unavailable. Retry to revalidate.');return;}setElapsed(player.currentTime);};
-    player.onerror=()=>{if(live)fail('Video could not load. This browser may not support its MP4 codec.');};
+    player.onerror=()=>{if(live)fail('Video could not load. Its format may be unsupported.');};
     if(!isForeground() || !scope.current.canPlay())fail('Close recording or the picker before opening video.');
     else if(live)void mediaCache.acquire(message,'video','viewer',abort.signal).then(acquired=>{
       if(!live){acquired.release();return;}handle=acquired;
@@ -88,7 +88,6 @@ export function VideoPlayback({message,canPlay}:VideoPlaybackProps) {
         {control('Seek back 10 seconds',()=>session.current?.seek(-10),!ready || busy)}
         {control('Seek forward 10 seconds',()=>session.current?.seek(10),!ready || busy)}
         <Text style={{color:palette.muted}}>{time(elapsed)} / {time(duration)}</Text>
-      </View>{(!ready || busy) && <ActivityIndicator color={palette.accent}/>}</>}
-    <Text style={{color:palette.muted,padding:12,fontSize:11}}>Foreground playback only. H.264/AAC MP4 is the target; some MP4 codecs are unsupported.</Text>
+      </View>{(!ready || busy) && <ActivityIndicator accessibilityLabel={ready?'Preparing video':'Loading video'} color={palette.accent}/>}</>}
   </View>;
 }

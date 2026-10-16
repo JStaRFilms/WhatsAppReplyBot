@@ -16,6 +16,7 @@ export function boundedPan(x:number,y:number,zoom:number,width:number,height:num
 export function MediaViewer({message,onClose,canPlay}:{message:Message;onClose:()=>void;canPlay:()=>boolean}) {
   const {mediaCache,palette,client}=useApp(),insets=useSafeAreaInsets();
   const isVideo=message.media?.kind==='video';
+  const title=isVideo?'Video':message.media?.kind==='image'?'Photo':message.media?.kind==='gif'?'Animation':'Sticker';
   const identity=JSON.stringify([message.conversationId,message.id,message.transportId]);
   const [owned,setOwned]=useState<{cache:typeof mediaCache;identity:string;handle:MediaHandle} | null>(null);
   const handle=owned?.cache===mediaCache && owned.identity===identity?owned.handle:undefined;
@@ -41,7 +42,7 @@ export function MediaViewer({message,onClose,canPlay}:{message:Message;onClose:(
     };
   },[mediaCache,client,identity,attempt,isVideo]);
   useEffect(()=>{
-    if(typeof window==='undefined')return;
+    if(typeof window==='undefined' || typeof window.addEventListener!=='function' || typeof window.removeEventListener!=='function')return;
     const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();close.current();}};
     window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);
   },[]);
@@ -59,22 +60,22 @@ export function MediaViewer({message,onClose,canPlay}:{message:Message;onClose:(
   return <Modal visible animationType="fade" onRequestClose={()=>close.current()} accessibilityViewIsModal>
     <View style={{flex:1,backgroundColor:palette.background,paddingTop:insets.top,paddingBottom:insets.bottom,paddingLeft:insets.left,paddingRight:insets.right}}>
       <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:8}}>
-        <Text accessibilityRole="header" style={{flex:1,minWidth:0,color:palette.text,fontFamily:fonts.semibold,fontSize:16}}>{isVideo?'Video':message.media?.kind==='image'?'Photo':'Bounded animation or sticker preview'}</Text>
-        {control(isVideo?'Close video':'Close photo',()=>close.current())}
+        <Text accessibilityRole="header" style={{flex:1,minWidth:0,color:palette.text,fontFamily:fonts.semibold,fontSize:16}}>{title}</Text>
+        {control('Close '+title.toLowerCase(),()=>close.current())}
       </View>
-      <View {...(isVideo?{}:responder.panHandlers)} accessibilityLabel={isVideo?'Video modal content':'Photo viewing area'} onLayout={event=>setSize({width:event.nativeEvent.layout.width,height:event.nativeEvent.layout.height})}
+      <View {...(isVideo?{}:responder.panHandlers)} accessibilityLabel={isVideo?'Video modal content':title+' viewing area'} onLayout={event=>setSize({width:event.nativeEvent.layout.width,height:event.nativeEvent.layout.height})}
         style={{flex:1,minHeight:0,overflow:'hidden',alignItems:'center',justifyContent:'center'}}>
-        {isVideo ? <VideoPlayback message={message} canPlay={canPlay}/> : valid && handle ? <Image source={{uri:handle.uri}} accessibilityLabel="Full-screen photo" contentFit="contain" cachePolicy="none" autoplay
+        {isVideo ? <VideoPlayback message={message} canPlay={canPlay}/> : valid && handle ? <Image source={{uri:handle.uri}} accessibilityLabel={'Full-screen '+title.toLowerCase()} contentFit="contain" cachePolicy="none" autoplay
           style={{width:'100%',height:'100%',transform:[{translateX:pan.x},{translateY:pan.y},{scale:zoom}]}}/>
-          : error ? <View style={{padding:24,gap:12}}><Text accessibilityRole="alert" style={{color:palette.muted}}>{error}</Text>{control('Retry photo',()=>setAttempt(value=>value+1))}</View>
-          : <ActivityIndicator color={palette.accent}/>}
+          : error ? <View style={{padding:24,gap:12}}><Text accessibilityRole="alert" style={{color:palette.muted}}>{error}</Text>{control('Retry '+title.toLowerCase(),()=>setAttempt(value=>value+1))}</View>
+          : <ActivityIndicator accessibilityLabel={'Loading '+title.toLowerCase()} color={palette.accent}/>}
       </View>
       {!isVideo && <View style={{flexDirection:'row',justifyContent:'center',flexWrap:'wrap',gap:4}}>
         {control('Zoom out',()=>changeZoom(zoom-0.5),!valid || zoom<=1)}
         {control('Reset zoom',()=>{setZoom(1);setPan({x:0,y:0});},!valid)}
         {control('Zoom in',()=>changeZoom(zoom+0.5),!valid || zoom>=3)}
       </View>}
-      <Text style={{paddingHorizontal:16,paddingBottom:8,color:palette.muted,fontSize:11}}>Private cached copies are bounded and may be removed by the OS. Deletion is ordinary file removal, not secure erase.{notice?' '+notice:''}</Text>
+      {!!notice && <Text style={{paddingHorizontal:16,paddingBottom:8,color:palette.muted,fontSize:11}}>{notice}</Text>}
     </View>
   </Modal>;
 }

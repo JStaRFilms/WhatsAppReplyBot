@@ -10,7 +10,7 @@ import { retainMedia, releaseImage } from './media-lease';
 
 const Intent = z.object({
   service: z.string(), scope: ProfileScope, epoch: z.number(), conversationId: z.string(),
-  requestId: z.string(), uploadRequestId: z.string(), order: z.number(), revision: z.number(),
+  requestId: z.string(), uploadRequestId: z.string(), order: z.number(), revision: z.number(), createdAt: z.number().optional(),
   text: z.string().max(4000), quotedMessageId: z.string().nullable(),
   mediaKind: z.enum(['image', 'audio']).nullable(), action: OwnerAction.nullable(),
   phase: z.enum(['preparing', 'waiting', 'uploading', 'sending', 'pending', 'accepted', 'uncertain', 'failed', 'stopped']),
@@ -86,7 +86,7 @@ export class PendingIntents {
     const requestId = randomUUID(), departure = this.departure;
     const row: PendingIntent = {
       service: this.client.baseUrl, scope: this.scope, epoch: this.epoch, conversationId: capture.conversationId,
-      requestId, uploadRequestId: randomUUID(), order: ++this.order, revision: capture.revision,
+      requestId, uploadRequestId: randomUUID(), order: ++this.order, revision: capture.revision, createdAt: Date.now(),
       text: capture.text, quotedMessageId: capture.quotedMessageId,
       mediaKind: capture.image ? 'image' : capture.clip ? 'audio' : null, action: capture.action ?? null,
       phase: 'preparing', submitted: false,
@@ -249,5 +249,10 @@ export class PendingIntents {
 }
 export function intentVisible(row: PendingIntent, messages: readonly Message[]): boolean {
   return !row.outbox || row.phase !== 'accepted' || !row.outbox.components.every(component => component.transportId
-    && messages.some(message => message.accountId === row.scope.accountId && message.conversationId === row.conversationId && message.transportId === component.transportId));
+    && (component.kind === 'reaction'
+      ? messages.some(message => message.accountId === row.scope.accountId && message.conversationId === row.conversationId
+        && message.id === component.reaction?.targetMessageId && message.observedReactions?.some(observation => observation.transportId === component.transportId
+          && (observation.actor === 'owner' || observation.actor === 'assistant')))
+      : messages.some(message => message.accountId === row.scope.accountId && message.conversationId === row.conversationId
+        && message.direction === 'outbound' && message.transportId === component.transportId)));
 }

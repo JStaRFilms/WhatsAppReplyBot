@@ -105,6 +105,13 @@ account access, provider requests, real sends and deployment remain gated.
 | 48 | Correct warm geometry, focused editor anchors and foreground photo recovery | coder | vibe-build |47 plus44 r2 confirmed failures | Complete35cba0c; parent449 tests/types and27 isolated browser checks pass |
 | 49 | Diagnose and correct thumbnail cancellation availability | coder | vibe-build |48 plus44 r3 recorded failures | Complete2453912, deterministic purge/ownership red-green; parent452 tests/types and full browser acceptance |
 | 50 | Correct two confirmed review38 blockers | coder | vibe-build |38 r1 confirmed findings,49 accepted | Completef32808b, parent red-green reproductions and full tests; final metadata645f569 accepted |
+| 56 | Fix native media opening and picker cancellation | coder | vibe-build | owner correction contract | source integrated, review60 pending |
+| 57 | Fix Latest, reaction feedback and pending conversation rendering | coder | vibe-build | owner correction contract | source integrated, review60 pending |
+| 58 | Replace technical UI clutter with compact messaging controls | coder | vibe-build | owner correction contract | source integrated, review60 pending |
+| 59 | Trace voice-note context failures and real send delays | coder | vibe-build | owner correction contract | source integrated, review60 pending |
+| 60 | Review the combined messaging correction once | reviewer | vibe-build | 56,57,58,59 | accepted source review |
+| 61 | Verify and package the corrected native and browser clients | orchestrator | vibe-build | 60 | in-progress |
+| 62 | Verify corrected browser interactions on fresh export | worker | vibe-build | 60, parent61 freeze | pending |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct
@@ -244,11 +251,29 @@ fonts, with no provider/device/external/page/asset errors. It is promoted to
 apps/mobile/dist; prior28-file/5226702-byte assets are preserved at
 .runtime/pc-task55/previous-desktop-1792124977744. APK/build-copy unchanged.
 
-53 and54 are source/artifact accepted.55 is BLOCKED under its blocked/ packet on
-an operator-controlled normal backend stop/relaunch. Actual token/root/protocol
-checks pass, but HEAD snapshot still times out and the new DB index is absent.
-The parent cannot safely write Q to the already-running owning console and will
-not open a debugger, force-kill, remove locks or launch a competing service.
-Close clients, let old work drain, use Q, then canonical Otherme.cmd only after
-verified stop. Current live/phone resolution is not claimed. No agents or
-watchers remain active.
+53 and54 are source/artifact accepted. The owner subsequently completed the normal
+restart. Parent confirmed the new index, matching token/root/protocol and scoped
+HEAD snapshot200 in6995ms without returning its body. The operator restart blocker
+is resolved. The owner reports ordinary use and nonblocking composition work so
+far, then supplies concrete UI/media/voice defects.55 remains a connection
+acceptance record, not proof of complete physical-client stability. Its current
+packet is in-progress/55_integrate_and_verify_pc_connection_fixes.task.md.
+
+## Owner-reported messaging correction round
+
+The testing hold now permits only the corrections explicitly reported by the
+owner. Follow docs/features/Messaging_Corrections_0.1.4.md. Native media crashes,
+picker cancellation, Latest/automatic newer loading, reaction placement/optimism,
+compact truthful receipts, pending media continuity, ordinary UI wording and
+voice-note context are in scope. Preserve working composing, image sending and
+voice playback. No new analytics, icon, context-session or video-send feature.
+
+56-59 are parallel writers with disjoint file ownership authored in their packets.
+60 is one focused combined review;61 is parent verification and new same-key
+0.1.4/code5 native/browser artifacts, using the existing approved C:/Otherme-build.
+No source or fake browser result is physical-device acceptance. No paid retry,
+real send, relink, lock deletion, forced restart or data reset is authorized by
+this round. Required privacy/AI consent remains clear while optional technical
+explanations move out of routine screens. Record each T3 task ID in canonical
+project tracking; the harness board tool is bound to parent CreativeOS, so do not
+create a duplicate session there.

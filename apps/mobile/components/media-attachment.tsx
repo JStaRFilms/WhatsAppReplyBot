@@ -61,7 +61,7 @@ export function MediaAttachment({message,visible=false,onOpen}:{message:Message;
     {uri || fixture ? <Pressable accessibilityRole="button" accessibilityLabel={privateCache && !fixture?'Open '+media.kind:'Photo preview only'}
       disabled={!privateCache || !!fixture} onPress={()=>onOpen?.(message)}>
       <Image accessibilityLabel={media.kind+' attachment'} source={fixture ?? {uri:uri ?? ''}} contentFit="contain" autoplay cachePolicy="none" style={{width:220,height:160}}/>
-    </Pressable> : failed || handle && !valid ? <Pressable accessibilityRole="button" accessibilityLabel="Retry attachment" onPress={()=>setAttempt(n=>n+1)} style={{minHeight:48,padding:18}}><Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:13}}>Media unavailable. Tap to revalidate.</Text></Pressable>
-      : visible ? <ActivityIndicator color={palette.accent}/> : <Text style={{color:palette.muted,fontSize:12}}>Photo preview</Text>}
+    </Pressable> : failed || handle && !valid ? <Pressable accessibilityRole="button" accessibilityLabel="Retry attachment" onPress={()=>setAttempt(n=>n+1)} style={{minHeight:48,padding:18}}><Text style={{color:palette.muted,fontFamily:fonts.regular,fontSize:13}}>Media unavailable. Tap to retry.</Text></Pressable>
+      : visible ? <ActivityIndicator accessibilityLabel="Loading attachment" color={palette.accent}/> : <Text style={{color:palette.muted,fontSize:12}}>Photo preview</Text>}
   </View>;
 }

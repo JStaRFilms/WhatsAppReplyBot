@@ -224,6 +224,9 @@ export function useConversationScroll(history: HistoryCache, id: string, loaded:
   }, [position, cancelFrames]);
   useLayoutEffect(()=>{
     currentRead.current=read;invalidateRows();
+    // A page can replace an equal-height window before the requested jump's
+    // animation frame. Reissue follow intent against this page, not its old read.
+    follow();
     return()=>{stopRead(read);if(currentRead.current===read)currentRead.current=null;cancelViewed();};
   },[read]);
   useLayoutEffect(()=>{spacing.applied=editorSpace;invalidateRows();},[position,editorSpace]);

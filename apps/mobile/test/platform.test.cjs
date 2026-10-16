@@ -31,7 +31,7 @@ test('video plugin disables both PiP activities in memory, rejects background co
   assert.equal(mobileRequire('./package.json').dependencies['expo-video'],'57.0.5');
   const options=expo.plugins.find(plugin=>Array.isArray(plugin) && plugin[0]==='expo-video')[1];
   assert.deepEqual(options,{supportsBackgroundPlayback:false,supportsPictureInPicture:false});
-  assert.equal(expo.version,'0.1.2');assert.equal(expo.android.versionCode,3);assert.equal(expo.android.package,'com.jstarstudios.otherme');
+  assert.equal(expo.version,'0.1.3');assert.equal(expo.android.versionCode,4);assert.equal(expo.android.package,'com.jstarstudios.otherme');
   for(const permission of ['WRITE_CONTACTS','SYSTEM_ALERT_WINDOW','READ_MEDIA_AUDIO','FOREGROUND_SERVICE','FOREGROUND_SERVICE_MEDIA_PLAYBACK'])assert.ok(expo.android.blockedPermissions.includes('android.permission.'+permission));
   function config(){
     let result=withRelease({...expo});result=withVideo(result,options);result=withContacts(result,{});

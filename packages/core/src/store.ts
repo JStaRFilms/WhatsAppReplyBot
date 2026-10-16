@@ -222,8 +222,9 @@ export class SqliteStore {
     const params = edge ? [edge.at,edge.at,edge.id] : [];
     const eligibility = filter === 'inbound' ? "AND json_extract(m.payload,'$.direction')='inbound'"
       : filter === 'style' ? "AND json_extract(m.payload,'$.direction')='outbound' AND json_extract(m.payload,'$.authorship')='owner_written' AND length(trim(json_extract(m.payload,'$.text'))) BETWEEN 1 AND 600" : '';
+    // Keep each member's LIMIT on paging order; the rowid fence otherwise favors a full sort.
     return this.db.prepare(`SELECT result.payload FROM json_each(?) member JOIN messages result ON result.rowid IN (
-      SELECT m.rowid FROM messages m WHERE m.account_id=? AND m.conversation_id=member.value AND m.rowid<=?
+      SELECT m.rowid FROM messages m INDEXED BY message_paging WHERE m.account_id=? AND m.conversation_id=member.value AND m.rowid<=?
       AND m.rowid=(SELECT MIN(d.rowid) FROM messages d WHERE d.account_id=m.account_id
         AND d.conversation_id IN (SELECT value FROM json_each(?))
         AND json_extract(d.payload,'$.transportId')=json_extract(m.payload,'$.transportId')) ${where} ${eligibility}

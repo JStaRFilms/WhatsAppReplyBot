@@ -3,6 +3,7 @@ import pino from 'pino';
 import QRCode from 'qrcode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setImmediate as yieldToIO } from 'node:timers/promises';
 import { z } from 'zod';
 import { DomainError, historyDigest, automaticDecision, automaticTrigger, partialMessage, eventIdentity, aiAccess, inPermittedHours, type Workflow, type Message, type Conversation, type OutgoingReceipt } from '@replybot/core';
 import { directJid, normalizeWhatsApp, isViewOnce, inspectHistoryRaw, decodeStoredMessage, attachmentIdentity, messageId } from './whatsapp-normalize.ts';
@@ -27,6 +28,8 @@ export class WhatsAppAdapter {
   private reconnect: ReturnType<typeof setTimeout> | undefined;
   private openedAt = 0;
   private events: Promise<void> = Promise.resolve();
+  private batchItems = 0;
+  private batchStartedAt = 0;
   private connectionLife = new AbortController();
   private readonly presence = new Map<string, () => void>();
   private readonly presenceLanes = new Map<string, Promise<void>>();
@@ -114,32 +117,37 @@ export class WhatsAppAdapter {
       this.enqueueData(socket, async () => { this.canonical(mapping.lid, mapping.pn); });
     });
     socket.ev.on('contacts.upsert', contacts => {
-      this.enqueueData(socket, async () => { for (const contact of contacts) {
-        const jid = this.canonical(contact.id, contact.lid ?? contact.phoneNumber);
-        this.contactNames(jid,contact);
-      } });
+      this.enqueueData(socket, async current => {
+        await this.processBatch(contacts,current,contact => {
+          const jid = this.canonical(contact.id, contact.lid ?? contact.phoneNumber);
+          this.contactNames(jid,contact);
+        });
+      });
     });
     socket.ev.on('contacts.update', contacts => {
-      this.enqueueData(socket, async () => { for (const contact of contacts) {
-        if (!contact.id) continue;
-        this.contactNames(this.canonical(contact.id,contact.lid ?? contact.phoneNumber),contact);
-      } });
+      this.enqueueData(socket, async current => {
+        await this.processBatch(contacts,current,contact => {
+          if (contact.id) this.contactNames(this.canonical(contact.id,contact.lid ?? contact.phoneNumber),contact);
+        });
+      });
     });
     socket.ev.on('messaging-history.set', history => {
-      this.enqueueData(socket, async () => {
-        for (const contact of history.contacts) this.canonical(contact.id,contact.lid ?? contact.phoneNumber);
-        for (const raw of history.messages) await this.receive(raw, 'backfill');
+      this.enqueueData(socket, async current => {
+        await this.processBatch(history.contacts,current,contact => { this.canonical(contact.id,contact.lid ?? contact.phoneNumber); });
+        await this.processBatch(history.messages,current,raw => this.receive(raw, 'backfill'));
         // History messages may establish a chat. Names alone still cannot create one.
-        for (const contact of history.contacts) this.contactNames(this.canonical(contact.id,contact.lid ?? contact.phoneNumber),contact);
+        await this.processBatch(history.contacts,current,contact => {
+          this.contactNames(this.canonical(contact.id,contact.lid ?? contact.phoneNumber),contact);
+        });
       });
     });
     socket.ev.on('messages.upsert', event => {
-      this.enqueueData(socket, async () => {
-        for (const raw of event.messages) {
+      this.enqueueData(socket, async current => {
+        await this.processBatch(event.messages,current,raw => {
           const timestamp = Number(raw.messageTimestamp ?? 0)*1000;
           const live = event.type === 'notify' && !event.requestId && this.status.state === 'connected' && timestamp >= this.openedAt-5000;
-          await this.receive(raw, live ? 'live' : 'replay');
-        }
+          return this.receive(raw, live ? 'live' : 'replay');
+        });
       });
     });
     socket.ev.on('messages.reaction', reactions => {
@@ -182,8 +190,25 @@ export class WhatsAppAdapter {
       });
     });
   }
-  private enqueueData(socket: ReturnType<typeof makeWASocket>, operation: () => Promise<void>): void {
-    this.enqueue(async () => { if (!this.stopped && this.socket === socket && this.verifiedSocket === socket) await operation(); });
+  private enqueueData(socket: ReturnType<typeof makeWASocket>, operation: (current: () => boolean) => Promise<void>): void {
+    const generation = this.generation;
+    const current = () => !this.stopped && !this.sealed && generation === this.generation
+      && this.socket === socket && this.verifiedSocket === socket;
+    this.enqueue(async () => { if (current()) await operation(current); });
+  }
+  private async processBatch<T>(items: readonly T[], current: () => boolean, operation: (item: T) => void | Promise<void>): Promise<void> {
+    for (const item of items) {
+      if (!current()) return;
+      // Share the budget across queued events too. Resolved awaits do not admit HTTP or IPC.
+      if (this.batchItems >= 32 || this.batchItems > 0 && performance.now()-this.batchStartedAt >= 8) {
+        await yieldToIO();
+        this.batchItems = 0;
+        if (!current()) return;
+      }
+      if (this.batchItems === 0) this.batchStartedAt = performance.now();
+      await operation(item);
+      this.batchItems++;
+    }
   }
   private receiptIdentity(jid: string): string | undefined {
     if (!directJid(jid) || jid.includes(':')) return undefined;

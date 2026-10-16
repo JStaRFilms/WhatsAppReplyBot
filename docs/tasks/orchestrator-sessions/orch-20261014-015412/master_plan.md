@@ -160,3 +160,36 @@ slices. Never stage the whole repository.
 App model `openai/gpt-6-luna` on OpenRouter is distinct from the agent model.
 Persist authorship and outbound IDs rather than guessing from short timers.
 Fail closed when a permission or send outcome is uncertain.
+
+## Post-release PC investigation
+
+The owner reports repeated launcher service-identity failures, Q timing out before
+any stop acknowledgment, and the built browser looping on connecting to the PC.
+The deleted file was `launcher.lock`, not a log. The actual child exit and current
+live service state are unverified. Do not delete another lock, rotate tokens,
+re-link, restart or probe the real service as part of source-only diagnosis.
+
+1. Task51, architect, complete: reproduced CPU-bound history starvation with fake
+   HTTP/IPC. Parent independently confirmed the underlying no-I/O loop and query
+   scan/sort. The owner's actual historical cause remains unproven.
+2. Task52, coder, complete: bounded cooperative history/contact processing and
+   existing paging-index correction. Parent original source17/19 failures versus
+   corrected19/19 pass; full484 tests and workspace types pass. A stale platform
+   test's0.1.2/code3 expectation was updated to existing0.1.3/code4, with its first
+   failed run preserved. No app version/native code changed.
+3. Parent focused review and fake HTTP/IPC acceptance complete: identity48ms,
+   graceful stop42ms, gated at10/500 items, normal child exit. Existing built
+   browser connects/reloads against200000 invented messages,5 checks/8 successful
+   API responses. Existing font-route404s were reported separately, not fixed by
+   expanding this patch. Current actual service still needs normal verified Q
+   shutdown/relaunch. No actual rollout, account, token, icon or APK change.
+
+The board tool is currently bound to the parent checkout and reports no session.
+The parent maintains this existing project's canonical board JSON directly rather
+than creating a duplicate parent-root session. Task51 packet is under
+`completed/51_trace_post_release_pc_unresponsiveness.task.md`. Task52 was authored
+before dispatch and is now under `completed/52_fix_backend_history_responsiveness.task.md`.
+The owner expressly directs no more routine approval prompts during testing.
+Proceed with necessary narrow diagnosis and compatible fixes, preserve secret
+redaction and target/unknown-outcome safety, and avoid unrelated destructive,
+paid, real-send or account-relink operations.

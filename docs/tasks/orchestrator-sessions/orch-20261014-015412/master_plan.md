@@ -118,7 +118,7 @@ account access, provider requests, real sends and deployment remain gated.
 | 66 | Verify current physical viewport before app-view acknowledgment | coder | vibe-build | 65 actual mismatch and held-event repro | scoped fix verified, combined browser17/19 blocked |
 | 67 | Attribute remaining editor and thumbnail observations | architect | Build diagnosis | final66 export and62/64 retained failures | completed, real-wheel modal focus cause found |
 | 68 | Correct quote-dialog exit focus without losing accessibility | coder | vibe-build | 67 causal trace | completed, final browser16/16 and mobile321/types pass |
-| 69 | Verify the frozen corrected messaging candidate | reviewer | Build acceptance | new r2 freeze after68 | pending |
+| 69 | Verify the frozen corrected messaging candidate | reviewer | Build acceptance | df86e63, new r2 freeze after68 | blocked, verification model rejected before execution |
 | Gate | Owner approval for design and offline build | orchestrator | Design gate | user message | granted |
 
 Task 01 delivered the foundation. Task 02 was accepted after a focused direct
